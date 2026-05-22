@@ -1,142 +1,142 @@
-<mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/28.0.6 Chrome/138.0.7204.100 Electron/37.2.3 Safari/537.36" version="28.0.6">
-  <diagram id="CgLPoI-8BR-FyQ5gZzrR" name="ページ1">
-    <mxGraphModel dx="1464" dy="871" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0" adaptiveColors="auto">
-      <root>
-        <mxCell id="0" />
-        <mxCell id="1" parent="0" />
-        <mxCell id="lane_yoyakusha" value="予約者" style="swimlane;horizontal=0;startSize=110;fillColor=#f5f5f5;fontColor=#333333;strokeColor=#666666;fontSize=13;fontStyle=1;html=1;" parent="1" vertex="1">
-          <mxGeometry width="1700" height="240" as="geometry" />
-        </mxCell>
-        <mxCell id="start_yoyaku" value="予約したい" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" parent="lane_yoyakusha" vertex="1">
-          <mxGeometry x="130" y="50" width="80" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="yoyaku_denwa" value="スタッフに&#xa;電話で予約連絡" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" parent="lane_yoyakusha" vertex="1">
-          <mxGeometry x="280" y="50" width="140" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="start_raiten" value="来店" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" parent="lane_yoyakusha" vertex="1">
-          <mxGeometry x="590" y="50" width="80" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="staff_order_uketsuke" value="口頭で注文受付&#xa;手書きメモに記録" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" parent="lane_yoyakusha" vertex="1">
-          <mxGeometry x="1220" y="130" width="140" height="70" as="geometry" />
-        </mxCell>
-        <mxCell id="staff_kitchen_pass" value="厨房へ&#xa;メモを持参&#xa;/ 口頭伝達" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" parent="lane_yoyakusha" vertex="1">
-          <mxGeometry x="1420" y="160" width="100" height="80" as="geometry" />
-        </mxCell>
-        <mxCell id="e_order_kitchen" parent="lane_yoyakusha" source="staff_order_uketsuke" target="staff_kitchen_pass" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="lane_staff" value="ホールスタッフ" style="swimlane;horizontal=0;startSize=110;fillColor=#e8f4f8;fontColor=#333333;strokeColor=#666666;fontSize=13;fontStyle=1;html=1;" parent="1" vertex="1">
-          <mxGeometry y="160" width="1700" height="180" as="geometry" />
-        </mxCell>
-        <mxCell id="staff_start" value="開店準備" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" parent="lane_staff" vertex="1">
-          <mxGeometry x="130" y="50" width="80" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="staff_yoyaku_uketsuke" value="電話で予約受付&#xa;（日時・人数・名前&#xa;・連絡先を口頭確認）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f4f8;strokeColor=#6c8ebf;fontSize=11;" parent="lane_staff" vertex="1">
-          <mxGeometry x="280" y="35" width="140" height="90" as="geometry" />
-        </mxCell>
-        <mxCell id="staff_yoyaku_board" value="紙に手書きメモ&#xa;予約ボードに貼付&#xa;（管理）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f4f8;strokeColor=#6c8ebf;fontSize=11;" parent="lane_staff" vertex="1">
-          <mxGeometry x="480" y="35" width="140" height="90" as="geometry" />
-        </mxCell>
-        <mxCell id="staff_raiten_check" value="予約 or&#xa;新規判断" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" parent="lane_staff" vertex="1">
-          <mxGeometry x="630" y="-10" width="120" height="110" as="geometry" />
-        </mxCell>
-        <mxCell id="staff_yoyaku_seat" value="予約ボード確認&#xa;予約席へ案内" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f4f8;strokeColor=#6c8ebf;fontSize=11;" parent="lane_staff" vertex="1">
-          <mxGeometry x="850" y="-25" width="140" height="70" as="geometry" />
-        </mxCell>
-        <mxCell id="staff_new_seat" value="空席を確認&#xa;席へ案内" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f4f8;strokeColor=#6c8ebf;fontSize=11;" parent="lane_staff" vertex="1">
-          <mxGeometry x="850" y="90" width="140" height="55" as="geometry" />
-        </mxCell>
-        <mxCell id="staff_menu_explain" value="紙メニューを手渡し&#xa;口頭でメニュー説明&#xa;（外国人は特に時間要）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" parent="lane_staff" vertex="1">
-          <mxGeometry x="1020" width="150" height="80" as="geometry" />
-        </mxCell>
-        <mxCell id="prob1" value="⚠ 課題①：メニュー説明に時間がかかり&lt;br&gt;スタッフ負担が大きい" style="callout;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;align=left;perimeter=calloutPerimeter;size=15;position=0.5;position2=0.5;" parent="lane_staff" vertex="1">
-          <mxGeometry x="1020" y="110" width="200" height="70" as="geometry" />
-        </mxCell>
-        <mxCell id="prob2" value="⚠ 課題②：口頭伝達による&#xa;聞き間違い・注文ミスが&#xa;発生しやすい" style="callout;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;align=left;perimeter=calloutPerimeter;size=15;position=0.5;position2=0.5;" parent="lane_staff" vertex="1">
-          <mxGeometry x="1180" y="55" width="200" height="70" as="geometry" />
-        </mxCell>
-        <mxCell id="lane_kitchen" value="厨房スタッフ" style="swimlane;horizontal=0;startSize=110;fillColor=#fff0e6;fontColor=#333333;strokeColor=#666666;fontSize=13;fontStyle=1;html=1;" parent="1" vertex="1">
-          <mxGeometry y="320" width="1700" height="180" as="geometry" />
-        </mxCell>
-        <mxCell id="kitchen_start" value="調理待機" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" parent="lane_kitchen" vertex="1">
-          <mxGeometry x="130" y="50" width="80" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="kitchen_order_receive" value="スタッフから注文メモ&#xa;受け取り / 口頭確認" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff0e6;strokeColor=#d79b00;fontSize=11;" parent="lane_kitchen" vertex="1">
-          <mxGeometry x="1360" y="30" width="160" height="70" as="geometry" />
-        </mxCell>
-        <mxCell id="kitchen_cook" value="調理開始" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff0e6;strokeColor=#d79b00;fontSize=11;" parent="lane_kitchen" vertex="1">
-          <mxGeometry x="1540" y="35" width="120" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="kitchen_serve" value="完成&lt;br&gt;→提供" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff0e6;strokeColor=#d79b00;fontSize=11;" parent="lane_kitchen" vertex="1">
-          <mxGeometry x="1680" y="50" width="50" height="80" as="geometry" />
-        </mxCell>
-        <mxCell id="prob3" value="⚠ 課題③：注文から提供まで&#xa;30分以上かかることがあり&#xa;回転率が低下する" style="callout;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;align=left;perimeter=calloutPerimeter;size=15;position=0.5;position2=0.5;" parent="lane_kitchen" vertex="1">
-          <mxGeometry x="1330" y="110" width="200" height="70" as="geometry" />
-        </mxCell>
-        <mxCell id="lane_pos" value="POSレジ（既存・対象外）" style="swimlane;horizontal=0;startSize=110;fillColor=#e8f5e9;fontColor=#333333;strokeColor=#82b366;strokeDashArray=8 8;fontSize=13;fontStyle=1;html=1;" parent="1" vertex="1">
-          <mxGeometry y="480" width="1700" height="140" as="geometry" />
-        </mxCell>
-        <mxCell id="pos_cashier" value="既存POSで会計&#xa;（スコープ外）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#82b366;dashed=1;fontSize=11;" parent="lane_pos" vertex="1">
-          <mxGeometry x="1500" y="40" width="140" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="e_start_yoyaku_denwa" parent="1" source="start_yoyaku" target="yoyaku_denwa" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_staff_start_yoyaku" parent="1" source="staff_start" target="staff_yoyaku_uketsuke" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_yoyaku_board" parent="1" source="staff_yoyaku_uketsuke" target="staff_yoyaku_board" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_yoyakusha_to_staff" parent="1" source="yoyaku_denwa" target="staff_yoyaku_uketsuke" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_raiten_to_check" parent="1" source="start_raiten" target="staff_raiten_check" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_check_yoyaku" value="予約あり" style="edgeStyle=orthogonalEdgeStyle;html=1;" parent="1" source="staff_raiten_check" target="staff_yoyaku_seat" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_check_new" value="新規" style="edgeStyle=orthogonalEdgeStyle;html=1;" parent="1" source="staff_raiten_check" target="staff_new_seat" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_yoyaku_seat_menu" parent="1" source="staff_yoyaku_seat" target="staff_menu_explain" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_new_seat_menu" parent="1" source="staff_new_seat" target="staff_menu_explain" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_menu_order" parent="1" source="staff_menu_explain" target="staff_order_uketsuke" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_kitchen_start_wait" style="dashed=1;endArrow=open;" parent="1" source="kitchen_start" target="kitchen_order_receive" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_kitchen_receive_cook" parent="1" source="kitchen_order_receive" target="kitchen_cook" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_cook_serve" parent="1" source="kitchen_cook" target="kitchen_serve" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_staff_kitchen_pass2" parent="1" source="staff_kitchen_pass" target="kitchen_order_receive" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_serve_end" parent="1" source="kitchen_serve" target="end_yoyakusha" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="legend_title" value="現行業務フロー（As-Is）― システム導入前" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=15;fontStyle=1;" parent="1" vertex="1">
-          <mxGeometry x="130" y="645" width="450" height="30" as="geometry" />
-        </mxCell>
-        <mxCell id="legend_manual" value="■ 橙色：手作業・人手依存のタスク（ボトルネック）" style="text;html=1;strokeColor=none;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=middle;fontSize=11;" parent="1" vertex="1">
-          <mxGeometry x="130" y="685" width="320" height="30" as="geometry" />
-        </mxCell>
-        <mxCell id="legend_problem" value="⚠ 課題・ボトルネック箇所" style="text;html=1;strokeColor=none;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=middle;fontSize=11;" parent="1" vertex="1">
-          <mxGeometry x="460" y="685" width="220" height="30" as="geometry" />
-        </mxCell>
-        <mxCell id="end_yoyakusha" value="退店" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" parent="1" vertex="1">
-          <mxGeometry x="1700" y="50" width="80" height="60" as="geometry" />
-        </mxCell>
-      </root>
-    </mxGraphModel>
-  </diagram>
+<mxfile host="65bd71144e">
+    <diagram id="CgLPoI-8BR-FyQ5gZzrR" name="ページ1">
+        <mxGraphModel dx="615" dy="910" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0" adaptiveColors="auto">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="lane_yoyakusha" value="予約者" style="swimlane;horizontal=0;startSize=110;fillColor=#f5f5f5;fontColor=#333333;strokeColor=#666666;fontSize=13;fontStyle=1;html=1;" parent="1" vertex="1">
+                    <mxGeometry width="1700" height="240" as="geometry"/>
+                </mxCell>
+                <mxCell id="start_yoyaku" value="予約したい" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" parent="lane_yoyakusha" vertex="1">
+                    <mxGeometry x="130" y="50" width="80" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="yoyaku_denwa" value="スタッフに&#xa;電話で予約連絡" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" parent="lane_yoyakusha" vertex="1">
+                    <mxGeometry x="280" y="50" width="140" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="start_raiten" value="来店" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" parent="lane_yoyakusha" vertex="1">
+                    <mxGeometry x="590" y="50" width="80" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="staff_order_uketsuke" value="口頭で注文受付&#xa;手書きメモに記録" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" parent="lane_yoyakusha" vertex="1">
+                    <mxGeometry x="1220" y="130" width="140" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="staff_kitchen_pass" value="厨房へ&#xa;メモを持参&#xa;/ 口頭伝達" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" parent="lane_yoyakusha" vertex="1">
+                    <mxGeometry x="1420" y="160" width="100" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_order_kitchen" parent="lane_yoyakusha" source="staff_order_uketsuke" target="staff_kitchen_pass" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_staff" value="ホールスタッフ" style="swimlane;horizontal=0;startSize=110;fillColor=#e8f4f8;fontColor=#333333;strokeColor=#666666;fontSize=13;fontStyle=1;html=1;" parent="1" vertex="1">
+                    <mxGeometry y="160" width="1700" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="staff_start" value="開店準備" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" parent="lane_staff" vertex="1">
+                    <mxGeometry x="130" y="50" width="80" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="staff_yoyaku_uketsuke" value="電話で予約受付&#xa;（日時・人数・名前&#xa;・連絡先を口頭確認）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f4f8;strokeColor=#6c8ebf;fontSize=11;" parent="lane_staff" vertex="1">
+                    <mxGeometry x="280" y="35" width="140" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="staff_yoyaku_board" value="紙に手書きメモ&#xa;予約ボードに貼付&#xa;（管理）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f4f8;strokeColor=#6c8ebf;fontSize=11;" parent="lane_staff" vertex="1">
+                    <mxGeometry x="480" y="35" width="140" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="staff_raiten_check" value="予約 or&#xa;新規判断" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" parent="lane_staff" vertex="1">
+                    <mxGeometry x="630" y="-10" width="120" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="staff_yoyaku_seat" value="予約ボード確認&#xa;予約席へ案内" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f4f8;strokeColor=#6c8ebf;fontSize=11;" parent="lane_staff" vertex="1">
+                    <mxGeometry x="850" y="-25" width="140" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="staff_new_seat" value="空席を確認&#xa;席へ案内" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f4f8;strokeColor=#6c8ebf;fontSize=11;" parent="lane_staff" vertex="1">
+                    <mxGeometry x="850" y="90" width="140" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="staff_menu_explain" value="紙メニューを手渡し&#xa;口頭でメニュー説明&#xa;（外国人は特に時間要）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" parent="lane_staff" vertex="1">
+                    <mxGeometry x="1010" width="150" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="prob1" value="⚠ 課題①：メニュー説明に時間がかかり&lt;br&gt;スタッフ負担が大きい" style="callout;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;align=left;perimeter=calloutPerimeter;size=15;position=0.5;position2=0.5;" parent="lane_staff" vertex="1">
+                    <mxGeometry x="1000" y="100" width="200" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="prob2" value="⚠ 課題②：口頭伝達による&#xa;聞き間違い・注文ミスが&#xa;発生しやすい" style="callout;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;align=left;perimeter=calloutPerimeter;size=15;position=0.5;position2=0.5;" parent="lane_staff" vertex="1">
+                    <mxGeometry x="1180" y="55" width="200" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_kitchen" value="厨房スタッフ" style="swimlane;horizontal=0;startSize=110;fillColor=#fff0e6;fontColor=#333333;strokeColor=#666666;fontSize=13;fontStyle=1;html=1;" parent="1" vertex="1">
+                    <mxGeometry y="320" width="1700" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="kitchen_start" value="調理待機" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" parent="lane_kitchen" vertex="1">
+                    <mxGeometry x="130" y="50" width="80" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="kitchen_order_receive" value="スタッフから注文メモ&#xa;受け取り / 口頭確認" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff0e6;strokeColor=#d79b00;fontSize=11;" parent="lane_kitchen" vertex="1">
+                    <mxGeometry x="1360" y="30" width="160" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="kitchen_cook" value="調理開始" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff0e6;strokeColor=#d79b00;fontSize=11;" parent="lane_kitchen" vertex="1">
+                    <mxGeometry x="1540" y="35" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="kitchen_serve" value="完成&lt;br&gt;→提供" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff0e6;strokeColor=#d79b00;fontSize=11;" parent="lane_kitchen" vertex="1">
+                    <mxGeometry x="1680" y="50" width="50" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="prob3" value="⚠ 課題③：注文から提供まで&#xa;30分以上かかることがあり&#xa;回転率が低下する" style="callout;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;align=left;perimeter=calloutPerimeter;size=15;position=0.5;position2=0.5;" parent="lane_kitchen" vertex="1">
+                    <mxGeometry x="1330" y="110" width="200" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_pos" value="POSレジ（既存・対象外）" style="swimlane;horizontal=0;startSize=110;fillColor=#e8f5e9;fontColor=#333333;strokeColor=#82b366;strokeDashArray=8 8;fontSize=13;fontStyle=1;html=1;" parent="1" vertex="1">
+                    <mxGeometry y="480" width="1700" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="pos_cashier" value="既存POSで会計&#xa;（スコープ外）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#82b366;dashed=1;fontSize=11;" parent="lane_pos" vertex="1">
+                    <mxGeometry x="1500" y="40" width="140" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_start_yoyaku_denwa" parent="1" source="start_yoyaku" target="yoyaku_denwa" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_staff_start_yoyaku" parent="1" source="staff_start" target="staff_yoyaku_uketsuke" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_yoyaku_board" parent="1" source="staff_yoyaku_uketsuke" target="staff_yoyaku_board" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_yoyakusha_to_staff" parent="1" source="yoyaku_denwa" target="staff_yoyaku_uketsuke" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_raiten_to_check" parent="1" source="start_raiten" target="staff_raiten_check" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_check_yoyaku" value="予約あり" style="edgeStyle=orthogonalEdgeStyle;html=1;" parent="1" source="staff_raiten_check" target="staff_yoyaku_seat" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_check_new" value="新規" style="edgeStyle=orthogonalEdgeStyle;html=1;" parent="1" source="staff_raiten_check" target="staff_new_seat" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_yoyaku_seat_menu" parent="1" source="staff_yoyaku_seat" target="staff_menu_explain" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_new_seat_menu" parent="1" source="staff_new_seat" target="staff_menu_explain" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_menu_order" parent="1" source="staff_menu_explain" target="staff_order_uketsuke" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_kitchen_start_wait" style="dashed=1;endArrow=open;" parent="1" source="kitchen_start" target="kitchen_order_receive" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_kitchen_receive_cook" parent="1" source="kitchen_order_receive" target="kitchen_cook" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_cook_serve" parent="1" source="kitchen_cook" target="kitchen_serve" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_staff_kitchen_pass2" parent="1" source="staff_kitchen_pass" target="kitchen_order_receive" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_serve_end" parent="1" source="kitchen_serve" target="end_yoyakusha" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend_title" value="現行業務フロー（As-Is）― システム導入前" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=15;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="130" y="645" width="450" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend_manual" value="■ 橙色：手作業・人手依存のタスク（ボトルネック）" style="text;html=1;strokeColor=none;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=middle;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="130" y="685" width="320" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend_problem" value="⚠ 課題・ボトルネック箇所" style="text;html=1;strokeColor=none;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=middle;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="460" y="685" width="220" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="end_yoyakusha" value="退店" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="1700" y="50" width="80" height="60" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
 </mxfile>
