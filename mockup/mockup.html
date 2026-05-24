@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KDS モックアップ — 土鍋飯ぽかぽか</title>
+  <style>
+    /* ===== CSS Custom Properties ===== */
+    :root {
+      --bg-base:        #111110;
+      --bg-header:      #1a1918;
+      --bg-card-new:    #1a3a5c;
+      --bg-card-rsv:    #3a1a5c;
+      --bg-card-done:   #1e1e1e;
+
+      --timer-ok:       #2d6a2d;
+      --timer-warn:     #7a5500;
+      --timer-danger:   #7a1a1a;
+      --timer-ok-text:  #6fcf6f;
+      --timer-warn-text:#f0b429;
+      --timer-danger-text:#f06060;
+
+      --text-primary:   #f0ede8;
+      --text-secondary: #a09890;
+      --text-done:      #555;
+      --border-card:    rgba(255,255,255,0.08);
+      --accent:         #4a9eff;
+
+      --card-width:     300px;
+      --card-gap:       12px;
+      --touch-min:      64px;
+      --radius:         12px;
+    }
+
+    /* ===== Reset ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+
+    body {
+      font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ===== Header ===== */
+    .header {
+      background: var(--bg-header);
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+      height: 60px;
+    }
+
+    .header__title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+      white-space: nowrap;
+    }
+
+    .header__clock {
+      font-size: 20px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.05em;
+      color: var(--accent);
+      margin-right: auto;
+    }
+
+    /* 言語切り替えボタン */
+    .lang-switcher {
+      display: flex;
+      gap: 6px;
+    }
+
+    .lang-btn {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 6px;
+      color: var(--text-secondary);
+      font-size: 13px;
+      padding: 5px 12px;
+      cursor: pointer;
+      transition: background 100ms, color 100ms, border-color 100ms;
+      min-height: 36px;
+    }
+
+    .lang-btn:hover { background: rgba(255,255,255,0.08); color: var(--text-primary); }
+    .lang-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .header__order-count {
+      font-size: 13px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    .header__order-count span {
+      color: var(--text-primary);
+      font-weight: 700;
+      font-size: 16px;
+    }
+
+    /* ===== Card Grid (横スクロール) ===== */
+    .grid-wrapper {
+      flex: 1;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 16px 20px;
+    }
+
+    .card-grid {
+      display: flex;
+      gap: var(--card-gap);
+      height: 100%;
+      align-items: flex-start;
+    }
+
+    /* ===== Order Card ===== */
+    .card {
+      width: var(--card-width);
+      min-width: var(--card-width);
+      background: var(--bg-card-new);
+      border: 1px solid var(--border-card);
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .card--reserved { background: var(--bg-card-rsv); }
+    .card--done     { background: var(--bg-card-done); opacity: 0.5; }
+
+    /* カードヘッダー部 */
+    .card__head {
+      padding: 12px 14px 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .card__head-row1 {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .card__badge {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.15);
+      color: var(--text-primary);
+    }
+    .card--reserved .card__badge {
+      background: rgba(180,120,255,0.3);
+      color: #d4aaff;
+    }
+
+    .card__table {
+      font-size: 30px;
+      font-weight: 800;
+      line-height: 1;
+      color: var(--text-primary);
+    }
+
+    .card__people {
+      font-size: 14px;
+      color: var(--text-secondary);
+      margin-left: auto;
+    }
+
+    .card__head-row2 {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card__time {
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .card__timer {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .card__timer--ok     { background: var(--timer-ok);     color: var(--timer-ok-text); }
+    .card__timer--warn   { background: var(--timer-warn);   color: var(--timer-warn-text); }
+    .card__timer--danger { background: var(--timer-danger); color: var(--timer-danger-text); }
+
+    /* 品目リスト */
+    .card__items {
+      padding: 10px 14px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+    }
+
+    .item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      min-height: var(--touch-min);
+      justify-content: center;
+      transition: background 100ms;
+      -webkit-user-select: none;
+      user-select: none;
+      touch-action: manipulation;
+    }
+    .item:hover { background: rgba(255,255,255,0.06); }
+    .item:active { background: rgba(255,255,255,0.12); }
+
+    .item__row {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .item__name {
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--text-primary);
+      line-height: 1.2;
+    }
+
+    .item__qty {
+      font-size: 16px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .item__option {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    /* 完了状態 */
+    .item--done .item__name,
+    .item--done .item__qty {
+      text-decoration: line-through;
+      color: var(--text-done);
+    }
+    .item--done .item__option { color: var(--text-done); }
+
+    /* 全完了カードの完了ラベル */
+    .card__done-label {
+      text-align: center;
+      padding: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      letter-spacing: 0.08em;
+      display: none;
+    }
+    .card--done .card__done-label { display: block; }
+    .card--done .card__items { opacity: 0.4; }
+
+    /* ===== Empty State ===== */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-secondary);
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ===== Header ===== -->
+<header class="header">
+  <div class="header__title">🍲 土鍋飯ぽかぽか</div>
+  <div class="header__clock" id="clock">--:--:--</div>
+  <div class="header__order-count">
+    対応中: <span id="active-count">0</span>
+  </div>
+  <div class="lang-switcher">
+    <button class="lang-btn" data-lang="ja">日本語</button>
+    <button class="lang-btn" data-lang="ne">नेपाली</button>
+    <button class="lang-btn" data-lang="zh">繁體中文</button>
+  </div>
+</header>
+
+<!-- ===== Card Grid ===== -->
+<div class="grid-wrapper">
+  <div class="card-grid" id="card-grid"></div>
+</div>
+
+<script>
+// ============================================================
+// 多言語ラベル
+// ============================================================
+const I18N = {
+  ja: {
+    new: '新規', reserved: '予約',
+    people: '名', received: '受付',
+    elapsed: '経過', done: '完了',
+    allDone: '✓ 完了',
+    noOrders: 'オーダーなし',
+    minUnit: '分',
+  },
+  ne: {
+    new: 'नयाँ', reserved: 'आरक्षण',
+    people: 'जना', received: 'प्राप्त',
+    elapsed: 'बितेको', done: 'पूर्ण',
+    allDone: '✓ पूर्ण',
+    noOrders: 'अर्डर छैन',
+    minUnit: 'मि',
+  },
+  zh: {
+    new: '新訂', reserved: '預約',
+    people: '人', received: '接單',
+    elapsed: '經過', done: '完成',
+    allDone: '✓ 完成',
+    noOrders: '目前無訂單',
+    minUnit: '分',
+  },
+};
+
+// ============================================================
+// 言語初期化
+// ============================================================
+let currentLang = localStorage.getItem('kds_lang') || 'ja';
+
+function applyLangButtons() {
+  document.querySelectorAll('.lang-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.lang === currentLang);
+  });
+}
+
+document.querySelectorAll('.lang-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentLang = btn.dataset.lang;
+    localStorage.setItem('kds_lang', currentLang);
+    applyLangButtons();
+    renderCards();
+  });
+});
+
+applyLangButtons();
+
+// ============================================================
+// モックデータ
+// ============================================================
+const now = Date.now();
+const min = 60_000;
+
+window.KDS_ORDERS = [
+  {
+    id: 'ord-001', table: 'A3', type: 'new',
+    start: now - 2 * min, people: 2,
+    items: [
+      { name: '土鍋ご飯（白米）', qty: 2, options: '', done: false },
+      { name: '豚角煮トッピング', qty: 1, options: '辛さ控えめ', done: false },
+    ],
+  },
+  {
+    id: 'ord-002', table: 'B1', type: 'reserved',
+    start: now - 7 * min, people: 4,
+    items: [
+      { name: '土鍋ご飯（白米）', qty: 3, options: '', done: false },
+      { name: '土鍋ご飯（玄米）', qty: 1, options: '', done: false },
+      { name: 'サイドサラダ', qty: 4, options: 'ドレッシング別添え', done: false },
+    ],
+  },
+  {
+    id: 'ord-003', table: 'C2', type: 'new',
+    start: now - 12 * min, people: 3,
+    items: [
+      { name: '土鍋ご飯（白米）', qty: 3, options: '', done: false },
+      { name: '唐揚げ', qty: 2, options: '', done: false },
+    ],
+  },
+  {
+    id: 'ord-004', table: 'A1', type: 'new',
+    start: now - 0.5 * min, people: 1,
+    items: [
+      { name: 'ランチセット', qty: 1, options: '卵焼き追加', done: false },
+    ],
+  },
+  {
+    id: 'ord-005', table: 'D4', type: 'reserved',
+    start: now - 5 * min, people: 2,
+    items: [
+      { name: '土鍋ご飯（白米）', qty: 2, options: '', done: false },
+      { name: 'ウーロン茶', qty: 2, options: '', done: false },
+    ],
+  },
+];
+
+// ============================================================
+// 状態管理（LocalStorage）
+// ============================================================
+function loadDoneState() {
+  try { return JSON.parse(localStorage.getItem('kds_done') || '{}'); }
+  catch { return {}; }
+}
+function saveDoneState(state) {
+  localStorage.setItem('kds_done', JSON.stringify(state));
+}
+
+let doneState = loadDoneState();
+
+function getItemDone(orderId, itemIdx) {
+  return doneState[orderId + '_' + itemIdx] ?? false;
+}
+function toggleItemDone(orderId, itemIdx) {
+  const key = orderId + '_' + itemIdx;
+  doneState[key] = !doneState[key];
+  saveDoneState(doneState);
+}
+
+// ============================================================
+// 時間ユーティリティ
+// ============================================================
+function elapsedMinutes(startMs) {
+  return Math.floor((Date.now() - startMs) / 60_000);
+}
+function timerClass(mins) {
+  if (mins < 5)  return 'ok';
+  if (mins < 10) return 'warn';
+  return 'danger';
+}
+function fmtTime(ms) {
+  const d = new Date(ms);
+  return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+
+// ============================================================
+// レンダリング
+// ============================================================
+function renderCards() {
+  const L = I18N[currentLang];
+  const grid = document.getElementById('card-grid');
+  const orders = window.KDS_ORDERS || [];
+
+  const activeCount = orders.filter(o =>
+    o.items.some((_, i) => !getItemDone(o.id, i))
+  ).length;
+  document.getElementById('active-count').textContent = activeCount;
+
+  if (orders.length === 0) {
+    grid.innerHTML = '<div class="empty-state">' + L.noOrders + '</div>';
+    return;
+  }
+
+  grid.innerHTML = orders.map(order => {
+    const mins   = elapsedMinutes(order.start);
+    const tc     = timerClass(mins);
+    const allDone = order.items.every((_, i) => getItemDone(order.id, i));
+    const isRsv  = order.type === 'reserved';
+
+    const itemsHtml = order.items.map((item, idx) => {
+      const done = getItemDone(order.id, idx);
+      const optHtml = item.options
+        ? '<div class="item__option">' + item.options + '</div>'
+        : '';
+      return (
+        '<div class="item' + (done ? ' item--done' : '') + '"' +
+        ' data-order="' + order.id + '" data-idx="' + idx + '"' +
+        ' role="button" tabindex="0" aria-pressed="' + done + '">' +
+        '<div class="item__row">' +
+        '<span class="item__name">' + item.name + '</span>' +
+        '<span class="item__qty">× ' + item.qty + '</span>' +
+        '</div>' +
+        optHtml +
+        '</div>'
+      );
+    }).join('');
+
+    return (
+      '<div class="card' +
+      (isRsv ? ' card--reserved' : '') +
+      (allDone ? ' card--done' : '') + '">' +
+      '<div class="card__head">' +
+      '<div class="card__head-row1">' +
+      '<span class="card__badge">' + (isRsv ? L.reserved : L.new) + '</span>' +
+      '<span class="card__table">' + order.table + '</span>' +
+      '<span class="card__people">' + order.people + L.people + '</span>' +
+      '</div>' +
+      '<div class="card__head-row2">' +
+      '<span class="card__time">' + L.received + ' ' + fmtTime(order.start) + '</span>' +
+      '<span class="card__timer card__timer--' + tc + '">⏱ ' + mins + L.minUnit + '</span>' +
+      '</div>' +
+      '</div>' +
+      '<div class="card__items">' + itemsHtml + '</div>' +
+      '<div class="card__done-label">' + L.allDone + '</div>' +
+      '</div>'
+    );
+  }).join('');
+
+  // タップ／クリックイベント
+  grid.querySelectorAll('.item').forEach(el => {
+    el.addEventListener('click', () => {
+      toggleItemDone(el.dataset.order, parseInt(el.dataset.idx, 10));
+      renderCards();
+    });
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); }
+    });
+  });
+}
+
+// ============================================================
+// 時計
+// ============================================================
+function updateClock() {
+  const d = new Date();
+  document.getElementById('clock').textContent =
+    String(d.getHours()).padStart(2,'0') + ':' +
+    String(d.getMinutes()).padStart(2,'0') + ':' +
+    String(d.getSeconds()).padStart(2,'0');
+}
+
+// ============================================================
+// 起動
+// ============================================================
+updateClock();
+renderCards();
+setInterval(updateClock, 1000);
+setInterval(renderCards, 1000);  // 1秒ポーリング（timer更新 & KDS_ORDERS監視）
+</script>
+
+</body>
+</html>
