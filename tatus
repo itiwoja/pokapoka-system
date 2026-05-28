@@ -1,0 +1,122 @@
+[33mcommit 3db2b80c4be85996399cb79e066cb9a81ff8f1a7[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mfeature/deshup/KVS[m[33m, [m[1;31morigin/feature/deshup/KVS[m[33m, [m[1;32mfeature/mockup/dishup-ui[m[33m)[m
+Merge: 743d156 c6b8098
+Author: 一誠_女 <california.n31592@gmail.com>
+Date:   Thu May 28 13:47:41 2026 +0900
+
+    Merge branch 'feature/mockup/dishup-ui' of https://github.com/itiwoja/pokapoka-system into feature/mockup/dishup-ui
+
+[33mcommit 743d15683596c59d248bdac5dab0618f1e22074a[m
+Merge: 0c11f14 3bd8786
+Author: 一誠_女 <california.n31592@gmail.com>
+Date:   Thu May 28 13:47:23 2026 +0900
+
+    mainをマージ
+
+[33mcommit c6b8098f354d2402c7dc95d4c74d2681c92b514d[m[33m ([m[1;31morigin/feature/mockup/dishup-ui[m[33m)[m
+Author: 村上壱基 <1kki.mrkm22@gmail.com>
+Date:   Tue May 26 14:41:07 2026 +0900
+
+    ボタンを押したときにバイブレーションが発生する機能を追加
+
+[33mcommit 0c11f14ff34ffc1b82381df0ceaddec75960ad08[m
+Author: 一誠_女 <california.n31592@gmail.com>
+Date:   Tue May 26 13:51:32 2026 +0900
+
+    モックアップ画面のHTMLを作成
+
+[33mcommit e34faedb75865bd2fdd0db54b5e73516dfeb14f1[m
+Author: 村上壱基 <1kki.mrkm22@gmail.com>
+Date:   Tue May 26 09:28:44 2026 +0900
+
+    cssを適応させた
+
+[33mcommit eeb549f01b8303abad3b55e59cd245ad8e7f5ecd[m
+Author: 村上壱基 <1kki.mrkm22@gmail.com>
+Date:   Sun May 24 19:56:38 2026 +0900
+
+    モックアップ画面を作成
+
+[33mcommit 3bd87861df73b627da822eb7f913b0aa92541c14[m[33m ([m[1;31morigin/docs[m[33m)[m
+Author: 村上壱基 <1kki.mrkm22@gmail.com>
+Date:   Sun May 24 00:24:22 2026 +0900
+
+    docs:調査エージェントに作らせたドキュメントを追加（あんまり当てにしないで）
+
+[33mcommit 6f7f89da3bd2a5ca0e6833b405c8e53b702477b4[m
+Author: peek_a_boo0423 <california.n31592@gmail.com>
+Date:   Sat May 23 14:24:05 2026 +0000
+
+    docs: KDS画面生成プロンプトを追加
+
+[33mcommit 6eab7ea0ee8ba66087dc26dfbce291dd65a4f38f[m
+Author: 村上壱基 <1kki.mrkm22@gmail.com>
+Date:   Sat May 23 23:15:19 2026 +0900
+
+    chore: .claude/をgitignoreに追加
+
+[33mcommit 93bca0784831e16852bf5ec98828016d97c48d26[m
+Author: 村上壱基 <1kki.mrkm22@gmail.com>
+Date:   Fri May 22 09:36:23 2026 +0900
+
+    docs:少々の更新
+
+[33mcommit 1e49a4c890d6fbd01c44c3711c8d9d9f3b1d3afb[m
+Author: 村上壱基 <1kki.mrkm22@gmail.com>
+Date:   Thu May 21 18:16:19 2026 +0900
+
+    docs:もろもろのドキュメントです
+
+[33mcommit 4c06151359352adf52492312b6f104bf2d3aaaf7[m
+Author: 村上壱基 <1kki.mrkm22@gmail.com>
+Date:   Thu May 21 16:42:22 2026 +0900
+
+    ディレクトリ構造を整理
+
+[33mcommit e2c76ab2e736116d628b1379c32e6fa4b543670b[m
+Merge: 134c9d9 09ae04b
+Author: 村上壱基 <1kki.mrkm22@gmail.com>
+Date:   Thu May 21 16:39:13 2026 +0900
+
+    Merge branch 'docs' of https://github.com/itiwoja/pokapoka-system into docs
+
+[33mcommit 134c9d9cf4368c4f71828d17348a2cb721ddc864[m
+Merge: b996b79 0f6a434
+Author: IKKI MURAKAMI <1kki.mrkm22@gmail.com>
+Date:   Thu May 21 14:23:56 2026 +0900
+
+    Merge pull request #1 from tairaryunosuke1102/docs
+    
+    要件定義書（仮）を作成
+
+[33mcommit 09ae04b6f65beb40916e87707b7e86a81d45ec5e[m
+Merge: e8c7942 7a7225d
+Author: IKKI MURAKAMI <1kki.mrkm22@gmail.com>
+Date:   Thu May 21 14:23:56 2026 +0900
+
+    Merge pull request #1 from tairaryunosuke1102/docs
+    
+    要件定義書（仮）を作成
+
+[33mcommit 0f6a434a6e81ce356470885acc873f63aa85a2fe[m
+Author: tairaryunosuke1102 <tairaryunosuke658@gmail.com>
+Date:   Tue May 19 15:50:36 2026 +0900
+
+    要件定義書（仮）を作成
+
+[33mcommit 7a7225dbeb779fdee5ac3aad1ad4f88f48e385db[m
+Author: tairaryunosuke1102 <tairaryunosuke658@gmail.com>
+Date:   Tue May 19 15:50:36 2026 +0900
+
+    要件定義書（仮）を作成
+
+[33mcommit b996b79bfc2de705e5d57f4b1b4665abf268a936[m
+Author: 村上壱基 <1kki.mrkm22@gmail.com>
+Date:   Sun May 17 17:39:00 2026 +0900
+
+    docs: 全ドキュメントを追加
+
+[33mcommit e8c794229401542a36ec0350201990811d3fcb24[m
+Author: 村上壱基 <1kki.mrkm22@gmail.com>
+Date:   Sun May 17 17:39:00 2026 +0900
+
+    docs: 全ドキュメントを追加
