@@ -1,17 +1,17 @@
 /* ===== CSS Custom Properties ===== */
 :root {
-  --bg-base:        #111110;
-  --bg-header:      #1a1918;
-  --bg-card-new:    #1a3a5c;
-  --bg-card-rsv:    #3a1a5c;
-  --bg-card-done:   #1e1e1e;
+  --bg-base:           #111110;
+  --bg-header:         #1a1918;
+  --bg-card-new:       #1a3a5c;
+  --bg-card-rsv:       #3a1a5c;
+  --bg-card-done:      #1e1e1e;
 
-  --timer-ok:       #2d6a2d;
-  --timer-warn:     #7a5500;
-  --timer-danger:   #7a1a1a;
-  --timer-ok-text:  #6fcf6f;
-  --timer-warn-text:#f0b429;
-  --timer-danger-text:#f06060;
+  --timer-ok:          #2d6a2d;
+  --timer-warn:        #7a5500;
+  --timer-danger:      #7a1a1a;
+  --timer-ok-text:     #6fcf6f;
+  --timer-warn-text:   #f0b429;
+  --timer-danger-text: #f06060;
 
   --text-primary:   #f0ede8;
   --text-secondary: #a09890;
@@ -19,10 +19,10 @@
   --border-card:    rgba(255,255,255,0.08);
   --accent:         #4a9eff;
 
-  --card-width:     300px;
-  --card-gap:       12px;
-  --touch-min:      64px;
-  --radius:         12px;
+  --card-width:  300px;
+  --card-gap:    12px;
+  --touch-min:   64px;
+  --radius:      12px;
 }
 
 /* ===== Reset ===== */
@@ -66,7 +66,7 @@ body {
   margin-right: auto;
 }
 
-/* 言語切り替えボタン */
+/* ===== 言語切り替えボタン ===== */
 .lang-switcher {
   display: flex;
   gap: 6px;
@@ -83,7 +83,6 @@ body {
   transition: background 100ms, color 100ms, border-color 100ms;
   min-height: 36px;
 }
-
 .lang-btn:hover { background: rgba(255,255,255,0.08); color: var(--text-primary); }
 .lang-btn.active {
   background: var(--accent);
@@ -92,6 +91,23 @@ body {
   font-weight: 600;
 }
 
+/* ===== バイブテストボタン ===== */
+.vib-test-btn {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: background 100ms, color 100ms;
+  min-height: 36px;
+  white-space: nowrap;
+}
+.vib-test-btn:hover  { background: rgba(255,255,255,0.08); color: var(--text-primary); }
+.vib-test-btn:active { background: rgba(255,255,255,0.16); }
+
+/* ===== 対応中カウント ===== */
 .header__order-count {
   font-size: 13px;
   color: var(--text-secondary);
@@ -103,7 +119,7 @@ body {
   font-size: 16px;
 }
 
-/* ===== Card Grid (横スクロール) ===== */
+/* ===== Card Grid（横スクロール）===== */
 .grid-wrapper {
   flex: 1;
   overflow-x: auto;
@@ -130,11 +146,10 @@ body {
   overflow: hidden;
   flex-shrink: 0;
 }
-
 .card--reserved { background: var(--bg-card-rsv); }
 .card--done     { background: var(--bg-card-done); opacity: 0.5; }
 
-/* カードヘッダー部 */
+/* カードヘッダー */
 .card__head {
   padding: 12px 14px 10px;
   border-bottom: 1px solid rgba(255,255,255,0.08);
@@ -260,7 +275,7 @@ body {
 }
 .item--done .item__option { color: var(--text-done); }
 
-/* 全完了カードの完了ラベル */
+/* 全完了カードのラベル */
 .card__done-label {
   text-align: center;
   padding: 10px;
@@ -281,4 +296,28 @@ body {
   justify-content: center;
   color: var(--text-secondary);
   font-size: 18px;
+}
+
+/* ===== トースト通知 ===== */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(16px);
+  background: rgba(30,30,30,0.95);
+  color: var(--text-primary);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 10px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 250ms, transform 250ms;
+  white-space: nowrap;
+  z-index: 100;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }

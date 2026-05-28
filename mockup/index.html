@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>KDS モックアップ — 土鍋飯ぽかぽか</title>
-  <link rel="stylesheet" href="mockup.css" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
@@ -20,6 +20,7 @@
     <button class="lang-btn" data-lang="ne">नेपाली</button>
     <button class="lang-btn" data-lang="zh">繁體中文</button>
   </div>
+  <button class="vib-test-btn" id="vib-test">📳 バイブテスト</button>
 </header>
 
 <!-- ===== Card Grid ===== -->
@@ -27,6 +28,9 @@
   <div class="card-grid" id="card-grid"></div>
 </div>
 
-<script src="mockup.js"></script>
+<!-- ===== トースト通知 ===== -->
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
 </body>
 </html>
