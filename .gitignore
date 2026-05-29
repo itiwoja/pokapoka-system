@@ -1,2 +1,5 @@
 # Claude Code local settings
 .claude/
+
+# Claude Code session coordination state (coord MCP) — machine-specific, auto-generated
+.claude-coord/
