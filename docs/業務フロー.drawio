@@ -1,98 +1,146 @@
-<mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/28.0.6 Chrome/138.0.7204.100 Electron/37.2.3 Safari/537.36" version="28.0.6">
-  <diagram id="7sNd6V0APw5lIrdST-IJ" name="ページ1">
-    <mxGraphModel dx="3304" dy="1754" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="700" math="0" shadow="0" adaptiveColors="auto">
-      <root>
-        <mxCell id="0" />
-        <mxCell id="1" parent="0" />
-        <mxCell id="pool" value="プロセス名（プール）" style="swimlane;html=1;startSize=30;horizontal=0;fontSize=12;fontStyle=1;fillColor=#ffffff;strokeColor=#000000;" parent="1" vertex="1">
-          <mxGeometry x="40" y="40" width="1485" height="1680" as="geometry" />
-        </mxCell>
-        <mxCell id="lane1" value="真理子さん" style="swimlane;html=1;startSize=30;horizontal=0;fontSize=11;fillColor=none;strokeColor=#000000;" parent="pool" vertex="1">
-          <mxGeometry x="30" width="1450" height="280" as="geometry" />
-        </mxCell>
-        <mxCell id="end" value="終了" style="ellipse;html=1;shape=mxgraph.bpmn.shape;perimeter=ellipsePerimeter;symbol=general;outline=end;background=none;fillColor=#ffffff;strokeColor=#000000;fontSize=10;strokeWidth=3;" parent="lane1" vertex="1">
-          <mxGeometry x="1330" y="150" width="40" height="40" as="geometry" />
-        </mxCell>
-        <mxCell id="EXzdCF5fAyQyqsJm_Dq--2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="lane1" source="task1" target="EXzdCF5fAyQyqsJm_Dq--1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="task1" value="予約を確認する" style="rounded=1;whiteSpace=wrap;html=1;arcSize=15;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" parent="lane1" vertex="1">
-          <mxGeometry x="140" y="140" width="120" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="EXzdCF5fAyQyqsJm_Dq--1" value="予約を転記する" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lane1">
-          <mxGeometry x="290" y="140" width="120" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="lane2" value="予約転機システム" style="swimlane;html=1;startSize=30;horizontal=0;fontSize=11;fillColor=none;strokeColor=#000000;" parent="pool" vertex="1">
-          <mxGeometry x="30" y="560" width="1450" height="280" as="geometry" />
-        </mxCell>
-        <mxCell id="start" value="予約発生" style="ellipse;html=1;shape=mxgraph.bpmn.shape;perimeter=ellipsePerimeter;symbol=general;outline=standard;background=none;fillColor=#ffffff;strokeColor=#000000;fontSize=10;" parent="lane2" vertex="1">
-          <mxGeometry x="50" y="70" width="90" height="90" as="geometry" />
-        </mxCell>
-        <mxCell id="EXzdCF5fAyQyqsJm_Dq--3" value="予約がDBに保存される" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lane2">
-          <mxGeometry x="340" y="110" width="120" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;endFill=1;strokeColor=#000000;rounded=0;" parent="pool" source="start" target="task1" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="EXzdCF5fAyQyqsJm_Dq--13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="pool" source="EXzdCF5fAyQyqsJm_Dq--1" target="EXzdCF5fAyQyqsJm_Dq--3">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="EXzdCF5fAyQyqsJm_Dq--23" value="厨房（料理を作る人）" style="swimlane;html=1;startSize=30;horizontal=0;fontSize=11;fillColor=none;strokeColor=#000000;" vertex="1" parent="pool">
-          <mxGeometry x="30" y="280" width="1450" height="280" as="geometry" />
-        </mxCell>
-        <mxCell id="EXzdCF5fAyQyqsJm_Dq--28" value="見ながら調理" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="EXzdCF5fAyQyqsJm_Dq--23">
-          <mxGeometry x="750" y="140" width="120" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="EXzdCF5fAyQyqsJm_Dq--31" value="座席DB" style="swimlane;html=1;startSize=30;horizontal=0;fontSize=11;fillColor=none;strokeColor=#000000;" vertex="1" parent="pool">
-          <mxGeometry x="30" y="1120" width="1450" height="280" as="geometry" />
-        </mxCell>
-        <mxCell id="EXzdCF5fAyQyqsJm_Dq--5" value="デシャップ管理システム" style="swimlane;html=1;startSize=30;horizontal=0;fontSize=11;fillColor=none;strokeColor=#000000;" vertex="1" parent="1">
-          <mxGeometry x="70" y="880" width="1450" height="280" as="geometry" />
-        </mxCell>
-        <mxCell id="EXzdCF5fAyQyqsJm_Dq--11" value="表示&lt;br&gt;・メニュー&lt;div&gt;・来店時間&lt;/div&gt;&lt;div&gt;・オプション&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="EXzdCF5fAyQyqsJm_Dq--5">
-          <mxGeometry x="390" y="40" width="120" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="EXzdCF5fAyQyqsJm_Dq--21" value="&lt;div&gt;既存の予約に卓番号を追加表示&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="EXzdCF5fAyQyqsJm_Dq--5">
-          <mxGeometry x="700" y="40" width="120" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="EXzdCF5fAyQyqsJm_Dq--12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="EXzdCF5fAyQyqsJm_Dq--3" target="EXzdCF5fAyQyqsJm_Dq--11">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="EXzdCF5fAyQyqsJm_Dq--14" value="お客様" style="swimlane;html=1;startSize=30;horizontal=0;fontSize=11;fillColor=none;strokeColor=#000000;" vertex="1" parent="1">
-          <mxGeometry x="70" y="1440" width="1450" height="280" as="geometry" />
-        </mxCell>
-        <mxCell id="EXzdCF5fAyQyqsJm_Dq--20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="EXzdCF5fAyQyqsJm_Dq--14" source="EXzdCF5fAyQyqsJm_Dq--16">
-          <mxGeometry relative="1" as="geometry">
-            <mxPoint x="680" y="100" as="targetPoint" />
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="EXzdCF5fAyQyqsJm_Dq--16" value="ご来店" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="EXzdCF5fAyQyqsJm_Dq--14">
-          <mxGeometry x="440" y="70" width="120" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="EXzdCF5fAyQyqsJm_Dq--18" value="座席でタブレットを操作" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="EXzdCF5fAyQyqsJm_Dq--14">
-          <mxGeometry x="630" y="70" width="120" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="EXzdCF5fAyQyqsJm_Dq--17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="EXzdCF5fAyQyqsJm_Dq--11" target="EXzdCF5fAyQyqsJm_Dq--16">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="520" y="1105" />
-              <mxPoint x="570" y="1105" />
-              <mxPoint x="570" y="1230" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="EXzdCF5fAyQyqsJm_Dq--22" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="EXzdCF5fAyQyqsJm_Dq--18" target="EXzdCF5fAyQyqsJm_Dq--21">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="760" y="1105" />
-              <mxPoint x="830" y="1105" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="EXzdCF5fAyQyqsJm_Dq--30" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="EXzdCF5fAyQyqsJm_Dq--21" target="EXzdCF5fAyQyqsJm_Dq--28">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-      </root>
-    </mxGraphModel>
-  </diagram>
+<mxfile host="65bd71144e">
+    <diagram id="pokapopka-flow-v2" name="業務フロー骨組み">
+        <mxGraphModel dx="4128" dy="3304" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="pool" value="土鍋飯ぽかぽか オーダー業務フロー（骨組み・2026-06-04）" style="swimlane;html=1;startSize=30;horizontal=0;fontSize=14;fontStyle=1;fillColor=#ffffff;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="40" width="2120" height="1260" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_mariko" value="真理子さん（予約受付）" style="swimlane;html=1;startSize=30;horizontal=0;fontSize=12;fillColor=none;strokeColor=#000000;" parent="pool" vertex="1">
+                    <mxGeometry x="30" width="2090" height="210" as="geometry"/>
+                </mxCell>
+                <mxCell id="ev_resv" value="予約発生" style="ellipse;html=1;shape=mxgraph.bpmn.shape;perimeter=ellipsePerimeter;symbol=general;outline=standard;background=none;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" parent="lane_mariko" vertex="1">
+                    <mxGeometry x="60" y="75" width="60" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="t_resv_confirm" value="予約を確認し&#xa;人数を把握する" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" parent="lane_mariko" vertex="1">
+                    <mxGeometry x="180" y="70" width="150" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="t_seat_fix" value="人数に合う席を&#xa;確定する" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" parent="lane_mariko" vertex="1">
+                    <mxGeometry x="390" y="70" width="150" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="gw_menu" value="事前メニュー&#xa;あり？" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" parent="lane_mariko" vertex="1">
+                    <mxGeometry x="600" y="65" width="90" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_seatgui" value="座席管理GUI（ホール）※新規スコープ" style="swimlane;html=1;startSize=30;horizontal=0;fontSize=12;fillColor=#f5f5f5;strokeColor=#000000;" parent="pool" vertex="1">
+                    <mxGeometry x="30" y="210" width="2090" height="210" as="geometry"/>
+                </mxCell>
+                <mxCell id="t_lock" value="予約席をロック&#xa;（新規客の割当不可）&#xa;例：12:00予約→11:10〜確保" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" parent="lane_seatgui" vertex="1">
+                    <mxGeometry x="390" y="65" width="200" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="t_lock_note" value="席ロックは可動&#xa;（別席へ付け替え可）" style="text;html=1;align=center;verticalAlign=middle;fontSize=10;fontStyle=2;fillColor=none;strokeColor=none;" parent="lane_seatgui" vertex="1">
+                    <mxGeometry x="620" y="80" width="180" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t_assign" value="来店時：着席した席を&#xa;座席DBで着席中にする" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" parent="lane_seatgui" vertex="1">
+                    <mxGeometry x="1180" y="65" width="200" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_db" value="座席DB" style="swimlane;html=1;startSize=30;horizontal=0;fontSize=12;fillColor=none;strokeColor=#000000;" parent="pool" vertex="1">
+                    <mxGeometry x="30" y="420" width="2090" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="db_store" value="席ごとの状態を保持&#xa;空き / 予約ロック中 / 着席中&#xa;＋ 紐付け予約ID（更新可能）" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" parent="lane_db" vertex="1">
+                    <mxGeometry x="430" y="35" width="180" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_dessup" value="デシャップ管理システム（厨房）" style="swimlane;html=1;startSize=30;horizontal=0;fontSize=12;fillColor=none;strokeColor=#000000;" parent="pool" vertex="1">
+                    <mxGeometry x="30" y="600" width="2090" height="240" as="geometry"/>
+                </mxCell>
+                <mxCell id="t_stock" value="予約ストックに表示&#xa;（メニュー確定の予約のみ・紫）" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" parent="lane_dessup" vertex="1">
+                    <mxGeometry x="620" y="40" width="200" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="t_prompt" value="来店30分前に&#xa;「炊いて！」プロンプト" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" parent="lane_dessup" vertex="1">
+                    <mxGeometry x="620" y="140" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="gw_action" value="スタッフが&#xa;着手？" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" parent="lane_dessup" vertex="1">
+                    <mxGeometry x="880" y="145" width="90" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="t_active" value="進行中（メイン）へ移動&#xa;＝炊飯着手" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" parent="lane_dessup" vertex="1">
+                    <mxGeometry x="1030" y="40" width="180" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="t_cook" value="経過時間・コンロを見ながら&#xa;調理する" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" parent="lane_dessup" vertex="1">
+                    <mxGeometry x="1430" y="40" width="180" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="t_done" value="提供後「完了」を押す" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" parent="lane_dessup" vertex="1">
+                    <mxGeometry x="1680" y="40" width="180" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="ev_end" value="提供完了" style="ellipse;html=1;shape=mxgraph.bpmn.shape;perimeter=ellipsePerimeter;symbol=general;outline=end;background=none;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;strokeWidth=3;" parent="lane_dessup" vertex="1">
+                    <mxGeometry x="1920" y="45" width="60" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_guest" value="お客様" style="swimlane;html=1;startSize=30;horizontal=0;fontSize=12;fillColor=none;strokeColor=#000000;" parent="pool" vertex="1">
+                    <mxGeometry x="30" y="840" width="2090" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="t_visit" value="ご来店" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" parent="lane_guest" vertex="1">
+                    <mxGeometry x="1030" y="70" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="t_order" value="座席のタブレットで注文&#xa;（メニュー未定の予約・新規客）" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" parent="lane_guest" vertex="1">
+                    <mxGeometry x="1430" y="65" width="200" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_hall" value="ホールスタッフ" style="swimlane;html=1;startSize=30;horizontal=0;fontSize=12;fillColor=none;strokeColor=#000000;" parent="pool" vertex="1">
+                    <mxGeometry x="30" y="1040" width="2090" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="t_handover" value="席に案内し、タブレットに&#xa;卓番号を入力して手渡し&#xa;（端末はフリーアドレス）" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" parent="lane_hall" vertex="1">
+                    <mxGeometry x="1180" y="50" width="200" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="f1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;" parent="pool" source="ev_resv" target="t_resv_confirm" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;" parent="pool" source="t_resv_confirm" target="t_seat_fix" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;" parent="pool" source="t_seat_fix" target="gw_menu" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;" parent="pool" source="t_seat_fix" target="t_lock" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;" parent="pool" source="t_lock" target="db_store" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f6" value="あり" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=10;" parent="pool" source="gw_menu" target="t_stock" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f7" value="なし（席ロックのみ／注文は着席後）" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=10;dashed=1;" parent="pool" source="gw_menu" target="t_order" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1590" y="105"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="f8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;" parent="pool" source="t_stock" target="t_prompt" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;" parent="pool" source="t_prompt" target="gw_action" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f10" value="はい" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=10;" parent="pool" source="gw_action" target="t_active" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;" parent="pool" source="t_active" target="t_cook" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;" parent="pool" source="t_cook" target="t_done" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;" parent="pool" source="t_done" target="ev_end" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;" parent="pool" source="t_visit" target="t_handover" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;" parent="pool" source="t_handover" target="t_assign" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;" parent="pool" source="t_handover" target="t_order" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;" parent="pool" source="t_assign" target="db_store" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f18" value="注文がデシャップへ" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=10;" parent="pool" source="t_order" target="t_cook" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="note" value="【骨組み版・2026-06-04】今日の打合せ決定を反映した主要フローのみ。&#xa;・端末はフリーアドレス→卓番号はホールが手渡し時に入力&#xa;・予約は予約時点で席確定＋ロック（可動）。座席DBが紐付けの正&#xa;・予約はメニュー有無で2分岐（あり=デシャップ予約ストック／なし=席ロックのみ・注文は着席後）&#xa;・炊飯先行着手は方式C（30分前プロンプト→スタッフ着手で進行中へ）&#xa;※詳細分岐（新規客の導線・ノーショー・席付け替え等）は今後追記" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;darkOpacity=0.05;fillColor=#fff2cc;strokeColor=#d6b656;size=18;fontSize=10;align=left;verticalAlign=top;" parent="pool" vertex="1">
+                    <mxGeometry x="60" y="600" width="500" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
 </mxfile>
