@@ -3,3 +3,10 @@
 
 # Claude Code session coordination state (coord MCP) — machine-specific, auto-generated
 .claude-coord/
+
+# Node.js dependencies / build output (mockup プロジェクト等)
+node_modules
+
+# ローカル環境変数
+.env
+.env.local
