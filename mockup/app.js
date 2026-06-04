@@ -155,10 +155,6 @@ function renderOrders() {
           <div class="divider"></div>
           <div class="items">${itemRows(order.items)}</div>
           <div class="divider"></div>
-          <div class="meta-row">
-            <span class="guest-note">${escapeHtml(order.customerName)} / \u5927\u4eba${order.adultCount} \u5b50\u4f9b${order.childCount}</span>
-          </div>
-          <div class="divider"></div>
           <button class="hold-button" data-action="complete" data-id="${order.id}">
             <span class="fill"></span>
             <span class="label">\u9577\u62bc\u3057\u3067\u5b8c\u4e86</span>
