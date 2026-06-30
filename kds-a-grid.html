@@ -1,0 +1,2231 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>KDS - 土鍋飯ぽかぽか厨房</title>
+<style>
+  /* ============================================================
+     デザイントークン (最新会議仕様 2026-06-04 のカラー決定を反映 / 階層はサイズ・太さ・余白で作る)
+     方向性: キッチン工業 × エディトリアル。卓番号をワードマーク的に大きく、
+     経過時間は数値主役のモノスペースで「データ」として見せる。
+
+     カラー方針 (旧PRDの blue/purple を上書き):
+       新規 = 水色系 (低彩度のダークシアン)、予約 = 黄色系 (低彩度のダークゴールド)。
+       赤はカード背景に使わない = 経過時間警告(10分+)専用。
+       予約の黄色と「経過5-9分=琥珀」が混同しないよう、
+       カード背景は低彩度・暗め、経過バッジは高彩度＋数値で明確に区別する。
+       ダーク基調(#111110)は維持。near-white 文字で本文 4.5:1 を確保 (AA)。
+     ============================================================ */
+  :root {
+    /* ベースカラー (ダーク基調維持) */
+    --bg-base:        #111110;
+    /* 種別カラー (最新決定): 新規=水色系(淡め=低彩度) / 予約=黄色系(淡め=低彩度) */
+    --card-new:       #16323d;  /* 新規 (水色系 / 低彩度ダークシアン) — 旧 #1a3a5c から変更 */
+    --card-reserved:  #3a3416;  /* 予約 (黄色系 / 低彩度ダークゴールド) — 旧 #3a1a5c から変更 */
+    --elapsed-ok:     #2d6a2d;  /* 0-4分 緑 */
+    --elapsed-warn:   #7a5500;  /* 5-9分 琥珀 (高彩度バッジ。予約カードの低彩度黄色とは別物) */
+    --elapsed-alert:  #7a1a1a;  /* 10分以上 赤 (= 赤はここ専用。カード背景には使わない) */
+    --text-primary:   #f0ede8;
+    --text-secondary: #a09890;
+
+    /* 派生トークン (指定色から導出。新規追加色は使わない) */
+    --bg-raise:       #1c1b19;  /* ヘッダー帯: 背景より僅かに明るい中立色 */
+    --hairline:       rgba(240,237,232,0.14);
+    --hairline-soft:  rgba(240,237,232,0.08);
+    --card-new-edge:      #2a5a6b;  /* 水色系の縁 (種別を縁の色でも示す) */
+    --card-reserved-edge: #6b5e2a;  /* 黄色系の縁 */
+
+    /* 非均一な余白リズム (均一グリッド感を避ける) */
+    --gap-card:   14px;   /* >=12px 要件 */
+    --pad-card:   16px;
+    --pad-shell:  18px;
+
+    --focus: #f0ede8;
+
+    /* フォントスタック: OS標準のみ (CDN不可)。和文 + ネパール(Devanagari) + 繁体中文グリフを OS 前提で吸収 */
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN",
+               "Noto Sans CJK JP", "Noto Sans Devanagari", "Noto Sans", "Yu Gothic", Meiryo,
+               "Microsoft JhengHei", "PingFang TC", "Noto Sans CJK TC", sans-serif;
+    --font-num: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", "DejaVu Sans Mono",
+                Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    -webkit-text-size-adjust: 100%;
+    overscroll-behavior: none;
+  }
+
+  /* 微グレイン: のっぺり防止。トークン色のみで作る (画像/外部参照ゼロ) */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.5;
+    background-image:
+      radial-gradient(rgba(240,237,232,0.025) 1px, transparent 1px);
+    background-size: 3px 3px;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ============================================================ ヘッダー (最小化) */
+  header {
+    position: relative;
+    z-index: 2;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: baseline;
+    gap: 20px;
+    padding: 12px var(--pad-shell);
+    background: linear-gradient(180deg, var(--bg-raise), var(--bg-base));
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    min-width: 0;
+  }
+  /* ワードマーク (絵文字/自動生成アイコンは使わない) */
+  .brand .mark {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+  .brand .mark .accent { color: var(--text-secondary); font-weight: 600; }
+  .brand .sub {
+    font-size: 12px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .clock {
+    margin-left: auto;
+    font-family: var(--font-num);
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+  }
+  .clock .sec { color: var(--text-secondary); font-size: 18px; }
+
+  /* 権限モード切替 (キッチン=全操作可 / ホール=読取専用+予約入力のみ) */
+  .mode-switch {
+    display: flex;
+    gap: 6px;
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+  .mode-btn {
+    min-width: 88px;
+    min-height: 44px;
+    padding: 6px 14px;
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--font-ui);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    cursor: pointer;
+    transition: background-color .12s ease, color .12s ease, border-color .12s ease;
+  }
+  .mode-btn:hover  { color: var(--text-primary); background: rgba(240,237,232,0.06); }
+  .mode-btn:active { transform: translateY(1px); }
+  .mode-btn[aria-pressed="true"] {
+    color: var(--bg-base);
+    border-color: var(--text-primary);
+    background: var(--text-primary);
+  }
+  /* 印刷自動化トグル */
+  .print-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 4px 12px;
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    flex: 0 0 auto;
+    transition: color .12s ease, border-color .12s ease;
+  }
+  .print-toggle:hover { color: var(--text-primary); }
+  .print-toggle .dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 1.5px solid var(--text-secondary);
+    background: transparent;
+    transition: background-color .12s ease, border-color .12s ease;
+  }
+  .print-toggle[aria-pressed="true"] { color: var(--text-primary); border-color: var(--text-primary); }
+  .print-toggle[aria-pressed="true"] .dot { background: var(--elapsed-ok); border-color: var(--elapsed-ok); }
+
+  .lang-switch {
+    display: flex;
+    gap: 6px;
+    flex: 0 0 auto;
+  }
+  .lang-btn {
+    min-width: 64px;
+    min-height: 44px;
+    padding: 6px 12px;
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--font-ui);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color .12s ease, color .12s ease, border-color .12s ease;
+  }
+  .lang-btn:hover { color: var(--text-primary); border-color: var(--hairline); background: rgba(240,237,232,0.06); }
+  .lang-btn:active { transform: translateY(1px); }
+  .lang-btn[aria-pressed="true"] {
+    color: var(--text-primary);
+    border-color: var(--text-primary);
+    background: rgba(240,237,232,0.12);
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+  /* ============================================================ 2ペインシェル (左=メイン配膳 / 右=予約ストック) */
+  .shell {
+    position: relative;
+    z-index: 1;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: stretch;
+  }
+
+  /* 左 = メイン配膳エリア (折り返しグリッド・縦スクロール) */
+  main {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: var(--pad-shell);
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 折り返し複数列グリッド: メイン領域幅に応じて 300px 列を auto-fill。
+     各カードは自前の高さ (grid-auto-rows:max-content)。新着は末尾(行優先)へ。縦スクロール。 */
+  .board {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 300px);   /* カード幅 280-320px 範囲で固定・複数列 */
+    grid-auto-rows: max-content;
+    gap: var(--gap-card);
+    align-content: start;
+    justify-content: start;
+    height: 100%;
+  }
+
+  /* 空状態ガイド */
+  .empty {
+    display: none;
+    position: absolute;
+    inset: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 24px;
+  }
+  body.is-empty .empty { display: flex; }
+  .empty .big { font-size: 22px; font-weight: 700; color: var(--text-primary); letter-spacing: .02em; }
+  .empty .demo-btn {
+    min-height: 56px;
+    padding: 12px 24px;
+    border: 1px solid var(--text-secondary);
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 17px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color .12s ease, transform .1s ease;
+  }
+  .empty .demo-btn:hover { background: rgba(240,237,232,0.08); }
+  .empty .demo-btn:active { transform: translateY(1px); }
+
+  /* ============================================================ カード */
+  .card {
+    grid-row: span 1;
+    border-radius: 12px;
+    background: var(--card-new);
+    border: 1px solid var(--card-new-edge);
+    /* 奥行き: 均一影でなく 2層。左に種別カラーの太縁で「色を意味で使う」 */
+    box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset, 0 6px 16px rgba(0,0,0,0.45);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    will-change: opacity, transform;
+    animation: cardIn .22s cubic-bezier(.16,1,.3,1);
+  }
+  .card.reserved {
+    background: var(--card-reserved);
+    border-color: var(--card-reserved-edge);
+  }
+  .card.removing {
+    animation: cardOut .3s ease forwards;   /* 全完了 -> 300ms フェードアウト */
+  }
+  @keyframes cardIn  { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+  @keyframes cardOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(.97); } }
+
+  /* カード上段: 卓番号 + 種別 + 人数 */
+  .card-head {
+    padding: 12px var(--pad-card) 10px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "type   people"
+      "table  table";
+    gap: 4px 8px;
+    align-items: center;
+    background: rgba(0,0,0,0.16);
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .badge-type {
+    grid-area: type;
+    justify-self: start;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid currentColor;
+  }
+  .card.new      .badge-type { color: #a9dbe8; }   /* 水色系のラベル tint */
+  .card.reserved .badge-type { color: #e6d49a; }   /* 黄色系のラベル tint */
+
+  .people {
+    grid-area: people;
+    justify-self: end;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+  .people .n { font-family: var(--font-num); font-size: 19px; }
+  .people .unit { color: var(--text-secondary); font-size: 14px; margin-left: 2px; }
+
+  .table-no {
+    grid-area: table;
+    font-size: 30px;            /* 28-32px 要件 */
+    line-height: 1.05;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+  }
+
+  /* 受付時刻 + 経過バッジ (数値 + 背景色の二重通知) */
+  .card-time {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px var(--pad-card);
+    border-bottom: 1px solid var(--hairline-soft);
+    background: rgba(0,0,0,0.22);   /* セカンダリ文字のコントラスト>=4.5:1 を確保 (AA) */
+  }
+  .recv {
+    font-size: 14px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+  .recv .label { letter-spacing: .12em; text-transform: uppercase; font-size: 11px; }
+  .recv .hhmm { font-family: var(--font-num); font-size: 17px; color: var(--text-primary); font-variant-numeric: tabular-nums; margin-left: 6px; }
+
+  .elapsed {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(0,0,0,0.35);
+    background: var(--elapsed-ok);
+    color: #ffffff;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .elapsed.warn  { background: var(--elapsed-warn); }
+  .elapsed.alert { background: var(--elapsed-alert); }
+
+  /* チビ伝プレビューを開く小ボタン */
+  .slip-btn {
+    flex: 0 0 auto;
+    min-width: 44px; min-height: 44px;
+    margin-left: 4px;
+    border-radius: 8px;
+    border: 1px solid var(--hairline);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--font-ui);
+    font-size: 17px; font-weight: 800;
+    cursor: pointer;
+    transition: color .12s ease, border-color .12s ease;
+  }
+  .slip-btn:hover { color: var(--text-primary); border-color: var(--text-primary); }
+  body.mode-hall .slip-btn { display: none; }
+  .elapsed .label { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; opacity: .9; font-weight: 700; }
+  .elapsed .val   { font-family: var(--font-num); font-size: 20px; font-variant-numeric: tabular-nums; }
+  /* 10分超は数値も脈動させ「警告」を強める (色覚に依存しない動き) */
+  .card.lvl-alert .elapsed { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,90,90,0.0); } 50% { box-shadow: 0 0 0 3px rgba(255,90,90,0.35); } }
+
+  /* 品目リスト */
+  .items {
+    padding: 6px 8px 10px;
+    list-style: none;
+    margin: 0;
+    background: rgba(0,0,0,0.22);   /* オプション(セカンダリ色)のコントラスト>=4.5:1 を確保 (AA) */
+    flex: 1 1 auto;
+  }
+  .item {
+    display: grid;
+    grid-template-columns: 28px 1fr auto;
+    align-items: center;
+    column-gap: 8px;
+    width: 100%;
+    min-height: 64px;            /* タップ領域 64x64px 以上 */
+    padding: 8px;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    text-align: left;
+    cursor: pointer;
+    transition: background-color .12s ease;
+  }
+  .item + .item { margin-top: 2px; }
+  /* hover/active は暗くする方向に: セカンダリ文字のコントラストを落とさず手応えを返す */
+  .item:hover  { background: rgba(0,0,0,0.18); }
+  .item:active { background: rgba(0,0,0,0.30); transform: translateY(1px); }
+
+  .check {
+    width: 26px; height: 26px;
+    border-radius: 7px;
+    border: 2px solid var(--text-secondary);
+    display: grid; place-items: center;
+    color: var(--bg-base);
+    font-size: 18px; font-weight: 900; line-height: 1;
+    transition: background-color .12s ease, border-color .12s ease;
+  }
+  .item-main { min-width: 0; }
+  /* 長い品名対策 (略称マスタ未確定のため name はそのまま使い、表示の省略のみで崩れ防止)。
+     最大2行で省略 (…)。対応しないブラウザは折返しで崩れない fallback。 */
+  .item-name {
+    font-size: 23px; font-weight: 700; line-height: 1.2;   /* 22-26px 要件 */
+    overflow: hidden;
+    overflow-wrap: anywhere;       /* 長い連続文字でもカード幅を割らない */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+  .item-opt  {
+    font-size: 14px; color: var(--text-secondary); margin-top: 2px; line-height: 1.3;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+  .item-qty  {
+    font-family: var(--font-num);
+    font-size: 20px; font-weight: 800;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .item-qty .x { color: var(--text-secondary); font-size: 15px; margin-right: 1px; }
+
+  /* 完了状態: 打ち消し線 + 減光 (色だけに頼らず線で示す) */
+  .item.done .item-name { text-decoration: line-through; text-decoration-thickness: 2px; color: var(--text-secondary); }
+  .item.done .item-opt  { text-decoration: line-through; opacity: .7; }
+  .item.done .item-qty  { color: var(--text-secondary); text-decoration: line-through; }
+  .item.done .check {
+    background: var(--text-primary);
+    border-color: var(--text-primary);
+  }
+  .item.done .check::after { content: "\2713"; }   /* チェックマーク */
+
+  /* ============================================================ コンロ番号 1〜10 (デシャップ後打ち)
+     状態サイクル: スケルトン(未使用/透明) → 白(使用中) → 赤(タイマー管理中) → スケルトン
+     ・カードidに紐付け (注文 KDS_ORDERS とは別管理)。LS + BroadcastChannel で2台同期。
+     ・経過警告の赤(大きいバッジ)と区別するため、コンロは小さめ・番号ラベル付き。
+     ・他カードで同番号が赤でもグローバルロックしない (コンロ移動対応)。 */
+  .konro {
+    padding: 8px var(--pad-card) 10px;
+    background: rgba(0,0,0,0.28);          /* items より僅かに沈めて領域を分離 */
+    border-top: 1px solid var(--hairline-soft);
+  }
+  .konro-label {
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+  }
+  .konro-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);  /* 5列 × 2行 = 1〜10 */
+    gap: 6px;
+  }
+  .konro-btn {
+    position: relative;
+    min-width: 0;
+    min-height: 40px;                       /* 番号ボタンは小さめ (経過警告の大バッジと区別) */
+    padding: 4px 2px;
+    border-radius: 8px;
+    border: 1.5px solid var(--text-secondary);
+    background: transparent;                /* state=skeleton: 未使用 (透明) */
+    color: var(--text-secondary);
+    font-family: var(--font-num);
+    font-size: 17px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color .12s ease, color .12s ease, border-color .12s ease;
+  }
+  .konro-btn:hover  { border-color: var(--text-primary); }
+  .konro-btn:active { transform: translateY(1px); }
+  /* state=white: コンロ使用中 (白塗り・暗い数字。コントラスト 15:1) */
+  .konro-btn[data-state="white"] {
+    background: #e8e6e0;
+    border-color: #e8e6e0;
+    color: #111110;
+  }
+  /* state=red: タイマー管理中 (赤塗り・白数字)。経過警告の赤バッジより小さく番号入りで別物と分かる */
+  .konro-btn[data-state="red"] {
+    background: #a02828;
+    border-color: #c25050;
+    color: #ffffff;
+  }
+  /* 状態を色だけに頼らない: 白=点ドット / 赤=リング を番号に併記 (色覚サポート, WCAG 1.4.1) */
+  .konro-btn[data-state="white"]::after,
+  .konro-btn[data-state="red"]::after {
+    content: "";
+    position: absolute;
+    top: 4px; right: 4px;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+  }
+  .konro-btn[data-state="white"]::after { background: #111110; }
+  .konro-btn[data-state="red"]::after   { background: #ffffff; box-shadow: 0 0 0 1.5px #ffffff inset, 0 0 0 2.5px #a02828; border-radius: 50%; }
+
+  /* ============================================================ カード並べ替え (長押し起動 / 誤操作防止) */
+  /* 長押し中: カードを掴んだフィードバック (拡大 + 影 + 微傾き)。動きで「掴めた」を伝える */
+  .card.grabbed {
+    box-shadow: 0 0 0 2px var(--text-primary), 0 16px 40px rgba(0,0,0,0.7);
+    transform: scale(1.03);
+    z-index: 5;
+    cursor: grabbing;
+    animation: grabWiggle .4s ease-in-out;
+  }
+  @keyframes grabWiggle { 0%,100%{ transform: scale(1.03) rotate(0); } 25%{ transform: scale(1.03) rotate(-0.8deg);} 75%{ transform: scale(1.03) rotate(0.8deg);} }
+  /* ドロップ候補位置のプレースホルダ */
+  .card.drop-target { box-shadow: 0 0 0 2px var(--elapsed-ok) inset, 0 6px 16px rgba(0,0,0,0.45); }
+  .card.reordering { transition: transform .2s cubic-bezier(.16,1,.3,1); }
+  /* 長押し進捗リング (掴むまでの 0.8s を可視化 = 誤操作防止のフィードバック) */
+  .card .grab-progress {
+    position: absolute;
+    top: 0; left: 0; height: 3px; width: 0%;
+    background: var(--text-primary);
+    border-radius: 12px 0 0 0;
+    pointer-events: none;
+    z-index: 6;
+    opacity: 0;
+  }
+  .card.grabbing-pending .grab-progress { opacity: 1; }
+  .card { position: relative; }
+
+  /* 並べ替えモード中の取消バー */
+  .reorder-bar {
+    position: fixed;
+    left: 50%; bottom: 24px;
+    transform: translateX(-50%);
+    z-index: 50;
+    display: none;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 18px;
+    background: var(--bg-raise);
+    border: 1px solid var(--text-primary);
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.7);
+  }
+  body.is-reordering .reorder-bar { display: flex; }
+  .reorder-bar .msg { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+  .reorder-bar button {
+    min-height: 48px; padding: 8px 18px;
+    border-radius: 8px; border: 1px solid var(--text-secondary);
+    background: transparent; color: var(--text-primary);
+    font-size: 15px; font-weight: 700; cursor: pointer;
+  }
+  .reorder-bar button:hover { background: rgba(240,237,232,0.08); }
+  .reorder-bar button.confirm { border-color: var(--elapsed-ok); }
+
+  /* ============================================================ 右ペイン: 予約ストックパネル */
+  .stock {
+    flex: 0 0 340px;
+    width: 340px;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(180deg, rgba(58,52,22,0.18), rgba(0,0,0,0.18));
+    border-left: 1px solid var(--hairline);
+  }
+  .stock-head {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .stock-head .title {
+    font-size: 17px; font-weight: 800; letter-spacing: .02em;
+    color: var(--text-primary);
+  }
+  .stock-head .count {
+    font-family: var(--font-num); font-size: 14px; font-weight: 700;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+  .stock-add {
+    margin-left: auto;
+    min-width: 64px; min-height: 44px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--card-reserved-edge);
+    background: var(--card-reserved);
+    color: #e6d49a;
+    font-size: 20px; font-weight: 800; line-height: 1;
+    cursor: pointer;
+    transition: background-color .12s ease, transform .1s ease;
+  }
+  .stock-add:hover  { background: #463e1c; }
+  .stock-add:active { transform: translateY(1px); }
+
+  .stock-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .stock-empty {
+    color: var(--text-secondary);
+    font-size: 14px;
+    text-align: center;
+    padding: 24px 12px;
+    line-height: 1.6;
+  }
+
+  .res-card {
+    position: relative;
+    border-radius: 12px;
+    background: var(--card-reserved);
+    border: 1px solid var(--card-reserved-edge);
+    padding: 12px 14px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    animation: cardIn .22s cubic-bezier(.16,1,.3,1);
+  }
+  .res-card.soon { border-color: #c25050; }
+  .res-top {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  }
+  .res-time {
+    font-family: var(--font-num);
+    font-size: 26px; font-weight: 800;     /* 予約時間を最大表示 */
+    letter-spacing: .01em;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+  .res-people { font-size: 14px; color: var(--text-primary); font-weight: 700; text-align: right; }
+  .res-people .n { font-family: var(--font-num); font-size: 17px; }
+  .res-people .kids { color: #b3a89c; font-size: 12px; display:block; }  /* 直接カード上なので AA 用に少し明るく */
+  .res-name { font-size: 18px; font-weight: 700; margin-top: 4px; color: var(--text-primary); overflow-wrap: anywhere; }
+  .res-menu {
+    margin: 8px 0 0;
+    padding: 6px 8px; list-style: none;
+    font-size: 14px; color: var(--text-secondary); line-height: 1.5;
+    background: rgba(0,0,0,0.22);   /* セカンダリ文字を 4.5:1 以上に (AA) */
+    border-radius: 8px;
+  }
+  .res-menu li { overflow-wrap: anywhere; }
+  .res-menu li .q { font-family: var(--font-num); color: var(--text-primary); margin-left: 4px; }
+  /* 30分前通知バッジ (右上・点滅) */
+  .res-soon-badge {
+    position: absolute;
+    top: -8px; right: -6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #c25050;
+    color: #fff;
+    font-size: 12px; font-weight: 800; letter-spacing: .02em;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    display: none;
+    animation: soonPulse 1.3s ease-in-out infinite;
+  }
+  .res-card.soon .res-soon-badge { display: inline-block; }
+  @keyframes soonPulse { 0%,100%{ transform: scale(1); } 50%{ transform: scale(1.12); } }
+
+  .res-actions { display: flex; gap: 8px; margin-top: 10px; align-items: stretch; }
+  .res-seat {
+    flex: 1 1 auto; min-width: 0;
+    min-height: 48px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--hairline);
+    background: rgba(0,0,0,0.28);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    font-size: 16px; font-weight: 700;
+  }
+  .res-seat::placeholder { color: var(--text-secondary); font-weight: 500; }
+  .res-go {
+    flex: 0 0 auto;
+    min-height: 48px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--elapsed-ok);
+    background: rgba(45,106,45,0.25);
+    color: var(--text-primary);
+    font-size: 15px; font-weight: 800;
+    cursor: pointer;
+    transition: background-color .12s ease, transform .1s ease;
+  }
+  .res-go:hover  { background: rgba(45,106,45,0.45); }
+  .res-go:active { transform: translateY(1px); }
+  .res-del {
+    flex: 0 0 auto;
+    min-width: 44px; min-height: 48px;
+    border-radius: 8px;
+    border: 1px solid var(--hairline);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 18px; cursor: pointer;
+  }
+  .res-del:hover { color: var(--text-primary); border-color: var(--text-primary); }
+
+  /* ============================================================ モーダル (予約追加フォーム) */
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  body.modal-open .modal-backdrop { display: flex; }
+  .modal {
+    width: min(460px, 100%);
+    max-height: 92vh;
+    overflow-y: auto;
+    background: var(--bg-raise);
+    border: 1px solid var(--hairline);
+    border-radius: 14px;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.7);
+    padding: 20px;
+  }
+  .modal h2 { margin: 0 0 14px; font-size: 19px; font-weight: 800; color: var(--text-primary); }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 13px; font-weight: 700; color: var(--text-secondary); margin-bottom: 5px; letter-spacing: .04em; }
+  .field input[type="time"],
+  .field input[type="text"],
+  .field input[type="number"] {
+    width: 100%;
+    min-height: 48px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--hairline);
+    background: rgba(0,0,0,0.28);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    font-size: 16px;
+  }
+  .field-row { display: flex; gap: 10px; }
+  .field-row .field { flex: 1 1 0; }
+  .menu-pick { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; padding: 4px; border: 1px solid var(--hairline-soft); border-radius: 8px; }
+  .menu-pick .row {
+    display: grid; grid-template-columns: 1fr auto;
+    align-items: center; gap: 10px;
+    min-height: 48px; padding: 6px 8px;
+    border-radius: 8px;
+  }
+  .menu-pick .row:hover { background: rgba(240,237,232,0.05); }
+  .menu-pick .row label { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 15px; color: var(--text-primary); font-weight: 600; cursor: pointer; }
+  .menu-pick .row input[type="checkbox"] { width: 24px; height: 24px; accent-color: #e6d49a; }
+  .menu-pick .row input[type="number"] { width: 64px; min-height: 40px; padding: 4px 6px; text-align: center; }
+  .menu-pick .row input[type="number"]:disabled { opacity: .35; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+  .modal-actions button {
+    min-height: 48px; padding: 10px 20px;
+    border-radius: 8px; font-size: 16px; font-weight: 800; cursor: pointer;
+  }
+  .btn-cancel { border: 1px solid var(--hairline); background: transparent; color: var(--text-secondary); }
+  .btn-cancel:hover { color: var(--text-primary); }
+  .btn-save { border: 1px solid var(--card-reserved-edge); background: var(--card-reserved); color: #e6d49a; }
+  .btn-save:hover { background: #463e1c; }
+  .form-error { color: #f0a0a0; font-size: 13px; margin-top: 8px; min-height: 16px; }
+
+  /* ============================================================ チビ伝印刷プレビュー */
+  .slip-backdrop {
+    position: fixed; inset: 0; z-index: 110;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  body.slip-open .slip-backdrop { display: flex; }
+  .slip {
+    width: min(320px, 100%);
+    background: #ffffff;
+    color: #111110;
+    border-radius: 8px;
+    padding: 18px 16px;
+    font-family: var(--font-ui);
+  }
+  .slip .slip-store { font-size: 13px; font-weight: 700; text-align: center; letter-spacing: .1em; border-bottom: 1px dashed #999; padding-bottom: 6px; margin-bottom: 8px; }
+  .slip .slip-table { font-size: 38px; font-weight: 900; text-align: center; line-height: 1.1; }   /* 卓番が読めるサイズ */
+  .slip .slip-meta { font-size: 13px; color: #444; text-align: center; margin: 4px 0 10px; font-variant-numeric: tabular-nums; }
+  .slip ul { list-style: none; margin: 0; padding: 8px 0; border-top: 1px dashed #999; border-bottom: 1px dashed #999; }
+  .slip li { display: flex; justify-content: space-between; gap: 8px; font-size: 18px; font-weight: 700; padding: 3px 0; }   /* 品名が読めるサイズ */
+  .slip li .o { font-size: 12px; font-weight: 500; color: #555; }
+  .slip li .q { font-family: var(--font-num); }
+  .slip-actions { display: flex; gap: 10px; margin-top: 14px; }
+  .slip-actions button { flex: 1 1 0; min-height: 48px; border-radius: 8px; font-size: 15px; font-weight: 800; cursor: pointer; }
+  .slip-print { border: none; background: #111110; color: #fff; }
+  .slip-close { border: 1px solid #bbb; background: #fff; color: #111110; }
+
+  /* 印刷時はチビ伝だけを出す */
+  @media print {
+    body * { visibility: hidden !important; }
+    .slip, .slip * { visibility: visible !important; }
+    .slip { position: fixed; left: 0; top: 0; box-shadow: none; width: 80mm; }
+    .slip-actions { display: none !important; }
+    .slip-backdrop { background: #fff; }
+  }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  }
+
+  /* ホールモード: 読取専用 (品目/コンロ/並べ替え/印刷を無効化。予約入力は許可) */
+  body.mode-hall .item,
+  body.mode-hall .konro-btn { pointer-events: none; opacity: .82; }
+  body.mode-hall .konro { opacity: .72; }
+  body.mode-hall .res-go,
+  body.mode-hall .res-seat,
+  body.mode-hall .stock-add,
+  body.mode-hall .res-del { pointer-events: auto; opacity: 1; }
+  body.mode-hall .mode-readonly-note { display: inline; }
+  .mode-readonly-note { display: none; font-size: 11px; color: var(--text-secondary); letter-spacing: .1em; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+
+  /* 中幅: 予約ストックを少し狭める */
+  @media (max-width: 1100px) {
+    .stock { flex-basis: 280px; width: 280px; }
+  }
+  /* 小幅: 2ペインを縦積みにして崩れ防止 */
+  @media (max-width: 760px) {
+    .shell { flex-direction: column; }
+    .stock { flex: 0 0 auto; width: 100%; max-height: 40vh; border-left: none; border-top: 1px solid var(--hairline); }
+    main { flex: 1 1 auto; }
+  }
+  /* 横向きでない / 小幅でも崩れない: カード幅を僅かに縮める (折り返し列も追随) */
+  @media (max-width: 360px) {
+    .board { grid-template-columns: repeat(auto-fill, 280px); }
+  }
+</style>
+</head>
+<body class="is-empty">
+  <header>
+    <div class="brand">
+      <span class="mark">土鍋飯<span class="accent">ぽかぽか</span></span>
+      <span class="sub" aria-hidden="true">Kitchen Display</span>
+    </div>
+    <time class="clock" id="clock" aria-label="現在時刻">--:--<span class="sec">:--</span></time>
+
+    <div class="mode-switch" role="group" aria-label="権限モード切り替え">
+      <button type="button" class="mode-btn" id="modeKitchen" data-mode="kitchen" data-i18n="modeKitchen" aria-pressed="true">キッチン</button>
+      <button type="button" class="mode-btn" id="modeHall" data-mode="hall" data-i18n="modeHall" aria-pressed="false">ホール</button>
+    </div>
+
+    <button type="button" class="print-toggle" id="printToggle" aria-pressed="false">
+      <span class="dot" aria-hidden="true"></span>
+      <span data-i18n="autoPrint">自動印刷</span>
+    </button>
+
+    <div class="lang-switch" role="group" aria-label="言語切り替え / Language">
+      <button type="button" class="lang-btn" data-lang="ja"  lang="ja">日本語</button>
+      <button type="button" class="lang-btn" data-lang="ne"  lang="ne">नेपाली</button>
+      <button type="button" class="lang-btn" data-lang="zh"  lang="zh-Hant">繁體中文</button>
+    </div>
+  </header>
+
+  <div class="shell">
+    <main>
+      <div class="board" id="board" aria-live="polite" aria-relevant="additions removals"></div>
+      <div class="empty" id="empty">
+        <div class="big" data-i18n="emptyTitle">オーダー待機中</div>
+        <div data-i18n="emptyHint">POS からの注文がここに表示されます</div>
+        <button type="button" class="demo-btn" id="demoBtn" data-i18n="demo">デモデータを投入</button>
+      </div>
+    </main>
+
+    <aside class="stock" aria-label="予約ストック">
+      <div class="stock-head">
+        <span class="title" data-i18n="stockTitle">予約ストック</span>
+        <span class="count" id="stockCount">0</span>
+        <button type="button" class="stock-add" id="stockAddBtn" aria-label="予約を追加">＋</button>
+      </div>
+      <div class="stock-list" id="stockList" aria-live="polite"></div>
+    </aside>
+  </div>
+
+  <!-- カード並べ替えの取消バー -->
+  <div class="reorder-bar" id="reorderBar" role="status">
+    <span class="msg" data-i18n="reorderMsg">並べ替え中</span>
+    <button type="button" id="reorderUndo" data-i18n="undo">取消</button>
+    <button type="button" class="confirm" id="reorderDone" data-i18n="reorderDone">確定</button>
+  </div>
+
+  <!-- 予約追加フォーム -->
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <h2 id="modalTitle" data-i18n="addReservation">予約を追加</h2>
+      <form id="resForm">
+        <div class="field-row">
+          <div class="field">
+            <label for="resTime" data-i18n="fldTime">予約時間</label>
+            <input type="time" id="resTime" required>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="resAdults" data-i18n="fldAdults">大人</label>
+            <input type="number" id="resAdults" min="0" max="30" value="2" inputmode="numeric">
+          </div>
+          <div class="field">
+            <label for="resKids" data-i18n="fldKids">0-2歳</label>
+            <input type="number" id="resKids" min="0" max="20" value="0" inputmode="numeric">
+          </div>
+        </div>
+        <div class="field">
+          <label for="resName" data-i18n="fldName">名前</label>
+          <input type="text" id="resName" maxlength="40" autocomplete="off">
+        </div>
+        <div class="field">
+          <label data-i18n="fldMenu">メニュー（個数）</label>
+          <div class="menu-pick" id="menuPick"></div>
+        </div>
+        <div class="form-error" id="formError" aria-live="assertive"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn-cancel" id="resCancel" data-i18n="cancel">キャンセル</button>
+          <button type="submit" class="btn-save" data-i18n="save">登録</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- チビ伝印刷プレビュー -->
+  <div class="slip-backdrop" id="slipBackdrop">
+    <div class="slip" id="slip" role="dialog" aria-modal="true" aria-label="伝票プレビュー">
+      <div class="slip-store">土鍋飯ぽかぽか</div>
+      <div class="slip-table" id="slipTable">--</div>
+      <div class="slip-meta" id="slipMeta"></div>
+      <ul id="slipItems"></ul>
+      <div class="slip-actions">
+        <button type="button" class="slip-print" id="slipPrint" data-i18n="print">印刷</button>
+        <button type="button" class="slip-close" id="slipClose" data-i18n="close">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  "use strict";
+  (function () {
+    /* ========================================================================
+       土鍋飯ぽかぽか KDS — バリエーションA: カードグリッド
+       単一HTML / Vanilla JS ES2020 / 外部参照ゼロ / 完全オフライン
+       データ契約 (注文入力画面が吐く形式):
+         window.KDS_ORDERS = [{ id, table, type:"new"|"reserved",
+           start, people, items:[{name, qty, options(無ければnull), done}] }]
+       ======================================================================== */
+
+    /* ---- 定数 ---- */
+    var POLL_MS = 1000;            // window.KDS_ORDERS ポーリング間隔
+    var TICK_MS = 1000;            // 経過時間 / 時計 更新間隔
+    var FADE_MS = 300;             // 全完了カードのフェードアウト
+    var LS_LANG = "kds_lang";      // 言語設定
+    var LS_DONE = "kds_done_v1";   // 品目完了状態 (id -> [bool,...])
+    var LS_KONRO = "kds_konro_v1"; // コンロ番号状態 (cardId -> { "1":"white", "3":"red", ... })
+    var LS_ORDER = "kds_order_v1"; // 配膳カードの並び順 (orderId 配列)
+    var LS_STOCK = "kds_stock_v1"; // 予約ストック (当日分のみ。永続DB無し)
+    var LS_MODE  = "kds_mode_v1";  // 権限モード (kitchen / hall)
+    var LS_AUTOP = "kds_autoprint_v1"; // 自動印刷トグル
+    var BC_NAME = "kds_sync";      // BroadcastChannel 名
+    var WARN_MIN = 5, ALERT_MIN = 10;
+    var SOON_MIN = 30;             // 予約30分前通知
+    var LONGPRESS_MS = 800;        // 並べ替え長押し (0.8〜2秒の下限)
+    var KONRO_COUNT = 10;          // コンロ番号 1〜10
+    /* コンロ状態サイクル: スケルトン(未使用) → 白(使用中) → 赤(タイマー管理中) → スケルトン */
+    var KONRO_CYCLE = { "skeleton": "white", "white": "red", "red": "skeleton" };
+    var KONRO_DEFAULT = "skeleton";
+
+    /* ---- 多言語ラベル (PRD 対訳表を静的埋め込み) ---- */
+    var I18N = {
+      ja: { new:"新規", reserved:"予約", people:"名", recv:"受付", elapsed:"経過", done:"完了",
+            min:"分", emptyTitle:"オーダー待機中", emptyHint:"POS からの注文がここに表示されます",
+            demo:"デモデータを投入",
+            konro:"コンロ", konroSkeleton:"未使用", konroWhite:"使用中", konroRed:"タイマー管理中",
+            modeKitchen:"キッチン", modeHall:"ホール", autoPrint:"自動印刷",
+            stockTitle:"予約ストック", stockEmpty:"本日の予約はありません",
+            addReservation:"予約を追加", fldTime:"予約時間", fldAdults:"大人", fldKids:"0-2歳",
+            fldName:"名前", fldMenu:"メニュー（個数）", cancel:"キャンセル", save:"登録",
+            print:"印刷", close:"閉じる", soon:"まもなく", seatPh:"卓番", go:"配膳へ", del:"削除",
+            reorderMsg:"並べ替え中（離して確定 / 取消で戻す）", undo:"取消", reorderDone:"確定",
+            errTime:"予約時間を入力してください", errMenu:"メニューを1つ以上選択してください",
+            errSeat:"卓番を入力してください", slipMeta:"受付", kidsLabel:"幼" },
+      ne: { new:"नयाँ", reserved:"आरक्षण", people:"जना", recv:"प्राप्त", elapsed:"बितेको", done:"पूर्ण",
+            min:"मिनेट", emptyTitle:"अर्डर पर्खँदै", emptyHint:"POS बाट अर्डर यहाँ देखिनेछ",
+            demo:"डेमो डाटा हाल्नुहोस्",
+            konro:"चुलो", konroSkeleton:"प्रयोग नभएको", konroWhite:"प्रयोगमा", konroRed:"टाइमर",
+            modeKitchen:"भान्सा", modeHall:"हल", autoPrint:"स्वतः छाप",
+            stockTitle:"आरक्षण", stockEmpty:"आजको आरक्षण छैन",
+            addReservation:"आरक्षण थप्नुहोस्", fldTime:"समय", fldAdults:"वयस्क", fldKids:"0-2 वर्ष",
+            fldName:"नाम", fldMenu:"मेनु (मात्रा)", cancel:"रद्द", save:"दर्ता",
+            print:"छाप्नुहोस्", close:"बन्द", soon:"चाँडै", seatPh:"टेबल नं", go:"पठाउनुहोस्", del:"मेटाउनुहोस्",
+            reorderMsg:"मिलाउँदै (छोड्दा पक्का / रद्द गर्न फिर्ता)", undo:"रद्द", reorderDone:"पक्का",
+            errTime:"समय राख्नुहोस्", errMenu:"कम्तीमा एउटा मेनु छान्नुहोस्",
+            errSeat:"टेबल नम्बर राख्नुहोस्", slipMeta:"प्राप्त", kidsLabel:"बच्चा" },
+      zh: { new:"新訂", reserved:"預約", people:"人", recv:"接單", elapsed:"經過", done:"完成",
+            min:"分", emptyTitle:"等待訂單", emptyHint:"POS 的訂單將顯示於此",
+            demo:"載入示範資料",
+            konro:"爐口", konroSkeleton:"未使用", konroWhite:"使用中", konroRed:"計時中",
+            modeKitchen:"廚房", modeHall:"外場", autoPrint:"自動列印",
+            stockTitle:"預約清單", stockEmpty:"今日無預約",
+            addReservation:"新增預約", fldTime:"預約時間", fldAdults:"大人", fldKids:"0-2歲",
+            fldName:"姓名", fldMenu:"菜單（數量）", cancel:"取消", save:"登錄",
+            print:"列印", close:"關閉", soon:"即將", seatPh:"桌號", go:"送出", del:"刪除",
+            reorderMsg:"排序中（放開確定 / 取消還原）", undo:"取消", reorderDone:"確定",
+            errTime:"請輸入預約時間", errMenu:"請至少選擇一項菜單",
+            errSeat:"請輸入桌號", slipMeta:"接單", kidsLabel:"幼" }
+    };
+    /* 予約フォームのメニュー候補 (POS未接続のため静的。略称表示) */
+    var MENU_OPTIONS = [
+      "土鍋ご飯（白米）", "土鍋ご飯（玄米）", "沖縄そば定食", "ソーキそば",
+      "タコライス", "ゴーヤチャンプルー", "アグー豚しゃぶ", "ジューシー",
+      "海ぶどう小鉢", "らふてー", "もずく酢", "沖縄天ぷら盛合せ"
+    ];
+    var LANG_HTML = { ja:"ja", ne:"ne", zh:"zh-Hant" };
+
+    /* ---- 状態 ---- */
+    var lang = "ja";
+    var doneMap = {};              // { orderId: [bool, bool, ...] }  完了状態(LocalStorage正本)
+    var konroMap = {};             // { cardId: { "1":"white", "3":"red", ... } } コンロ状態(LocalStorage正本)
+    var cards = {};                // { orderId: { el, order, level } } DOM キャッシュ
+    var orderSeq = [];             // 配膳カードの表示順 (orderId 文字列の配列。LS正本)
+    var stock = [];                // 予約ストック (当日分。LS正本) [{rid,time,adults,kids,name,menu:[{name,qty}],seenAt}]
+    var mode = "kitchen";          // 権限モード
+    var autoPrint = false;         // 自動印刷トグル
+    var bc = null;
+    var seededIds = {};            // 自動印刷の二重発火防止 (このタブで既にプレビュー済みの orderId)
+
+    /* ---- DOM ---- */
+    var boardEl = document.getElementById("board");
+    var emptyEl = document.getElementById("empty");
+    var clockEl = document.getElementById("clock");
+    var demoBtn = document.getElementById("demoBtn");
+    var langBtns = Array.prototype.slice.call(document.querySelectorAll(".lang-btn"));
+    var modeBtns = Array.prototype.slice.call(document.querySelectorAll(".mode-btn"));
+    var printToggleEl = document.getElementById("printToggle");
+    var stockListEl = document.getElementById("stockList");
+    var stockCountEl = document.getElementById("stockCount");
+    var stockAddBtn = document.getElementById("stockAddBtn");
+    var modalBackdrop = document.getElementById("modalBackdrop");
+    var resForm = document.getElementById("resForm");
+    var menuPickEl = document.getElementById("menuPick");
+    var formErrorEl = document.getElementById("formError");
+    var resCancelBtn = document.getElementById("resCancel");
+    var slipBackdrop = document.getElementById("slipBackdrop");
+    var slipTableEl = document.getElementById("slipTable");
+    var slipMetaEl = document.getElementById("slipMeta");
+    var slipItemsEl = document.getElementById("slipItems");
+    var slipPrintBtn = document.getElementById("slipPrint");
+    var slipCloseBtn = document.getElementById("slipClose");
+    var reorderUndoBtn = document.getElementById("reorderUndo");
+    var reorderDoneBtn = document.getElementById("reorderDone");
+
+    /* ===================== ユーティリティ ===================== */
+    function t(key) { return (I18N[lang] && I18N[lang][key]) || I18N.ja[key] || key; }
+
+    function pad2(n) { return n < 10 ? "0" + n : "" + n; }
+
+    function hhmm(ts) {
+      var d = new Date(ts);
+      return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+    }
+
+    function safeParse(json, fallback) {
+      try { var v = JSON.parse(json); return v == null ? fallback : v; }
+      catch (e) { return fallback; }
+    }
+
+    function elapsedMin(startTs) {
+      var ms = Date.now() - Number(startTs);
+      if (!isFinite(ms) || ms < 0) ms = 0;
+      return Math.floor(ms / 60000);
+    }
+
+    function levelOf(min) {
+      if (min >= ALERT_MIN) return "alert";
+      if (min >= WARN_MIN)  return "warn";
+      return "ok";
+    }
+
+    /* ===================== LocalStorage (完了状態) ===================== */
+    function loadDone() { doneMap = safeParse(localStorage.getItem(LS_DONE), {}) || {}; }
+
+    function saveDone() {
+      try { localStorage.setItem(LS_DONE, JSON.stringify(doneMap)); } catch (e) {}
+    }
+
+    /* ----- コンロ番号状態 (カードidに紐付け / 注文配列とは別管理) ----- */
+    function loadKonro() {
+      var v = safeParse(localStorage.getItem(LS_KONRO), {}) || {};
+      konroMap = (v && typeof v === "object") ? v : {};
+    }
+
+    function saveKonro() {
+      try { localStorage.setItem(LS_KONRO, JSON.stringify(konroMap)); } catch (e) {}
+    }
+
+    /* ----- 配膳カードの並び順 (LS正本 / BC同期) ----- */
+    function loadOrderSeq() {
+      var v = safeParse(localStorage.getItem(LS_ORDER), []);
+      orderSeq = Array.isArray(v) ? v.map(String) : [];
+    }
+    function saveOrderSeq() {
+      try { localStorage.setItem(LS_ORDER, JSON.stringify(orderSeq)); } catch (e) {}
+    }
+
+    /* ----- 予約ストック (当日分のみ・永続DB無し) ----- */
+    function loadStock() {
+      var v = safeParse(localStorage.getItem(LS_STOCK), []);
+      stock = Array.isArray(v) ? v.filter(function (r) { return r && r.rid != null; }) : [];
+    }
+    function saveStock() {
+      try { localStorage.setItem(LS_STOCK, JSON.stringify(stock)); } catch (e) {}
+    }
+
+    /* ----- 権限モード / 自動印刷 ----- */
+    function loadPrefs() {
+      try {
+        var m = localStorage.getItem(LS_MODE);
+        mode = (m === "hall") ? "hall" : "kitchen";
+        autoPrint = localStorage.getItem(LS_AUTOP) === "1";
+      } catch (e) { mode = "kitchen"; autoPrint = false; }
+    }
+
+    function konroState(cardId, num) {
+      var m = konroMap[String(cardId)];
+      var s = m && m[String(num)];
+      return (s === "white" || s === "red") ? s : KONRO_DEFAULT;
+    }
+
+    /* スケルトン(初期値)は保存しない = LS を肥大化させない。注文消去時の掃除も簡潔に */
+    function setKonroState(cardId, num, state) {
+      var key = String(cardId);
+      if (state === KONRO_DEFAULT) {
+        if (konroMap[key]) {
+          delete konroMap[key][String(num)];
+          if (!Object.keys(konroMap[key]).length) delete konroMap[key];
+        }
+      } else {
+        if (!konroMap[key]) konroMap[key] = {};
+        konroMap[key][String(num)] = state;
+      }
+    }
+
+    /* 注文が消えた (POS取下げ / 全完了消去) cardId の konro 状態を掃除 */
+    function pruneKonro(liveIds) {
+      var changed = false;
+      Object.keys(konroMap).forEach(function (id) {
+        if (!liveIds[id]) { delete konroMap[id]; changed = true; }
+      });
+      if (changed) saveKonro();
+    }
+
+    /* 注文配列に対して doneMap を「正本」として上書き適用 (リロード復元 / ポーリング時) */
+    function applyDoneToOrders(orders) {
+      orders.forEach(function (o) {
+        var saved = doneMap[o.id];
+        (o.items || []).forEach(function (it, i) {
+          if (saved && typeof saved[i] === "boolean") {
+            it.done = saved[i];                 // LS が正本
+          } else {
+            it.done = !!it.done;                // 初期値を尊重
+          }
+        });
+        // doneMap 未登録なら現状を取り込む
+        if (!saved) {
+          doneMap[o.id] = (o.items || []).map(function (it) { return !!it.done; });
+        }
+      });
+    }
+
+    /* ===================== BroadcastChannel (2台同期) ===================== */
+    function initSync() {
+      if (typeof BroadcastChannel === "undefined") return;   // 非対応時は LS ポーリングでフォールバック
+      try {
+        bc = new BroadcastChannel(BC_NAME);
+        bc.onmessage = function (ev) {
+          var msg = ev && ev.data;
+          if (!msg) return;
+          if (msg.type === "toggle") {
+            if (!doneMap[msg.id]) doneMap[msg.id] = [];
+            doneMap[msg.id][msg.index] = msg.done;
+            saveDone();
+            // 該当カードへ即時反映
+            var c = cards[msg.id];
+            if (c) applyDoneToCard(c, /*animateRemoval*/ true);
+          } else if (msg.type === "konro") {
+            setKonroState(msg.id, msg.num, msg.state);
+            saveKonro();
+            applyKonroToCard(msg.id);   // 他カードの同番号には影響させない (グローバルロックなし)
+          } else if (msg.type === "stock") {
+            // 予約ストック全体を受信側へ反映 (当日分・小規模なので全置換でシンプルに)
+            if (Array.isArray(msg.stock)) { stock = msg.stock; saveStock(); renderStock(); }
+          } else if (msg.type === "order") {
+            if (Array.isArray(msg.seq)) { orderSeq = msg.seq.map(String); saveOrderSeq(); applyOrderSeq(); }
+          } else if (msg.type === "moveToMain" && Array.isArray(msg.stock)) {
+            // 予約→進行中の移動を両台で反映 (注文は window.KDS_ORDERS 経由で次ポーリングに乗る)
+            stock = msg.stock; saveStock(); renderStock();
+            if (msg.order) ensureOrderInBus(msg.order);
+          }
+        };
+      } catch (e) { bc = null; }
+    }
+
+    function broadcastStock() {
+      if (!bc) return;
+      try { bc.postMessage({ type: "stock", stock: stock }); } catch (e) {}
+    }
+    function broadcastOrderSeq() {
+      if (!bc) return;
+      try { bc.postMessage({ type: "order", seq: orderSeq }); } catch (e) {}
+    }
+    function broadcastMoveToMain(order) {
+      if (!bc) return;
+      try { bc.postMessage({ type: "moveToMain", stock: stock, order: order }); } catch (e) {}
+    }
+
+    function broadcastToggle(id, index, done) {
+      if (!bc) return;
+      try { bc.postMessage({ type: "toggle", id: id, index: index, done: done }); } catch (e) {}
+    }
+
+    function broadcastKonro(id, num, state) {
+      if (!bc) return;
+      try { bc.postMessage({ type: "konro", id: id, num: num, state: state }); } catch (e) {}
+    }
+
+    /* ===================== レンダリング ===================== */
+    function getOrders() {
+      var src = window.KDS_ORDERS;
+      if (!Array.isArray(src)) return [];
+      // データ契約に最低限合致するものだけ通す (システム境界の入力検証)
+      return src.filter(function (o) {
+        return o && (o.id !== undefined && o.id !== null) && Array.isArray(o.items);
+      });
+    }
+
+    function buildCard(order) {
+      var card = document.createElement("article");
+      card.className = "card " + (order.type === "reserved" ? "reserved" : "new");
+      card.setAttribute("data-id", String(order.id));
+      card.setAttribute("aria-label",
+        "卓 " + (order.table || "") + " " + (order.type === "reserved" ? t("reserved") : t("new")));
+
+      /* head */
+      var head = document.createElement("div");
+      head.className = "card-head";
+      var badge = document.createElement("span");
+      badge.className = "badge-type js-badge";
+      var people = document.createElement("span");
+      people.className = "people";
+      people.innerHTML = '<span class="n">' + Number(order.people || 0) +
+        '</span><span class="unit js-unit"></span>';
+      var table = document.createElement("div");
+      table.className = "table-no";
+      table.textContent = order.table != null ? String(order.table) : "--";
+      head.appendChild(badge);
+      head.appendChild(people);
+      head.appendChild(table);
+
+      /* time */
+      var timeRow = document.createElement("div");
+      timeRow.className = "card-time";
+      var recv = document.createElement("span");
+      recv.className = "recv";
+      recv.innerHTML = '<span class="label js-recv"></span> <span class="hhmm">' +
+        hhmm(order.start) + '</span>';
+      var elapsed = document.createElement("span");
+      elapsed.className = "elapsed js-elapsed";
+      elapsed.innerHTML = '<span class="label js-elapsed-label"></span>' +
+        '<span class="val js-elapsed-val">0</span>' +
+        '<span class="label js-min"></span>';
+      // チビ伝プレビュー (手動再印刷)。ホールでは非表示
+      var slipBtn = document.createElement("button");
+      slipBtn.type = "button";
+      slipBtn.className = "slip-btn js-slip-btn";
+      slipBtn.setAttribute("aria-label", t("print"));
+      slipBtn.textContent = "伝";
+      slipBtn.addEventListener("click", function () { openSlip(order); });
+      timeRow.appendChild(recv);
+      timeRow.appendChild(elapsed);
+      timeRow.appendChild(slipBtn);
+
+      /* items */
+      var ul = document.createElement("ul");
+      ul.className = "items";
+      (order.items || []).forEach(function (it, idx) {
+        var li = document.createElement("li");
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "item" + (it.done ? " done" : "");
+        btn.setAttribute("data-index", String(idx));
+        btn.setAttribute("aria-pressed", it.done ? "true" : "false");
+
+        var chk = document.createElement("span");
+        chk.className = "check";
+        chk.setAttribute("aria-hidden", "true");
+
+        var main = document.createElement("span");
+        main.className = "item-main";
+        var nm = document.createElement("span");
+        nm.className = "item-name";
+        nm.textContent = it.name != null ? String(it.name) : "";
+        main.appendChild(nm);
+        if (it.options) {
+          var op = document.createElement("span");
+          op.className = "item-opt";
+          op.textContent = String(it.options);
+          main.appendChild(op);
+        }
+
+        var qty = document.createElement("span");
+        qty.className = "item-qty";
+        qty.innerHTML = '<span class="x">×</span>' + Number(it.qty || 1);
+
+        btn.appendChild(chk);
+        btn.appendChild(main);
+        btn.appendChild(qty);
+        btn.addEventListener("click", function () { onToggle(order.id, idx); });
+        li.appendChild(btn);
+        ul.appendChild(li);
+      });
+
+      /* konro: コンロ番号 1〜10 (2行 = 5列×2) */
+      var konro = document.createElement("div");
+      konro.className = "konro";
+      var kLabel = document.createElement("div");
+      kLabel.className = "konro-label js-konro-label";
+      var kGrid = document.createElement("div");
+      kGrid.className = "konro-grid";
+      kGrid.setAttribute("role", "group");
+      for (var kn = 1; kn <= KONRO_COUNT; kn++) {
+        (function (num) {
+          var kbtn = document.createElement("button");
+          kbtn.type = "button";
+          kbtn.className = "konro-btn";
+          kbtn.setAttribute("data-num", String(num));
+          kbtn.setAttribute("data-state", konroState(order.id, num));
+          kbtn.textContent = String(num);
+          kbtn.addEventListener("click", function () { onKonroTap(order.id, num); });
+          kGrid.appendChild(kbtn);
+        })(kn);
+      }
+      konro.appendChild(kLabel);
+      konro.appendChild(kGrid);
+
+      /* 長押し進捗リング (誤操作防止の可視フィードバック) */
+      var prog = document.createElement("div");
+      prog.className = "grab-progress";
+
+      card.appendChild(prog);
+      card.appendChild(head);
+      card.appendChild(timeRow);
+      card.appendChild(ul);
+      card.appendChild(konro);
+
+      // 並べ替え: ヘッダ(卓番周辺)を長押しで掴む (品目/コンロのタップと衝突しない)
+      attachReorderHandlers(card, head, String(order.id));
+      return card;
+    }
+
+    /* 注文配列を DOM に同期 (新規追加 / 削除 / 既存はキャッシュ流用) */
+    function render(orders) {
+      var seen = {};
+      var added = [];
+      orders.forEach(function (order) {
+        seen[order.id] = true;
+        var entry = cards[order.id];
+        if (!entry) {
+          var el = buildCard(order);
+          boardEl.appendChild(el);
+          entry = cards[order.id] = { el: el, order: order, level: null, items: order.items };
+          added.push(String(order.id));
+          maybeAutoPrint(order);     // 新着注文 -> 自動印刷 (トグルON時のみ)
+        } else {
+          entry.order = order;
+          entry.items = order.items;
+        }
+        applyDoneToCard(entry, /*animateRemoval*/ false);
+        applyKonroToCard(order.id);   // LS のコンロ状態を DOM へ反映 (他タブ更新の取り込み)
+      });
+
+      // 消えた注文 (POS 側で取り下げ等 / 全完了消去) を除去
+      Object.keys(cards).forEach(function (id) {
+        if (!seen[id]) removeCard(id, /*fade*/ false);
+      });
+
+      // 生存している注文 id を集め、消えた注文のコンロ状態を掃除
+      pruneKonro(seen);
+
+      // 並び順の整合: 消えた id を除去し、新着を末尾に追加 (時系列。手動並べ替えは保持)
+      reconcileOrderSeq(seen, added);
+      applyOrderSeq();
+
+      updateTimers();
+      relabel();
+      reflectEmpty();
+    }
+
+    /* orderSeq を生存注文に同期。新着は末尾へ。並べ替え中は触らない */
+    function reconcileOrderSeq(seen, added) {
+      if (isReordering) return;
+      var changed = false;
+      var next = orderSeq.filter(function (id) {
+        if (seen[id]) return true;
+        changed = true; return false;
+      });
+      added.forEach(function (id) {
+        if (next.indexOf(id) === -1) { next.push(id); changed = true; }
+      });
+      // orderSeq に無い生存カードを補完 (LS破損 / 初回)
+      Object.keys(cards).forEach(function (id) {
+        if (next.indexOf(id) === -1) { next.push(id); changed = true; }
+      });
+      if (changed) { orderSeq = next; saveOrderSeq(); }
+    }
+
+    /* DOM の並びを orderSeq に合わせる (掴み中は除外) */
+    function applyOrderSeq() {
+      if (isReordering) return;
+      orderSeq.forEach(function (id) {
+        var entry = cards[id];
+        if (entry && entry.el && entry.el.parentNode === boardEl) {
+          boardEl.appendChild(entry.el);   // 順番に末尾へ再配置 = orderSeq 順に整列
+        }
+      });
+    }
+
+    function isAllDone(entry) {
+      var items = entry && entry.items || [];
+      if (!items.length) return false;
+      return items.every(function (it) { return !!it.done; });
+    }
+
+    /* 完了状態をカード DOM へ反映。全完了なら必要に応じてフェードアウト */
+    function applyDoneToCard(entry, animateRemoval) {
+      if (!entry || !entry.el) return;
+      var order = entry.order;
+      var saved = doneMap[order.id] || [];
+      var btns = entry.el.querySelectorAll(".item");
+      for (var i = 0; i < btns.length; i++) {
+        var d = !!saved[i];
+        order.items[i].done = d;
+        btns[i].classList.toggle("done", d);
+        btns[i].setAttribute("aria-pressed", d ? "true" : "false");
+      }
+      if (isAllDone(entry)) {
+        if (animateRemoval) removeCard(order.id, /*fade*/ true);
+      }
+    }
+
+    function removeCard(id, fade) {
+      var entry = cards[id];
+      if (!entry || !entry.el) { delete cards[id]; return; }
+      var el = entry.el;
+      delete cards[id];
+      if (fade && !prefersReducedMotion()) {
+        el.classList.add("removing");
+        setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); reflectEmpty(); }, FADE_MS);
+      } else {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      }
+    }
+
+    function prefersReducedMotion() {
+      return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    }
+
+    /* ===================== 操作: 品目タップ ===================== */
+    function onToggle(id, index) {
+      var entry = cards[id];
+      if (!entry) return;
+      if (!doneMap[id]) doneMap[id] = entry.order.items.map(function (it) { return !!it.done; });
+      var next = !doneMap[id][index];
+      doneMap[id][index] = next;
+      saveDone();                                   // LS 即時保存 (正本)
+      broadcastToggle(id, index, next);             // 他タブへ同期
+
+      entry.order.items[index].done = next;
+      var btn = entry.el.querySelectorAll(".item")[index];
+      if (btn) {
+        btn.classList.toggle("done", next);
+        btn.setAttribute("aria-pressed", next ? "true" : "false");
+      }
+      if (isAllDone(entry)) removeCard(id, /*fade*/ true);
+    }
+
+    /* ===================== 操作: コンロ番号タップ ===================== */
+    function onKonroTap(id, num) {
+      var cur = konroState(id, num);
+      var next = KONRO_CYCLE[cur] || KONRO_DEFAULT;
+      setKonroState(id, num, next);
+      saveKonro();                                  // LS 即時保存 (正本)
+      broadcastKonro(id, num, next);                // 他タブへ同期 (同番号の他カードには影響しない)
+      // 該当カードの該当ボタンのみ更新 (他カードの同番号はロックしない = コンロ移動対応)
+      var entry = cards[id];
+      if (entry && entry.el) {
+        var btn = entry.el.querySelector('.konro-btn[data-num="' + num + '"]');
+        if (btn) {
+          btn.setAttribute("data-state", next);
+          setKonroBtnAria(btn, num, next);
+        }
+      }
+    }
+
+    /* LS / BroadcastChannel から来た状態をカード全体へ反映 */
+    function applyKonroToCard(id) {
+      var entry = cards[id];
+      if (!entry || !entry.el) return;
+      var btns = entry.el.querySelectorAll(".konro-btn");
+      for (var i = 0; i < btns.length; i++) {
+        var num = btns[i].getAttribute("data-num");
+        var st = konroState(id, num);
+        btns[i].setAttribute("data-state", st);
+        setKonroBtnAria(btns[i], num, st);
+      }
+    }
+
+    function setKonroBtnAria(btn, num, state) {
+      var stateLabel = state === "white" ? t("konroWhite")
+                     : state === "red"   ? t("konroRed")
+                     : t("konroSkeleton");
+      btn.setAttribute("aria-label", t("konro") + " " + num + " " + stateLabel);
+    }
+
+    /* ===================== 並べ替え (長押し 0.8s で掴む → ドラッグ → 離して確定 / 取消) ===================== */
+    var isReordering = false;
+    var grab = null;       // { id, el, startX, startY, timer, seqBefore }
+    function setReorderingClass(on) {
+      isReordering = on;
+      document.body.classList.toggle("is-reordering", on);
+    }
+
+    function attachReorderHandlers(card, handle, id) {
+      handle.addEventListener("pointerdown", function (ev) {
+        if (mode === "hall") return;                    // ホールは読取専用
+        if (ev.button != null && ev.button !== 0) return;
+        if (grab) return;
+        var prog = card.querySelector(".grab-progress");
+        var startedAt = Date.now();
+        card.classList.add("grabbing-pending");
+        // 進捗リングを 0.8s かけて満たす (reduced-motion でも長押し判定は機能)
+        var raf = null;
+        function tickProg() {
+          var p = Math.min(1, (Date.now() - startedAt) / LONGPRESS_MS);
+          if (prog) prog.style.width = (p * 100) + "%";
+          if (p < 1 && grabPending) raf = requestAnimationFrame(tickProg);
+        }
+        var grabPending = true;
+        if (!prefersReducedMotion()) raf = requestAnimationFrame(tickProg);
+
+        var timer = setTimeout(function () {
+          grabPending = false;
+          beginGrab(id, card, ev);
+        }, LONGPRESS_MS);
+
+        function cancelPending() {
+          grabPending = false;
+          if (timer) clearTimeout(timer);
+          if (raf) cancelAnimationFrame(raf);
+          card.classList.remove("grabbing-pending");
+          if (prog) prog.style.width = "0%";
+          handle.removeEventListener("pointerup", cancelPending);
+          handle.removeEventListener("pointermove", onMaybeMove);
+          handle.removeEventListener("pointercancel", cancelPending);
+        }
+        function onMaybeMove(mv) {
+          // 掴む前に大きく動いたらスクロール意図 -> キャンセル
+          if (Math.abs(mv.clientX - ev.clientX) > 12 || Math.abs(mv.clientY - ev.clientY) > 12) cancelPending();
+        }
+        handle.addEventListener("pointerup", cancelPending);
+        handle.addEventListener("pointermove", onMaybeMove);
+        handle.addEventListener("pointercancel", cancelPending);
+      });
+    }
+
+    function beginGrab(id, card, ev) {
+      card.classList.remove("grabbing-pending");
+      var prog = card.querySelector(".grab-progress");
+      if (prog) prog.style.width = "0%";
+      grab = { id: id, el: card, seqBefore: orderSeq.slice() };
+      setReorderingClass(true);
+      card.classList.add("grabbed");
+
+      function onMove(mv) {
+        // ポインタ直下のカードを探し、その前へ自分を差し込む (列グリッドでも DOM順=表示順)
+        var target = document.elementFromPoint(mv.clientX, mv.clientY);
+        if (!target) return;
+        var tcard = target.closest ? target.closest(".card") : null;
+        if (!tcard || tcard === card || tcard.parentNode !== boardEl) return;
+        var rect = tcard.getBoundingClientRect();
+        // 折り返し2D グリッド (行優先): まず行(縦)で判定、同一行なら左右の中点で前後を判定。
+        var before;
+        if (mv.clientY < rect.top)        before = true;     // 対象カードより上の行 -> 前
+        else if (mv.clientY > rect.bottom) before = false;   // 対象カードより下の行 -> 後
+        else before = mv.clientX < rect.left + rect.width / 2; // 同一行内 -> 左右の中点
+        boardEl.querySelectorAll(".card.drop-target").forEach(function (n) { n.classList.remove("drop-target"); });
+        tcard.classList.add("drop-target");
+        if (before) boardEl.insertBefore(card, tcard);
+        else boardEl.insertBefore(card, tcard.nextSibling);
+      }
+      function onUp() {
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        // 確定: DOM順を orderSeq に取り込む (確定ボタンでも同じ。離した時点で仮確定)
+      }
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+    }
+
+    function commitReorder() {
+      if (!grab) return;
+      boardEl.querySelectorAll(".card.drop-target").forEach(function (n) { n.classList.remove("drop-target"); });
+      if (grab.el) grab.el.classList.remove("grabbed");
+      // 現在の DOM 順を orderSeq に反映
+      var next = [];
+      Array.prototype.slice.call(boardEl.children).forEach(function (el) {
+        var did = el.getAttribute("data-id");
+        if (did != null) next.push(String(did));
+      });
+      orderSeq = next;
+      saveOrderSeq();
+      broadcastOrderSeq();
+      grab = null;
+      setReorderingClass(false);
+    }
+
+    function cancelReorder() {
+      if (!grab) return;
+      boardEl.querySelectorAll(".card.drop-target").forEach(function (n) { n.classList.remove("drop-target"); });
+      if (grab.el) grab.el.classList.remove("grabbed");
+      orderSeq = grab.seqBefore.slice();
+      grab = null;
+      setReorderingClass(false);
+      saveOrderSeq();
+      applyOrderSeq();      // 元の並びへ戻す
+    }
+
+    /* ===================== 予約ストック ===================== */
+    function sortStock() {
+      stock.sort(function (a, b) { return String(a.time).localeCompare(String(b.time)); });
+    }
+
+    function minutesUntil(timeStr) {
+      // "HH:MM" を本日その時刻として、現在からの差(分)を返す
+      var parts = String(timeStr || "").split(":");
+      if (parts.length < 2) return Infinity;
+      var d = new Date();
+      d.setHours(Number(parts[0]) || 0, Number(parts[1]) || 0, 0, 0);
+      return Math.round((d.getTime() - Date.now()) / 60000);
+    }
+
+    function renderStock() {
+      sortStock();
+      stockCountEl.textContent = String(stock.length);
+      stockListEl.innerHTML = "";
+      if (!stock.length) {
+        var em = document.createElement("div");
+        em.className = "stock-empty";
+        em.textContent = t("stockEmpty");
+        stockListEl.appendChild(em);
+        return;
+      }
+      stock.forEach(function (r) {
+        stockListEl.appendChild(buildResCard(r));
+      });
+      updateStockSoon();
+    }
+
+    function buildResCard(r) {
+      var el = document.createElement("article");
+      el.className = "res-card";
+      el.setAttribute("data-rid", String(r.rid));
+
+      var soon = document.createElement("span");
+      soon.className = "res-soon-badge";
+      soon.textContent = t("soon");
+
+      var top = document.createElement("div");
+      top.className = "res-top";
+      var time = document.createElement("span");
+      time.className = "res-time";
+      time.textContent = r.time || "--:--";
+      var people = document.createElement("span");
+      people.className = "res-people";
+      var kidsStr = (Number(r.kids) > 0) ? '<span class="kids">' + t("kidsLabel") + " " + Number(r.kids) + "</span>" : "";
+      people.innerHTML = '<span class="n">' + (Number(r.adults) || 0) + "</span>" + t("people") + kidsStr;
+      top.appendChild(time);
+      top.appendChild(people);
+
+      var name = document.createElement("div");
+      name.className = "res-name";
+      name.textContent = r.name || "—";
+
+      var menu = document.createElement("ul");
+      menu.className = "res-menu";
+      (r.menu || []).forEach(function (m) {
+        var li = document.createElement("li");
+        li.textContent = m.name;
+        var q = document.createElement("span");
+        q.className = "q";
+        q.textContent = "×" + (Number(m.qty) || 1);
+        li.appendChild(q);
+        menu.appendChild(li);
+      });
+
+      var actions = document.createElement("div");
+      actions.className = "res-actions";
+      var seat = document.createElement("input");
+      seat.type = "text";
+      seat.className = "res-seat";
+      seat.setAttribute("placeholder", t("seatPh"));
+      seat.setAttribute("aria-label", t("seatPh"));
+      seat.maxLength = 6;
+      var go = document.createElement("button");
+      go.type = "button";
+      go.className = "res-go";
+      go.textContent = t("go");
+      go.addEventListener("click", function () { moveResToMain(r.rid, seat.value); });
+      var del = document.createElement("button");
+      del.type = "button";
+      del.className = "res-del";
+      del.setAttribute("aria-label", t("del"));
+      del.textContent = "×";
+      del.addEventListener("click", function () { deleteRes(r.rid); });
+      actions.appendChild(seat);
+      actions.appendChild(go);
+      actions.appendChild(del);
+
+      el.appendChild(soon);
+      el.appendChild(top);
+      el.appendChild(name);
+      if ((r.menu || []).length) el.appendChild(menu);
+      el.appendChild(actions);
+      return el;
+    }
+
+    /* 30分前通知: 該当カードに .soon を付ける (毎分更新) */
+    function updateStockSoon() {
+      var nodes = stockListEl.querySelectorAll(".res-card");
+      for (var i = 0; i < nodes.length; i++) {
+        var rid = nodes[i].getAttribute("data-rid");
+        var r = findRes(rid);
+        if (!r) continue;
+        var mu = minutesUntil(r.time);
+        nodes[i].classList.toggle("soon", mu <= SOON_MIN && mu >= -5);
+      }
+    }
+
+    function findRes(rid) {
+      rid = String(rid);
+      for (var i = 0; i < stock.length; i++) if (String(stock[i].rid) === rid) return stock[i];
+      return null;
+    }
+
+    function deleteRes(rid) {
+      rid = String(rid);
+      stock = stock.filter(function (r) { return String(r.rid) !== rid; });
+      saveStock();
+      broadcastStock();
+      renderStock();
+    }
+
+    /* 来店 → メイン配膳へ (予約→進行中)。席番(卓番)入力必須 */
+    function moveResToMain(rid, seat) {
+      var r = findRes(rid);
+      if (!r) return;
+      seat = String(seat || "").trim();
+      if (!seat) {
+        // 該当カードの入力にフォーカスし、簡易エラー (色変え)
+        var card = stockListEl.querySelector('.res-card[data-rid="' + rid + '"]');
+        if (card) {
+          var inp = card.querySelector(".res-seat");
+          if (inp) { inp.style.borderColor = "#c25050"; inp.focus(); }
+        }
+        return;
+      }
+      // 予約 → 進行中オーダー (type:"reserved" として配膳カード化)
+      var order = {
+        id: "res-" + r.rid,
+        table: seat,
+        type: "reserved",
+        start: Date.now(),
+        people: (Number(r.adults) || 0) + (Number(r.kids) || 0),
+        items: (r.menu || []).map(function (m) {
+          return { name: m.name, qty: Number(m.qty) || 1, options: null, done: false };
+        })
+      };
+      ensureOrderInBus(order);
+      // ストックから除去
+      stock = stock.filter(function (x) { return String(x.rid) !== String(rid); });
+      saveStock();
+      renderStock();
+      broadcastMoveToMain(order);
+      poll();   // 即時に配膳カードを出す
+    }
+
+    /* window.KDS_ORDERS に order を投入 (データ契約維持。重複は上書き) */
+    function ensureOrderInBus(order) {
+      if (!Array.isArray(window.KDS_ORDERS)) window.KDS_ORDERS = [];
+      var idx = -1;
+      for (var i = 0; i < window.KDS_ORDERS.length; i++) {
+        if (String(window.KDS_ORDERS[i].id) === String(order.id)) { idx = i; break; }
+      }
+      if (idx >= 0) window.KDS_ORDERS[idx] = order;
+      else window.KDS_ORDERS.push(order);
+    }
+
+    /* ===================== 予約追加フォーム (モーダル) ===================== */
+    function buildMenuPick() {
+      menuPickEl.innerHTML = "";
+      MENU_OPTIONS.forEach(function (name, i) {
+        var row = document.createElement("div");
+        row.className = "row";
+        var label = document.createElement("label");
+        var cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.setAttribute("data-menu", name);
+        cb.id = "menu_" + i;
+        var span = document.createElement("span");
+        span.textContent = name;
+        label.htmlFor = cb.id;
+        label.appendChild(cb);
+        label.appendChild(span);
+        var qty = document.createElement("input");
+        qty.type = "number";
+        qty.min = "1"; qty.max = "20"; qty.value = "1";
+        qty.disabled = true;
+        qty.setAttribute("aria-label", name + " 個数");
+        cb.addEventListener("change", function () { qty.disabled = !cb.checked; });
+        row.appendChild(label);
+        row.appendChild(qty);
+        menuPickEl.appendChild(row);
+      });
+    }
+
+    function openModal() {
+      formErrorEl.textContent = "";
+      resForm.reset();
+      buildMenuPick();
+      // デフォルト時刻 = 現在+30分
+      var d = new Date(Date.now() + 30 * 60000);
+      document.getElementById("resTime").value = pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+      document.getElementById("resAdults").value = "2";
+      document.getElementById("resKids").value = "0";
+      document.body.classList.add("modal-open");
+      var ti = document.getElementById("resTime");
+      if (ti && ti.focus) ti.focus();
+    }
+    function closeModal() { document.body.classList.remove("modal-open"); }
+
+    function submitRes(ev) {
+      ev.preventDefault();
+      var time = document.getElementById("resTime").value;
+      var adults = Number(document.getElementById("resAdults").value) || 0;
+      var kids = Number(document.getElementById("resKids").value) || 0;
+      var name = String(document.getElementById("resName").value || "").trim();
+      if (!time) { formErrorEl.textContent = t("errTime"); return; }
+      var menu = [];
+      var rows = menuPickEl.querySelectorAll(".row");
+      for (var i = 0; i < rows.length; i++) {
+        var cb = rows[i].querySelector('input[type="checkbox"]');
+        var qn = rows[i].querySelector('input[type="number"]');
+        if (cb && cb.checked) menu.push({ name: cb.getAttribute("data-menu"), qty: Math.max(1, Number(qn.value) || 1) });
+      }
+      if (!menu.length) { formErrorEl.textContent = t("errMenu"); return; }
+      stock.push({
+        rid: "r" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+        time: time, adults: adults, kids: kids, name: name, menu: menu
+      });
+      saveStock();
+      broadcastStock();
+      renderStock();
+      closeModal();
+    }
+
+    /* ===================== チビ伝印刷 (簡易プレビュー + window.print) ===================== */
+    function openSlip(order) {
+      slipTableEl.textContent = order.table != null ? String(order.table) : "--";
+      slipMetaEl.textContent = t("slipMeta") + " " + hhmm(order.start);
+      slipItemsEl.innerHTML = "";
+      (order.items || []).forEach(function (it) {
+        var li = document.createElement("li");
+        var nm = document.createElement("span");
+        nm.textContent = it.name + (it.options ? "" : "");
+        if (it.options) {
+          var o = document.createElement("span");
+          o.className = "o";
+          o.textContent = " (" + it.options + ")";
+          nm.appendChild(o);
+        }
+        var q = document.createElement("span");
+        q.className = "q";
+        q.textContent = "×" + (Number(it.qty) || 1);
+        li.appendChild(nm);
+        li.appendChild(q);
+        slipItemsEl.appendChild(li);
+      });
+      document.body.classList.add("slip-open");
+    }
+    function closeSlip() { document.body.classList.remove("slip-open"); }
+
+    function maybeAutoPrint(order) {
+      if (!autoPrint) return;
+      if (mode === "hall") return;
+      if (seededIds[order.id]) return;       // このタブで既出
+      seededIds[order.id] = true;
+      // 初回ロードの大量シードでプレビューが連発しないよう、1件だけ自動表示
+      if (autoPrintArmed) { openSlip(order); }
+    }
+    var autoPrintArmed = false;   // 初期シード後に解禁 (起動時の15件で連発させない)
+
+    /* ===================== 権限モード / 自動印刷トグル ===================== */
+    function applyMode() {
+      document.body.classList.toggle("mode-hall", mode === "hall");
+      modeBtns.forEach(function (b) {
+        b.setAttribute("aria-pressed", b.getAttribute("data-mode") === mode ? "true" : "false");
+      });
+    }
+    function setMode(next) {
+      mode = (next === "hall") ? "hall" : "kitchen";
+      try { localStorage.setItem(LS_MODE, mode); } catch (e) {}
+      if (mode === "hall" && grab) cancelReorder();
+      applyMode();
+    }
+    function applyAutoPrint() {
+      printToggleEl.setAttribute("aria-pressed", autoPrint ? "true" : "false");
+    }
+    function setAutoPrint(on) {
+      autoPrint = !!on;
+      try { localStorage.setItem(LS_AUTOP, autoPrint ? "1" : "0"); } catch (e) {}
+      applyAutoPrint();
+    }
+
+    /* ===================== タイマー (経過時間 / 時計) ===================== */
+    function updateTimers() {
+      Object.keys(cards).forEach(function (id) {
+        var entry = cards[id];
+        if (!entry || !entry.el) return;
+        var min = elapsedMin(entry.order.start);
+        var lvl = levelOf(min);
+        var badge = entry.el.querySelector(".js-elapsed");
+        var val = entry.el.querySelector(".js-elapsed-val");
+        if (val) val.textContent = String(min);
+        if (badge && entry.level !== lvl) {
+          badge.classList.remove("warn", "alert");
+          if (lvl === "warn") badge.classList.add("warn");
+          else if (lvl === "alert") badge.classList.add("alert");
+          entry.el.classList.remove("lvl-warn", "lvl-alert");
+          entry.el.classList.add("lvl-" + lvl);
+          entry.level = lvl;
+        }
+      });
+    }
+
+    function updateClock() {
+      var d = new Date();
+      clockEl.innerHTML = pad2(d.getHours()) + ":" + pad2(d.getMinutes()) +
+        '<span class="sec">:' + pad2(d.getSeconds()) + '</span>';
+    }
+
+    /* ===================== ラベル (言語) ===================== */
+    function relabel() {
+      // カード内の言語依存ラベル
+      Object.keys(cards).forEach(function (id) {
+        var entry = cards[id];
+        if (!entry || !entry.el) return;
+        var el = entry.el;
+        var badge = el.querySelector(".js-badge");
+        if (badge) badge.textContent = entry.order.type === "reserved" ? t("reserved") : t("new");
+        var unit = el.querySelector(".js-unit");
+        if (unit) unit.textContent = t("people");
+        var recvL = el.querySelector(".js-recv");
+        if (recvL) recvL.textContent = t("recv");
+        var elL = el.querySelector(".js-elapsed-label");
+        if (elL) elL.textContent = t("elapsed");
+        var minL = el.querySelector(".js-min");
+        if (minL) minL.textContent = t("min");
+        var kL = el.querySelector(".js-konro-label");
+        if (kL) kL.textContent = t("konro");
+        var sB = el.querySelector(".js-slip-btn");
+        if (sB) sB.setAttribute("aria-label", t("print"));
+        // コンロボタンの aria ラベルも言語に合わせて更新
+        var kbtns = el.querySelectorAll(".konro-btn");
+        for (var ki = 0; ki < kbtns.length; ki++) {
+          var kNum = kbtns[ki].getAttribute("data-num");
+          setKonroBtnAria(kbtns[ki], kNum, kbtns[ki].getAttribute("data-state") || KONRO_DEFAULT);
+        }
+      });
+      // 静的 data-i18n 要素
+      var nodes = document.querySelectorAll("[data-i18n]");
+      for (var i = 0; i < nodes.length; i++) {
+        var key = nodes[i].getAttribute("data-i18n");
+        nodes[i].textContent = t(key);
+      }
+      // 予約ストックも言語反映 (カードを作り直す)
+      renderStock();
+    }
+
+    function setLang(next) {
+      if (!I18N[next]) next = "ja";
+      lang = next;
+      try { localStorage.setItem(LS_LANG, lang); } catch (e) {}
+      document.documentElement.setAttribute("lang", LANG_HTML[lang] || "ja");
+      langBtns.forEach(function (b) {
+        b.setAttribute("aria-pressed", b.getAttribute("data-lang") === lang ? "true" : "false");
+      });
+      relabel();
+    }
+
+    /* ===================== 空状態 ===================== */
+    function reflectEmpty() {
+      var has = boardEl.children.length > 0;
+      document.body.classList.toggle("is-empty", !has);
+    }
+
+    /* ===================== デモ / シードデータ ===================== */
+    function makeDemo() {
+      var now = Date.now();
+      var m = 60000;
+      return [
+        { id: now - 1,  table:"A1", type:"new",      start: now - 1*m,  people:2,
+          items:[ {name:"土鍋ご飯（白米）", qty:2, options:"辛さ控えめ", done:false},
+                  {name:"豚角煮トッピング", qty:1, options:null, done:false} ] },
+        { id: now - 2,  table:"B2", type:"reserved", start: now - 3*m,  people:4,
+          items:[ {name:"沖縄そば定食", qty:3, options:null, done:false},
+                  {name:"ジューシー", qty:2, options:"大盛り", done:false},
+                  {name:"さんぴん茶", qty:4, options:null, done:false} ] },
+        { id: now - 3,  table:"A3", type:"new",      start: now - 6*m,  people:1,
+          items:[ {name:"タコライス", qty:1, options:"チーズ追加", done:false} ] },
+        { id: now - 4,  table:"C1", type:"reserved", start: now - 8*m,  people:3,
+          items:[ {name:"土鍋ご飯（玄米）", qty:1, options:null, done:true},
+                  {name:"ゴーヤチャンプルー", qty:2, options:"卵多め", done:false} ] },
+        { id: now - 5,  table:"A2", type:"new",      start: now - 11*m, people:2,
+          items:[ {name:"海ぶどう小鉢", qty:2, options:null, done:false},
+                  {name:"オリオンビール", qty:2, options:"よく冷えたもの", done:false} ] },
+        { id: now - 6,  table:"B1", type:"new",      start: now - 2*m,  people:2,
+          items:[ {name:"アグー豚しゃぶ", qty:1, options:null, done:false} ] },
+        { id: now - 7,  table:"C3", type:"reserved", start: now - 13*m, people:4,
+          items:[ {name:"土鍋ご飯（白米）", qty:4, options:null, done:false},
+                  {name:"らふてー", qty:2, options:"とろとろ", done:true},
+                  {name:"もずく酢", qty:3, options:null, done:false} ] },
+        { id: now - 8,  table:"A4", type:"new",      start: now - 4*m,  people:1,
+          items:[ {name:"ソーキそば", qty:1, options:"麺かため", done:false} ] },
+        { id: now - 9,  table:"B3", type:"reserved", start: now - 7*m,  people:2,
+          items:[ {name:"ミミガー和え", qty:1, options:null, done:false},
+                  {name:"泡盛ロック", qty:2, options:null, done:false} ] },
+        { id: now - 10, table:"C2", type:"new",      start: now - 9*m,  people:3,
+          items:[ {name:"てびち煮込み", qty:2, options:"骨少なめ", done:false},
+                  {name:"白米", qty:3, options:null, done:false} ] },
+        { id: now - 11, table:"A5", type:"new",      start: now - 30*1000, people:2,
+          items:[ {name:"島豆腐サラダ", qty:1, options:null, done:false},
+                  {name:"シークワーサージュース", qty:2, options:null, done:false} ] },
+        { id: now - 12, table:"B4", type:"reserved", start: now - 5*m,  people:4,
+          items:[ {name:"土鍋ご飯（白米）", qty:2, options:null, done:false},
+                  {name:"グルクン唐揚げ", qty:1, options:null, done:false},
+                  {name:"ジーマーミ豆腐", qty:2, options:"わさび抜き", done:false} ] },
+        { id: now - 13, table:"C4", type:"new",      start: now - 15*m, people:1,
+          items:[ {name:"中身汁", qty:1, options:null, done:false} ] },
+        { id: now - 14, table:"A6", type:"new",      start: now - 10*m, people:2,
+          items:[ {name:"ラフテー丼", qty:2, options:"温玉のせ", done:false},
+                  {name:"アーサ汁", qty:2, options:null, done:false} ] },
+        { id: now - 15, table:"B5", type:"reserved", start: now - 6*m,  people:3,
+          items:[ {name:"沖縄天ぷら盛合せ", qty:1, options:null, done:false},
+                  {name:"ぜんざい", qty:3, options:"白玉追加", done:false} ] }
+      ];
+    }
+
+    /* 予約ストックのデモ (30分前通知が出るものを含む。当日分のみ) */
+    function makeStockDemo() {
+      function tStr(offsetMin) {
+        var d = new Date(Date.now() + offsetMin * 60000);
+        return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+      }
+      return [
+        { rid:"d1", time:tStr(20),  adults:2, kids:1, name:"比嘉様",
+          menu:[{name:"土鍋ご飯（白米）",qty:2},{name:"沖縄そば定食",qty:2}] },   // 30分以内 -> 通知
+        { rid:"d2", time:tStr(25),  adults:4, kids:0, name:"大城様",
+          menu:[{name:"タコライス",qty:2},{name:"ゴーヤチャンプルー",qty:1},{name:"もずく酢",qty:4}] }, // 通知
+        { rid:"d3", time:tStr(75),  adults:3, kids:2, name:"宮城様",
+          menu:[{name:"土鍋ご飯（玄米）",qty:1},{name:"らふてー",qty:2}] },
+        { rid:"d4", time:tStr(140), adults:6, kids:0, name:"金城様",
+          menu:[{name:"沖縄天ぷら盛合せ",qty:2},{name:"ソーキそば",qty:4},{name:"海ぶどう小鉢",qty:3}] }
+      ];
+    }
+
+    function injectDemo() {
+      window.KDS_ORDERS = makeDemo();
+      // 既存の完了状態 / コンロ状態 / 並び順キャッシュをクリアしてデモを素直に出す
+      doneMap = {};
+      konroMap = {}; saveKonro();
+      orderSeq = []; saveOrderSeq();
+      // 予約ストックが空ならデモ予約も投入 (既存の手入力は壊さない)
+      if (!stock.length) { stock = makeStockDemo(); saveStock(); }
+      Object.keys(cards).forEach(function (id) { removeCard(id, false); });
+      poll();
+      renderStock();
+    }
+
+    /* ===================== ポーリング ===================== */
+    function poll() {
+      var orders = getOrders();
+      loadDone();                 // 他タブ/リロードで更新された LS を取り込む (フォールバック同期)
+      loadKonro();                // コンロ状態も LS から取り込む (BroadcastChannel 非対応時のフォールバック同期)
+      if (!isReordering) loadOrderSeq();   // 並び順も LS から取り込む (掴み中は触らない)
+      applyDoneToOrders(orders);
+      render(orders);
+    }
+
+    /* ===================== 初期化 ===================== */
+    function init() {
+      // 言語復元
+      var savedLang = null;
+      try { savedLang = localStorage.getItem(LS_LANG); } catch (e) {}
+      setLang(savedLang || "ja");
+
+      loadDone();
+      loadKonro();
+      loadOrderSeq();
+      loadStock();
+      loadPrefs();
+      applyMode();
+      applyAutoPrint();
+      initSync();
+
+      langBtns.forEach(function (b) {
+        b.addEventListener("click", function () { setLang(b.getAttribute("data-lang")); });
+      });
+      modeBtns.forEach(function (b) {
+        b.addEventListener("click", function () { setMode(b.getAttribute("data-mode")); });
+      });
+      if (printToggleEl) printToggleEl.addEventListener("click", function () { setAutoPrint(!autoPrint); });
+      if (demoBtn) demoBtn.addEventListener("click", injectDemo);
+
+      // 予約ストック操作
+      if (stockAddBtn) stockAddBtn.addEventListener("click", openModal);
+      if (resCancelBtn) resCancelBtn.addEventListener("click", closeModal);
+      if (resForm) resForm.addEventListener("submit", submitRes);
+      if (modalBackdrop) modalBackdrop.addEventListener("click", function (e) { if (e.target === modalBackdrop) closeModal(); });
+
+      // チビ伝
+      if (slipPrintBtn) slipPrintBtn.addEventListener("click", function () { window.print(); });
+      if (slipCloseBtn) slipCloseBtn.addEventListener("click", closeSlip);
+      if (slipBackdrop) slipBackdrop.addEventListener("click", function (e) { if (e.target === slipBackdrop) closeSlip(); });
+
+      // 並べ替え取消/確定
+      if (reorderUndoBtn) reorderUndoBtn.addEventListener("click", cancelReorder);
+      if (reorderDoneBtn) reorderDoneBtn.addEventListener("click", commitReorder);
+
+      // ESC でモーダル/伝票を閉じる / 並べ替え取消
+      document.addEventListener("keydown", function (e) {
+        if (e.key !== "Escape") return;
+        if (document.body.classList.contains("slip-open")) closeSlip();
+        else if (document.body.classList.contains("modal-open")) closeModal();
+        else if (isReordering) cancelReorder();
+      });
+
+      updateClock();
+      renderStock();
+      poll();
+
+      // 起動時 POS 未接続 (空) ならデモを自動シード (本番で POS が入れば上書きされ邪魔しない)
+      if (getOrders().length === 0) {
+        injectDemo();
+      }
+
+      // 初期シード分は自動印刷を抑止。以降の新着のみ対象にする
+      setTimeout(function () { autoPrintArmed = true; }, 1500);
+
+      setInterval(poll, POLL_MS);
+      setInterval(function () { updateTimers(); updateClock(); }, TICK_MS);
+      // 予約30分前通知は毎分判定 (秒更新は不要)
+      setInterval(updateStockSoon, 30000);
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", init);
+    } else {
+      init();
+    }
+  })();
+  </script>
+</body>
+</html>
