@@ -184,32 +184,6 @@
   .print-toggle[aria-pressed="true"] { color: var(--text-primary); border-color: var(--text-primary); }
   .print-toggle[aria-pressed="true"] .dot { background: var(--elapsed-ok); border-color: var(--elapsed-ok); }
 
-  .lang-switch {
-    display: flex;
-    gap: 6px;
-    flex: 0 0 auto;
-  }
-  .lang-btn {
-    min-width: 64px;
-    min-height: 44px;
-    padding: 6px 12px;
-    border: 1px solid var(--hairline);
-    border-radius: 8px;
-    background: transparent;
-    color: var(--text-secondary);
-    font-family: var(--font-ui);
-    font-size: 15px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background-color .12s ease, color .12s ease, border-color .12s ease;
-  }
-  .lang-btn:hover { color: var(--text-primary); border-color: var(--hairline); background: rgba(240,237,232,0.06); }
-  .lang-btn:active { transform: translateY(1px); }
-  .lang-btn[aria-pressed="true"] {
-    color: var(--text-primary);
-    border-color: var(--text-primary);
-    background: rgba(240,237,232,0.12);
-  }
   :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 
   /* ============================================================ 2ペインシェル (左=メイン配膳 / 右=予約ストック) */
@@ -931,11 +905,6 @@
       <span data-i18n="autoPrint">自動印刷</span>
     </button>
 
-    <div class="lang-switch" role="group" aria-label="言語切り替え / Language">
-      <button type="button" class="lang-btn" data-lang="ja"  lang="ja">日本語</button>
-      <button type="button" class="lang-btn" data-lang="ne"  lang="ne">नेपाली</button>
-      <button type="button" class="lang-btn" data-lang="zh"  lang="zh-Hant">繁體中文</button>
-    </div>
   </header>
 
   <div class="shell">
@@ -1032,7 +1001,6 @@
     var POLL_MS = 1000;            // window.KDS_ORDERS ポーリング間隔
     var TICK_MS = 1000;            // 経過時間 / 時計 更新間隔
     var FADE_MS = 300;             // 全完了カードのフェードアウト
-    var LS_LANG = "kds_lang";      // 言語設定
     var LS_DONE = "kds_done_v1";   // 品目完了状態 (id -> [bool,...])
     var LS_KONRO = "kds_konro_v1"; // コンロ番号状態 (cardId -> { "1":"white", "3":"red", ... })
     var LS_ORDER = "kds_order_v1"; // 配膳カードの並び順 (orderId 配列)
@@ -1049,44 +1017,20 @@
     var KONRO_CYCLE = { "skeleton": "white", "white": "red", "red": "skeleton" };
     var KONRO_DEFAULT = "skeleton";
 
-    /* ---- 多言語ラベル (PRD 対訳表を静的埋め込み) ---- */
-    var I18N = {
-      ja: { new:"新規", reserved:"予約", people:"名", recv:"受付", elapsed:"経過", done:"完了",
-            min:"分", emptyTitle:"オーダー待機中", emptyHint:"POS からの注文がここに表示されます",
-            demo:"デモデータを投入",
-            konro:"コンロ", konroSkeleton:"未使用", konroWhite:"使用中", konroRed:"タイマー管理中",
-            modeKitchen:"キッチン", modeHall:"ホール", autoPrint:"自動印刷",
-            stockTitle:"予約ストック", stockEmpty:"本日の予約はありません",
-            addReservation:"予約を追加", fldTime:"予約時間", fldAdults:"大人", fldKids:"0-2歳",
-            fldName:"名前", fldMenu:"メニュー（個数）", cancel:"キャンセル", save:"登録",
-            print:"印刷", close:"閉じる", soon:"まもなく", seatPh:"卓番", go:"配膳へ", del:"削除",
-            reorderMsg:"並べ替え中（離して確定 / 取消で戻す）", undo:"取消", reorderDone:"確定",
-            errTime:"予約時間を入力してください", errMenu:"メニューを1つ以上選択してください",
-            errSeat:"卓番を入力してください", slipMeta:"受付", kidsLabel:"幼" },
-      ne: { new:"नयाँ", reserved:"आरक्षण", people:"जना", recv:"प्राप्त", elapsed:"बितेको", done:"पूर्ण",
-            min:"मिनेट", emptyTitle:"अर्डर पर्खँदै", emptyHint:"POS बाट अर्डर यहाँ देखिनेछ",
-            demo:"डेमो डाटा हाल्नुहोस्",
-            konro:"चुलो", konroSkeleton:"प्रयोग नभएको", konroWhite:"प्रयोगमा", konroRed:"टाइमर",
-            modeKitchen:"भान्सा", modeHall:"हल", autoPrint:"स्वतः छाप",
-            stockTitle:"आरक्षण", stockEmpty:"आजको आरक्षण छैन",
-            addReservation:"आरक्षण थप्नुहोस्", fldTime:"समय", fldAdults:"वयस्क", fldKids:"0-2 वर्ष",
-            fldName:"नाम", fldMenu:"मेनु (मात्रा)", cancel:"रद्द", save:"दर्ता",
-            print:"छाप्नुहोस्", close:"बन्द", soon:"चाँडै", seatPh:"टेबल नं", go:"पठाउनुहोस्", del:"मेटाउनुहोस्",
-            reorderMsg:"मिलाउँदै (छोड्दा पक्का / रद्द गर्न फिर्ता)", undo:"रद्द", reorderDone:"पक्का",
-            errTime:"समय राख्नुहोस्", errMenu:"कम्तीमा एउटा मेनु छान्नुहोस्",
-            errSeat:"टेबल नम्बर राख्नुहोस्", slipMeta:"प्राप्त", kidsLabel:"बच्चा" },
-      zh: { new:"新訂", reserved:"預約", people:"人", recv:"接單", elapsed:"經過", done:"完成",
-            min:"分", emptyTitle:"等待訂單", emptyHint:"POS 的訂單將顯示於此",
-            demo:"載入示範資料",
-            konro:"爐口", konroSkeleton:"未使用", konroWhite:"使用中", konroRed:"計時中",
-            modeKitchen:"廚房", modeHall:"外場", autoPrint:"自動列印",
-            stockTitle:"預約清單", stockEmpty:"今日無預約",
-            addReservation:"新增預約", fldTime:"預約時間", fldAdults:"大人", fldKids:"0-2歲",
-            fldName:"姓名", fldMenu:"菜單（數量）", cancel:"取消", save:"登錄",
-            print:"列印", close:"關閉", soon:"即將", seatPh:"桌號", go:"送出", del:"刪除",
-            reorderMsg:"排序中（放開確定 / 取消還原）", undo:"取消", reorderDone:"確定",
-            errTime:"請輸入預約時間", errMenu:"請至少選擇一項菜單",
-            errSeat:"請輸入桌號", slipMeta:"接單", kidsLabel:"幼" }
+    /* ---- ラベル (日本語固定) ---- */
+    var LABELS = {
+      new:"新規", reserved:"予約", people:"名", recv:"受付", elapsed:"経過", done:"完了",
+      min:"分", emptyTitle:"オーダー待機中", emptyHint:"POS からの注文がここに表示されます",
+      demo:"デモデータを投入",
+      konro:"コンロ", konroSkeleton:"未使用", konroWhite:"使用中", konroRed:"タイマー管理中",
+      modeKitchen:"キッチン", modeHall:"ホール", autoPrint:"自動印刷",
+      stockTitle:"予約ストック", stockEmpty:"本日の予約はありません",
+      addReservation:"予約を追加", fldTime:"予約時間", fldAdults:"大人", fldKids:"0-2歳",
+      fldName:"名前", fldMenu:"メニュー（個数）", cancel:"キャンセル", save:"登録",
+      print:"印刷", close:"閉じる", soon:"まもなく", seatPh:"卓番", go:"配膳へ", del:"削除",
+      reorderMsg:"並べ替え中（離して確定 / 取消で戻す）", undo:"取消", reorderDone:"確定",
+      errTime:"予約時間を入力してください", errMenu:"メニューを1つ以上選択してください",
+      errSeat:"卓番を入力してください", slipMeta:"受付", kidsLabel:"幼"
     };
     /* 予約フォームのメニュー候補 (POS未接続のため静的。略称表示) */
     var MENU_OPTIONS = [
@@ -1094,10 +1038,7 @@
       "タコライス", "ゴーヤチャンプルー", "アグー豚しゃぶ", "ジューシー",
       "海ぶどう小鉢", "らふてー", "もずく酢", "沖縄天ぷら盛合せ"
     ];
-    var LANG_HTML = { ja:"ja", ne:"ne", zh:"zh-Hant" };
-
     /* ---- 状態 ---- */
-    var lang = "ja";
     var doneMap = {};              // { orderId: [bool, bool, ...] }  完了状態(LocalStorage正本)
     var konroMap = {};             // { cardId: { "1":"white", "3":"red", ... } } コンロ状態(LocalStorage正本)
     var cards = {};                // { orderId: { el, order, level } } DOM キャッシュ
@@ -1114,7 +1055,6 @@
     var emptyEl = document.getElementById("empty");
     var clockEl = document.getElementById("clock");
     var demoBtn = document.getElementById("demoBtn");
-    var langBtns = Array.prototype.slice.call(document.querySelectorAll(".lang-btn"));
     var modeBtns = Array.prototype.slice.call(document.querySelectorAll(".mode-btn"));
     var printToggleEl = document.getElementById("printToggle");
     var stockListEl = document.getElementById("stockList");
@@ -1135,7 +1075,7 @@
     var reorderDoneBtn = document.getElementById("reorderDone");
 
     /* ===================== ユーティリティ ===================== */
-    function t(key) { return (I18N[lang] && I18N[lang][key]) || I18N.ja[key] || key; }
+    function t(key) { return LABELS[key] || key; }
 
     function pad2(n) { return n < 10 ? "0" + n : "" + n; }
 
@@ -1519,7 +1459,6 @@
       applyOrderSeq();
 
       updateTimers();
-      relabel();
       reflectEmpty();
     }
 
@@ -2137,55 +2076,6 @@
         '<span class="sec">:' + pad2(d.getSeconds()) + '</span>';
     }
 
-    /* ===================== ラベル (言語) ===================== */
-    function relabel() {
-      // カード内の言語依存ラベル
-      Object.keys(cards).forEach(function (id) {
-        var entry = cards[id];
-        if (!entry || !entry.el) return;
-        var el = entry.el;
-        var badge = el.querySelector(".js-badge");
-        if (badge) badge.textContent = entry.order.type === "reserved" ? t("reserved") : t("new");
-        var unit = el.querySelector(".js-unit");
-        if (unit) unit.textContent = t("people");
-        var recvL = el.querySelector(".js-recv");
-        if (recvL) recvL.textContent = t("recv");
-        var elL = el.querySelector(".js-elapsed-label");
-        if (elL) elL.textContent = t("elapsed");
-        var minL = el.querySelector(".js-min");
-        if (minL) minL.textContent = t("min");
-        var kL = el.querySelector(".js-konro-label");
-        if (kL) kL.textContent = t("konro");
-        var sB = el.querySelector(".js-slip-btn");
-        if (sB) sB.setAttribute("aria-label", t("print"));
-        // コンロボタンの aria ラベルも言語に合わせて更新
-        var kbtns = el.querySelectorAll(".konro-btn");
-        for (var ki = 0; ki < kbtns.length; ki++) {
-          var kNum = kbtns[ki].getAttribute("data-num");
-          setKonroBtnAria(kbtns[ki], kNum, kbtns[ki].getAttribute("data-state") || KONRO_DEFAULT);
-        }
-      });
-      // 静的 data-i18n 要素
-      var nodes = document.querySelectorAll("[data-i18n]");
-      for (var i = 0; i < nodes.length; i++) {
-        var key = nodes[i].getAttribute("data-i18n");
-        nodes[i].textContent = t(key);
-      }
-      // 予約ストックも言語反映 (カードを作り直す)
-      renderStock();
-    }
-
-    function setLang(next) {
-      if (!I18N[next]) next = "ja";
-      lang = next;
-      try { localStorage.setItem(LS_LANG, lang); } catch (e) {}
-      document.documentElement.setAttribute("lang", LANG_HTML[lang] || "ja");
-      langBtns.forEach(function (b) {
-        b.setAttribute("aria-pressed", b.getAttribute("data-lang") === lang ? "true" : "false");
-      });
-      relabel();
-    }
-
     /* ===================== 空状態 ===================== */
     function reflectEmpty() {
       var has = boardEl.children.length > 0;
@@ -2288,11 +2178,6 @@
 
     /* ===================== 初期化 ===================== */
     function init() {
-      // 言語復元
-      var savedLang = null;
-      try { savedLang = localStorage.getItem(LS_LANG); } catch (e) {}
-      setLang(savedLang || "ja");
-
       loadDone();
       loadKonro();
       loadOrderSeq();
@@ -2303,9 +2188,6 @@
       applyAutoPrint();
       initSync();
 
-      langBtns.forEach(function (b) {
-        b.addEventListener("click", function () { setLang(b.getAttribute("data-lang")); });
-      });
       modeBtns.forEach(function (b) {
         b.addEventListener("click", function () { setMode(b.getAttribute("data-mode")); });
       });
