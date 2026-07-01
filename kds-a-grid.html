@@ -393,7 +393,41 @@
     transition: color .12s ease, border-color .12s ease;
   }
   .slip-btn:hover { color: var(--text-primary); border-color: var(--text-primary); }
-  body.mode-hall .slip-btn { display: none; }
+  body.mode-kitchen .slip-btn { display: none; }
+
+  /* 削除ボタン (キッチンモード専用) */
+  .delete-btn {
+    flex: 0 0 auto;
+    min-width: 30px; min-height: 30px;
+    background: none;
+    border: 1px solid rgba(240,237,232,0.16);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 15px; font-weight: 700; line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    transition: color .12s ease, border-color .12s ease;
+  }
+  .delete-btn:hover { color: var(--elapsed-alert); border-color: var(--elapsed-alert); }
+  body.mode-hall .delete-btn { display: none; }
+
+  /* タイマーロックボタン */
+  .lock-btn {
+    flex: 0 0 auto;
+    min-width: 30px; min-height: 30px;
+    background: none;
+    border: 1px solid rgba(240,237,232,0.16);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 11px; font-weight: 700; letter-spacing: .02em;
+    cursor: pointer;
+    padding: 0;
+    transition: color .12s ease, border-color .12s ease;
+  }
+  .lock-btn:hover { color: var(--text-primary); border-color: var(--text-primary); }
+  .lock-btn[aria-pressed="true"] { color: var(--elapsed-warn); border-color: var(--elapsed-warn); }
+  .card.timer-locked .js-elapsed-val { opacity: 0.5; }
+  .card.timer-locked .js-elapsed { text-decoration: line-through; text-decoration-style: dotted; }
   .elapsed .label { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; opacity: .9; font-weight: 700; }
   .elapsed .val   { font-family: var(--font-num); font-size: 20px; font-variant-numeric: tabular-nums; }
   /* 10分超は数値も脈動させ「警告」を強める (色覚に依存しない動き) */
@@ -1005,6 +1039,7 @@
     var LS_STOCK = "kds_stock_v1"; // 予約ストック (当日分のみ。永続DB無し)
     var LS_MODE  = "kds_mode_v1";  // 権限モード (kitchen / hall)
     var LS_AUTOP = "kds_autoprint_v1"; // 自動印刷トグル
+    var LS_LOCKED = "kds_locked_v1"; // タイマーロック状態
     var BC_NAME = "kds_sync";      // BroadcastChannel 名
     var WARN_MIN = 5, ALERT_MIN = 10;
     var SOON_MIN = 30;             // 予約30分前通知
@@ -1070,6 +1105,7 @@
     var stock = [];                // 予約ストック (当日分。LS正本) [{rid,time,adults,kids,name,menu:[{name,qty}],seenAt}]
     var mode = "kitchen";          // 権限モード
     var autoPrint = false;         // 自動印刷トグル
+    var lockedTimers = {};         // タイマーロック状態 { orderId: true }
     var bc = null;
     var seededIds = {};            // 自動印刷の二重発火防止 (このタブで既にプレビュー済みの orderId)
 
@@ -1244,6 +1280,19 @@
             // 予約→進行中の移動を両台で反映 (注文は window.KDS_ORDERS 経由で次ポーリングに乗る)
             stock = msg.stock; saveStock(); renderStock();
             if (msg.order) ensureOrderInBus(msg.order);
+          } else if (msg.type === "deleteOrder" && msg.id) {
+            // 注文削除の同期 (キッチン側の削除を他タブへ反映)
+            if (Array.isArray(window.KDS_ORDERS)) {
+              window.KDS_ORDERS = window.KDS_ORDERS.filter(function(o) { return String(o.id) !== String(msg.id); });
+            }
+            removeCard(String(msg.id), true);
+            orderSeq = orderSeq.filter(function(x) { return String(x) !== String(msg.id); });
+            saveOrderSeq();
+            reflectEmpty();
+          } else if (msg.type === "timerLock" && msg.id) {
+            lockedTimers[String(msg.id)] = !!msg.locked;
+            saveLocked();
+            applyTimerLockToCard(String(msg.id));
           }
         };
       } catch (e) { bc = null; }
@@ -1270,6 +1319,16 @@
     function broadcastKonro(id, num, state) {
       if (!bc) return;
       try { bc.postMessage({ type: "konro", id: id, num: num, state: state }); } catch (e) {}
+    }
+
+    function broadcastDeleteOrder(id) {
+      if (!bc) return;
+      try { bc.postMessage({ type: "deleteOrder", id: String(id) }); } catch (e) {}
+    }
+
+    function broadcastTimerLock(id, locked) {
+      if (!bc) return;
+      try { bc.postMessage({ type: "timerLock", id: String(id), locked: !!locked }); } catch (e) {}
     }
 
     /* ===================== レンダリング ===================== */
@@ -1301,9 +1360,20 @@
       var table = document.createElement("div");
       table.className = "table-no";
       table.textContent = order.table != null ? String(order.table) : "--";
+      // 削除ボタン (キッチンモード専用)
+      var delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "delete-btn";
+      delBtn.setAttribute("aria-label", "注文削除");
+      delBtn.textContent = "×";
+      delBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        deleteOrder(order.id);
+      });
       head.appendChild(badge);
       head.appendChild(people);
       head.appendChild(table);
+      head.appendChild(delBtn);
 
       /* time */
       var timeRow = document.createElement("div");
@@ -1317,15 +1387,24 @@
       elapsed.innerHTML = '<span class="label js-elapsed-label"></span>' +
         '<span class="val js-elapsed-val">0</span>' +
         '<span class="label js-min"></span>';
-      // チビ伝プレビュー (手動再印刷)。ホールでは非表示
+      // チビ伝プレビュー (ホールモードのみ)
       var slipBtn = document.createElement("button");
       slipBtn.type = "button";
       slipBtn.className = "slip-btn js-slip-btn";
       slipBtn.setAttribute("aria-label", t("print"));
       slipBtn.textContent = "伝";
       slipBtn.addEventListener("click", function () { openSlip(order); });
+      // タイマーロックボタン
+      var lockBtn = document.createElement("button");
+      lockBtn.type = "button";
+      lockBtn.className = "lock-btn js-lock-btn";
+      lockBtn.setAttribute("aria-label", "タイマー停止");
+      lockBtn.setAttribute("aria-pressed", "false");
+      lockBtn.textContent = "停";
+      lockBtn.addEventListener("click", function () { toggleTimerLock(order.id); });
       timeRow.appendChild(recv);
       timeRow.appendChild(elapsed);
+      timeRow.appendChild(lockBtn);
       timeRow.appendChild(slipBtn);
 
       /* items */
@@ -1462,15 +1541,22 @@
       if (changed) { orderSeq = next; saveOrderSeq(); }
     }
 
-    /* DOM の並びを orderSeq に合わせる (掴み中は除外) */
+    /* DOM の並びを orderSeq に合わせる (掴み中は除外 / 既に正しい順なら触らない) */
     function applyOrderSeq() {
       if (isReordering) return;
+      // 生存カードの期待順を作成
+      var seqEls = [];
       orderSeq.forEach(function (id) {
         var entry = cards[id];
-        if (entry && entry.el && entry.el.parentNode === boardEl) {
-          boardEl.appendChild(entry.el);   // 順番に末尾へ再配置 = orderSeq 順に整列
-        }
+        if (entry && entry.el && entry.el.parentNode === boardEl) seqEls.push(entry.el);
       });
+      // 現在の DOM 順と比較して変化がなければスキップ (毎秒のリフロー防止)
+      var domChildren = Array.prototype.slice.call(boardEl.children);
+      var liveChildren = domChildren.filter(function (el) { return seqEls.indexOf(el) !== -1; });
+      var alreadySorted = seqEls.length === liveChildren.length &&
+        seqEls.every(function (el, i) { return el === liveChildren[i]; });
+      if (alreadySorted) return;
+      seqEls.forEach(function (el) { boardEl.appendChild(el); });
     }
 
     function isAllDone(entry) {
@@ -1957,6 +2043,50 @@
     }
     var autoPrintArmed = false;   // 初期シード後に解禁 (起動時の15件で連発させない)
 
+    /* ===================== 注文削除 ===================== */
+    function deleteOrder(id) {
+      if (!confirm("この注文を削除しますか?")) return;
+      if (Array.isArray(window.KDS_ORDERS)) {
+        window.KDS_ORDERS = window.KDS_ORDERS.filter(function (o) { return String(o.id) !== String(id); });
+      }
+      broadcastDeleteOrder(id);
+      removeCard(String(id), true);
+      orderSeq = orderSeq.filter(function (x) { return String(x) !== String(id); });
+      saveOrderSeq();
+      broadcastOrderSeq();
+      reflectEmpty();
+    }
+
+    /* ===================== タイマーロック ===================== */
+    function loadLocked() {
+      try {
+        var v = localStorage.getItem(LS_LOCKED);
+        lockedTimers = (v ? JSON.parse(v) : {}) || {};
+        if (typeof lockedTimers !== "object" || Array.isArray(lockedTimers)) lockedTimers = {};
+      } catch (e) { lockedTimers = {}; }
+    }
+    function saveLocked() {
+      try { localStorage.setItem(LS_LOCKED, JSON.stringify(lockedTimers)); } catch (e) {}
+    }
+    function toggleTimerLock(id) {
+      lockedTimers[String(id)] = !lockedTimers[String(id)];
+      saveLocked();
+      broadcastTimerLock(id, lockedTimers[String(id)]);
+      applyTimerLockToCard(String(id));
+    }
+    function applyTimerLockToCard(id) {
+      var entry = cards[id];
+      if (!entry || !entry.el) return;
+      var locked = !!lockedTimers[id];
+      entry.el.classList.toggle("timer-locked", locked);
+      var lockBtn = entry.el.querySelector(".js-lock-btn");
+      if (lockBtn) {
+        lockBtn.setAttribute("aria-pressed", locked ? "true" : "false");
+        lockBtn.setAttribute("aria-label", locked ? "タイマー再開" : "タイマー停止");
+        lockBtn.textContent = locked ? "再" : "停";
+      }
+    }
+
     /* ===================== 権限モード / 自動印刷トグル ===================== */
     function applyMode() {
       document.body.classList.toggle("mode-hall", mode === "hall");
@@ -1982,6 +2112,7 @@
     /* ===================== タイマー (経過時間 / 時計) ===================== */
     function updateTimers() {
       Object.keys(cards).forEach(function (id) {
+        if (lockedTimers[id]) return;   // タイマーロック中は更新しない
         var entry = cards[id];
         if (!entry || !entry.el) return;
         var min = elapsedMin(entry.order.start);
@@ -2149,6 +2280,7 @@
       var orders = getOrders();
       loadDone();                 // 他タブ/リロードで更新された LS を取り込む (フォールバック同期)
       loadKonro();                // コンロ状態も LS から取り込む (BroadcastChannel 非対応時のフォールバック同期)
+      loadLocked();               // タイマーロック状態も同期
       if (!isReordering) loadOrderSeq();   // 並び順も LS から取り込む (掴み中は触らない)
       applyDoneToOrders(orders);
       render(orders);
@@ -2164,6 +2296,7 @@
       loadDone();
       loadKonro();
       loadOrderSeq();
+      loadLocked();
       loadStock();
       loadPrefs();
       applyMode();
