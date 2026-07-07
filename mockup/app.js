@@ -1,446 +1,383 @@
-// ============================================================
-// バイブレーション API
-// ============================================================
+const HOLD_DURATION_MS = 800;
 
-/** バイブレーションが使えるかどうか */
-const canVibrate = typeof navigator.vibrate === 'function';
-
-/**
- * バイブレーションを実行する。
- * 非対応端末では何もしない。
- * @param {number | number[]} pattern - ミリ秒または on/off パターン配列
- */
-function vibrate(pattern) {
-  if (canVibrate) {
-    navigator.vibrate(pattern);
-  }
-}
-
-// バイブレーションパターン定義
-const VIB = {
-  tap:        15,                      // 押した瞬間の押下感（極短）
-  itemDone:   [30, 20, 60],            // 品目完了（短+長でON感）
-  itemUndone: [60, 20, 30],            // 完了取消（長+短でOFF感）
-  allDone:    [60, 40, 60, 40, 120],   // 全品目完了（トリプル＋長め）
-  dangerAlert:[80, 50, 80, 50, 200],   // 10分超え警告
-  test:       [100, 50, 100, 50, 200], // バイブテストボタン
-};
-
-// ============================================================
-// トースト通知
-// ============================================================
-let toastTimer = null;
-
-/**
- * 画面下部にトースト通知を表示する。
- * @param {string} msg
- * @param {number} [duration=2000]
- */
-function showToast(msg, duration = 2000) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), duration);
-}
-
-// ============================================================
-// 多言語ラベル
-// ============================================================
-const I18N = {
-  ja: {
-    new: '新規', reserved: '予約',
-    people: '名', received: '受付',
-    allDone: '✓ 完了',
-    noOrders: 'オーダーなし',
-    minUnit: '分',
-    vibNotSupported: '⚠️ このブラウザはバイブレーション非対応',
-    vibTest: '📳 バイブレーション動作中…',
-    logEmpty: '📊 計測データはまだありません',
-    logSummary: '📊 提供時間 {count}件 / 平均 {avg}（CSV出力しました）',
-  },
-  ne: {
-    new: 'नयाँ', reserved: 'आरक्षण',
-    people: 'जना', received: 'प्राप्त',
-    allDone: '✓ पूर्ण',
-    noOrders: 'अर्डर छैन',
-    minUnit: 'मि',
-    vibNotSupported: '⚠️ यो ब्राउजरमा भाइब्रेसन समर्थित छैन',
-    vibTest: '📳 भाइब्रेसन चलिरहेको छ…',
-    logEmpty: '📊 हालसम्म कुनै डाटा छैन',
-    logSummary: '📊 सेवा समय {count} वटा / औसत {avg}（CSV डाउनलोड）',
-  },
-  zh: {
-    new: '新訂', reserved: '預約',
-    people: '人', received: '接單',
-    allDone: '✓ 完成',
-    noOrders: '目前無訂單',
-    minUnit: '分',
-    vibNotSupported: '⚠️ 此瀏覽器不支援震動功能',
-    vibTest: '📳 震動中…',
-    logEmpty: '📊 尚無測量資料',
-    logSummary: '📊 供餐時間 {count}筆 / 平均 {avg}（已匯出CSV）',
-  },
-};
-
-// ============================================================
-// 言語
-// ============================================================
-let currentLang = localStorage.getItem('kds_lang') || 'ja';
-
-function applyLangButtons() {
-  document.querySelectorAll('.lang-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.lang === currentLang);
-  });
-}
-
-document.querySelectorAll('.lang-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    vibrate(VIB.tap);
-    currentLang = btn.dataset.lang;
-    localStorage.setItem('kds_lang', currentLang);
-    applyLangButtons();
-    renderCards();
-  });
-});
-
-applyLangButtons();
-
-// ============================================================
-// バイブテストボタン
-// ============================================================
-document.getElementById('vib-test').addEventListener('click', () => {
-  const L = I18N[currentLang];
-  if (!canVibrate) {
-    showToast(L.vibNotSupported, 3000);
-    return;
-  }
-  vibrate(VIB.test);
-  showToast(L.vibTest);
-});
-
-// ============================================================
-// モックデータ
-// ============================================================
-const _now = Date.now();
-const _min = 60_000;
-
-window.KDS_ORDERS = [
+const orders = [
   {
-    id: 'ord-001', table: 'A3', type: 'new',
-    start: _now - 2 * _min, people: 2,
+    id: "001",
+    tableNumber: "A-1",
     items: [
-      { name: '土鍋ご飯（白米）', qty: 2, options: '' },
-      { name: '豚角煮トッピング', qty: 1, options: '辛さ控えめ' },
+      { id: "1", name: "\u725b\u30bf\u30f3", quantity: 2 },
+      { id: "2", name: "\u30ab\u30eb\u30d3", quantity: 1 },
+      { id: "3", name: "\u30cf\u30e9\u30df", quantity: 3 },
     ],
+    timestamp: minutesAgo(3),
+    customerName: "\u7530\u4e2d\u69d8",
+    adultCount: 2,
+    childCount: 1,
   },
   {
-    id: 'ord-002', table: 'B1', type: 'reserved',
-    start: _now - 7 * _min, people: 4,
+    id: "002",
+    tableNumber: "B-3",
     items: [
-      { name: '土鍋ご飯（白米）', qty: 3, options: '' },
-      { name: '土鍋ご飯（玄米）', qty: 1, options: '' },
-      { name: 'サイドサラダ',     qty: 4, options: 'ドレッシング別添え' },
+      { id: "4", name: "\u30ed\u30fc\u30b9", quantity: 2 },
+      { id: "5", name: "\u30e9\u30a4\u30b9", quantity: 2 },
     ],
+    timestamp: minutesAgo(7),
+    customerName: "\u4f50\u85e4\u69d8",
+    adultCount: 2,
+    childCount: 0,
   },
   {
-    id: 'ord-003', table: 'C2', type: 'new',
-    start: _now - 12 * _min, people: 3,
+    id: "003",
+    tableNumber: "C-5",
     items: [
-      { name: '土鍋ご飯（白米）', qty: 3, options: '' },
-      { name: '唐揚げ',           qty: 2, options: '' },
+      { id: "6", name: "\u76db\u308a\u5408\u308f\u305b", quantity: 1 },
+      { id: "7", name: "\u30d3\u30fc\u30eb", quantity: 2 },
+      { id: "8", name: "\u30ad\u30e0\u30c1", quantity: 1 },
     ],
-  },
-  {
-    id: 'ord-004', table: 'A1', type: 'new',
-    start: _now - 0.5 * _min, people: 1,
-    items: [
-      { name: 'ランチセット', qty: 1, options: '卵焼き追加' },
-    ],
-  },
-  {
-    id: 'ord-005', table: 'D4', type: 'reserved',
-    start: _now - 5 * _min, people: 2,
-    items: [
-      { name: '土鍋ご飯（白米）', qty: 2, options: '' },
-      { name: 'ウーロン茶',       qty: 2, options: '' },
-    ],
+    timestamp: minutesAgo(12),
+    customerName: "\u9234\u6728\u69d8",
+    adultCount: 3,
+    childCount: 0,
   },
 ];
 
+const reservations = [
+  {
+    id: "R001",
+    tableNumber: "\u4e88\u7d04",
+    items: [
+      { id: "11", name: "\u30ab\u30eb\u30d3", quantity: 2 },
+      { id: "12", name: "\u30ed\u30fc\u30b9", quantity: 1 },
+      { id: "13", name: "\u30e9\u30a4\u30b9", quantity: 2 },
+    ],
+    reserveTime: minutesFromNow(30),
+    customerName: "\u5c71\u7530\u69d8",
+    adultCount: 4,
+    childCount: 0,
+  },
+  {
+    id: "R003",
+    tableNumber: "\u4e88\u7d04",
+    items: [
+      { id: "14", name: "\u30bf\u30f3\u5869", quantity: 3 },
+      { id: "15", name: "\u30cf\u30e9\u30df", quantity: 2 },
+      { id: "16", name: "\u76db\u308a\u5408\u308f\u305b", quantity: 1 },
+      { id: "17", name: "\u30d3\u30fc\u30eb", quantity: 4 },
+    ],
+    reserveTime: minutesFromNow(90),
+    customerName: "\u4e2d\u6751\u69d8",
+    adultCount: 4,
+    childCount: 1,
+  },
+];
+
+const state = {
+  activeOrders: [...orders],
+  reservations: [...reservations],
+};
+
 // ============================================================
-// 状態管理（LocalStorage）
-// ============================================================
-function loadDoneState() {
-  try { return JSON.parse(localStorage.getItem('kds_done') || '{}'); }
-  catch { return {}; }
-}
-function saveDoneState(state) {
-  localStorage.setItem('kds_done', JSON.stringify(state));
-}
-
-let doneState = loadDoneState();
-
-function getItemDone(orderId, itemIdx) {
-  return doneState[orderId + '_' + itemIdx] ?? false;
-}
-
-function toggleItemDone(orderId, itemIdx) {
-  const key = orderId + '_' + itemIdx;
-  doneState[key] = !doneState[key];
-  saveDoneState(doneState);
-}
-
-function isOrderAllDone(order) {
-  return order.items.every((_, i) => getItemDone(order.id, i));
-}
-
-// ============================================================
-// #29 提供時間ログ（注文受付→全品目完了の自動計測）
+// #29 提供時間ログ（注文受付→完了の自動計測）
 //
-// 全品目が完了した瞬間に完了時刻を記録し、提供時間を LocalStorage に
-// 追記保存する。PRD KPI「平均提供時間20%減」の導入前ベースライン兼、
-// #31 日次レポート / #26 需要予測の前提データとなる。
+// オーダーを「長押しで完了」した瞬間に、受付(timestamp)からの提供時間を
+// localStorage(kds_serve_log) へ追記保存する。PRD KPI「平均提供時間20%減」の
+// 導入前ベースライン兼、#31 日次レポート / #26 需要予測の前提データ。
 // 計測ロジック本体は serve-log.js（純粋関数）に分離。
 // ============================================================
-const SERVE_LOG_KEY = 'kds_serve_log';
+const SERVE_LOG_KEY = "kds_serve_log";
 
 function loadServeLog() {
-  try { return JSON.parse(localStorage.getItem(SERVE_LOG_KEY) || '[]'); }
-  catch { return []; }
+  try {
+    return JSON.parse(localStorage.getItem(SERVE_LOG_KEY) || "[]");
+  } catch {
+    return [];
+  }
 }
 function saveServeLog(log) {
-  localStorage.setItem(SERVE_LOG_KEY, JSON.stringify(log));
+  try {
+    localStorage.setItem(SERVE_LOG_KEY, JSON.stringify(log));
+  } catch {
+    /* localStorage 不可環境では保存をスキップ */
+  }
 }
 
 let serveLog = loadServeLog();
 
-function isCompletionLogged(orderId) {
-  return serveLog.some(r => r.orderId === orderId);
+/** この画面のオーダー形状を serve-log.js が扱う形へ正規化する */
+function toServeOrder(order) {
+  return {
+    id: order.id,
+    table: order.tableNumber,
+    type: order.type || "new",
+    people: (order.adultCount || 0) + (order.childCount || 0),
+    start:
+      order.timestamp instanceof Date
+        ? order.timestamp.getTime()
+        : Number(order.timestamp),
+    items: (order.items || []).map((it) => ({ qty: it.quantity })),
+  };
 }
 
-/** 全品目完了時に提供時間レコードを追記する（二重記録はガード） */
-function recordCompletion(order, completedAt) {
-  if (isCompletionLogged(order.id)) return;
-  serveLog = serveLog.concat([ServeLog.buildServeRecord(order, completedAt)]);
+/** 完了したオーダーの提供時間を記録する */
+function recordCompletion(order) {
+  serveLog = serveLog.concat([
+    ServeLog.buildServeRecord(toServeOrder(order), Date.now()),
+  ]);
   saveServeLog(serveLog);
 }
 
-/** 完了取消（誤タップ補正）時に該当レコードを取り消す */
-function unrecordCompletion(orderId) {
-  if (!isCompletionLogged(orderId)) return;
-  serveLog = serveLog.filter(r => r.orderId !== orderId);
-  saveServeLog(serveLog);
-}
-
-/** CSVをブラウザからダウンロードさせる（Excel向けにBOM付与） */
+/** CSVをブラウザからダウンロードさせる（Excel向けBOM付与） */
 function downloadServeLogCSV() {
-  const csv = '﻿' + ServeLog.toCSV(serveLog);
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const csv = "﻿" + ServeLog.toCSV(serveLog);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const a = document.createElement("a");
   a.href = url;
-  a.download = 'kds-serve-log.csv';
+  a.download = "kds-serve-log.csv";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
-/** トースト用の要約テキストを生成する */
+/** トースト用の要約テキスト */
 function serveLogSummaryText() {
-  const L = I18N[currentLang];
-  const stats = ServeLog.computeServeStats(serveLog);
-  if (stats.count === 0) return L.logEmpty;
-  return L.logSummary
-    .replace('{count}', String(stats.count))
-    .replace('{avg}', ServeLog.formatDuration(stats.avgServeMs));
+  const s = ServeLog.computeServeStats(serveLog);
+  if (s.count === 0) return "\u{1F4CA} 計測データはまだありません";
+  return `\u{1F4CA} 提供時間 ${s.count}件 / 平均 ${ServeLog.formatDuration(
+    s.avgServeMs,
+  )}（CSV出力しました）`;
 }
 
-document.getElementById('log-export').addEventListener('click', () => {
-  vibrate(VIB.tap);
-  showToast(serveLogSummaryText(), 3500);
-  if (serveLog.length > 0) downloadServeLogCSV();
-});
+let toastTimer = 0;
+/** 画面下部にトーストを表示する */
+function showToast(message, duration = 3200) {
+  const el = document.querySelector("#toast");
+  if (!el) return;
+  el.textContent = message;
+  el.classList.add("show");
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => el.classList.remove("show"), duration);
+}
 
 // 検証・バックアップ用アクセサ（コンソールから利用可能）
-window.KDS_getServeLog   = () => serveLog.slice();
+window.KDS_getServeLog = () => serveLog.slice();
 window.KDS_getServeStats = () => ServeLog.computeServeStats(serveLog);
 window.KDS_exportServeCSV = downloadServeLogCSV;
-window.KDS_clearServeLog = () => { serveLog = []; saveServeLog(serveLog); };
+window.KDS_clearServeLog = () => {
+  serveLog = [];
+  saveServeLog(serveLog);
+};
 
-// ============================================================
-// 時間ユーティリティ
-// ============================================================
-function elapsedMinutes(startMs) {
-  return Math.floor((Date.now() - startMs) / 60_000);
-}
-function timerClass(mins) {
-  if (mins < 5)  return 'ok';
-  if (mins < 10) return 'warn';
-  return 'danger';
-}
-function fmtTime(ms) {
-  const d = new Date(ms);
-  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+const clock = document.querySelector("#clock");
+const ordersGrid = document.querySelector("#orders-grid");
+const orderCount = document.querySelector("#order-count");
+const ordersEmpty = document.querySelector("#orders-empty");
+const reserveList = document.querySelector("#reserve-list");
+const reserveEmpty = document.querySelector("#reserve-empty");
+
+function minutesAgo(minutes) {
+  return new Date(Date.now() - minutes * 60 * 1000);
 }
 
-// ============================================================
-// レンダリング
-// ============================================================
+function minutesFromNow(minutes) {
+  return new Date(Date.now() + minutes * 60 * 1000);
+}
 
-/** danger に変わった瞬間だけ一回バイブするためのセット */
-const alreadyWarnedDanger = new Set();
+function formatTime(date, withSeconds = false) {
+  const parts = [
+    String(date.getHours()).padStart(2, "0"),
+    String(date.getMinutes()).padStart(2, "0"),
+  ];
 
-/**
- * ユーザーが一度でもタップしたか
- * Chrome は最初のユーザー操作前に navigator.vibrate をブロックする
- */
-let userHasInteracted = false;
-document.addEventListener('pointerdown', () => { userHasInteracted = true; }, { once: true });
-
-function renderCards() {
-  const L      = I18N[currentLang];
-  const grid   = document.getElementById('card-grid');
-  const orders = window.KDS_ORDERS || [];
-
-  // 対応中カウント更新
-  const activeCount = orders.filter(o => !isOrderAllDone(o)).length;
-  document.getElementById('active-count').textContent = activeCount;
-
-  if (orders.length === 0) {
-    grid.innerHTML = '<div class="empty-state">' + L.noOrders + '</div>';
-    return;
+  if (withSeconds) {
+    parts.push(String(date.getSeconds()).padStart(2, "0"));
   }
 
-  // danger 閾値到達の検知（未完了オーダーのみ・1回だけバイブ）
-  // ユーザーが一度タップするまではバイブしない（Chrome の制限に対応）
-  if (userHasInteracted) {
-    orders.forEach(order => {
-      if (isOrderAllDone(order)) return;
-      const mins = elapsedMinutes(order.start);
-      if (mins >= 10 && !alreadyWarnedDanger.has(order.id)) {
-        alreadyWarnedDanger.add(order.id);
-        vibrate(VIB.dangerAlert);
-      }
-    });
-  }
+  return parts.join(":");
+}
 
-  grid.innerHTML = orders.map(order => {
-    const mins    = elapsedMinutes(order.start);
-    const tc      = timerClass(mins);
-    const allDone = isOrderAllDone(order);
-    const isRsv   = order.type === 'reserved';
+function elapsedMinutes(timestamp) {
+  return Math.max(0, Math.floor((Date.now() - timestamp.getTime()) / 60000));
+}
 
-    const itemsHtml = order.items.map((item, idx) => {
-      const done    = getItemDone(order.id, idx);
-      const optHtml = item.options
-        ? '<div class="item__option">' + item.options + '</div>'
-        : '';
-      return (
-        '<div class="item' + (done ? ' item--done' : '') + '"' +
-        ' data-order="' + order.id + '" data-idx="' + idx + '"' +
-        ' role="button" tabindex="0" aria-pressed="' + done + '">' +
-        '<div class="item__row">' +
-        '<span class="item__name">' + item.name + '</span>' +
-        '<span class="item__qty">× ' + item.qty + '</span>' +
-        '</div>' +
-        optHtml +
-        '</div>'
-      );
-    }).join('');
+function timeLevel(minutes) {
+  if (minutes <= 5) return "time-ok";
+  if (minutes <= 10) return "time-warn";
+  return "time-alert";
+}
 
-    return (
-      '<div class="card' +
-      (isRsv   ? ' card--reserved' : '') +
-      (allDone ? ' card--done'     : '') + '">' +
-      '<div class="card__head">' +
-      '<div class="card__head-row1">' +
-      '<span class="card__badge">' + (isRsv ? L.reserved : L.new) + '</span>' +
-      '<span class="card__table">' + order.table + '</span>' +
-      '<span class="card__people">' + order.people + L.people + '</span>' +
-      '</div>' +
-      '<div class="card__head-row2">' +
-      '<span class="card__time">' + L.received + ' ' + fmtTime(order.start) + '</span>' +
-      '<span class="card__timer card__timer--' + tc + '">⏱ ' + mins + L.minUnit + '</span>' +
-      '</div>' +
-      '</div>' +
-      '<div class="card__items">' + itemsHtml + '</div>' +
-      '<div class="card__done-label">' + L.allDone + '</div>' +
-      '</div>'
-    );
-  }).join('');
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
 
-  // タップ / クリックイベント
-  grid.querySelectorAll('.item').forEach(el => {
-    let touchMoved = false;
+function itemRows(items) {
+  return items
+    .map(
+      (item) => `
+        <div class="item-row">
+          <span class="item-name">${escapeHtml(item.name)}</span>
+          <span class="qty">x${item.quantity}</span>
+        </div>
+      `,
+    )
+    .join("");
+}
 
-    el.addEventListener('touchstart', () => {
-      touchMoved = false;
-      vibrate(VIB.tap); // 押した瞬間に即バイブ（押下感）
-    }, { passive: true });
-    el.addEventListener('touchmove',  () => { touchMoved = true;  }, { passive: true });
-    el.addEventListener('touchend', e => {
-      if (touchMoved) return; // スクロール中は無視
-      e.preventDefault();
-      handleItemTap(el);
-    });
+function renderOrders() {
+  orderCount.textContent = `${state.activeOrders.length}\u4ef6`;
+  ordersEmpty.hidden = state.activeOrders.length > 0;
 
-    el.addEventListener('click', () => handleItemTap(el));
-    el.addEventListener('keydown', e => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleItemTap(el); }
-    });
+  ordersGrid.innerHTML = state.activeOrders
+    .map((order) => {
+      const elapsed = elapsedMinutes(order.timestamp);
+      return `
+        <article class="order-card">
+          <div class="card-header">
+            <div>
+              <span class="table-number">${escapeHtml(order.tableNumber)}</span>
+              <span class="received-time">\u53d7\u4ed8 ${formatTime(order.timestamp)}</span>
+            </div>
+            <span class="time-badge ${timeLevel(elapsed)}">${elapsed}\u5206</span>
+          </div>
+          <div class="divider"></div>
+          <div class="items">${itemRows(order.items)}</div>
+          <div class="divider"></div>
+          <button class="hold-button" data-action="complete" data-id="${order.id}">
+            <span class="fill"></span>
+            <span class="label">\u9577\u62bc\u3057\u3067\u5b8c\u4e86</span>
+          </button>
+        </article>
+      `;
+    })
+    .join("");
+
+  bindHoldButtons();
+}
+
+function renderReservations() {
+  reserveEmpty.hidden = state.reservations.length > 0;
+
+  reserveList.innerHTML = state.reservations
+    .map((reservation) => {
+      const minutesUntil = Math.floor((reservation.reserveTime.getTime() - Date.now()) / 60000);
+      const canActivate = minutesUntil <= 30 && minutesUntil >= 0;
+      return `
+        <article class="reserve-card">
+          <span class="reserve-time">${formatTime(reservation.reserveTime)}</span>
+          <div class="items">${itemRows(reservation.items)}</div>
+          <div class="divider"></div>
+          <button
+            class="hold-button ${canActivate ? "reserve-ready" : ""}"
+            data-action="activate"
+            data-id="${reservation.id}"
+            ${canActivate ? "" : "disabled"}
+          >
+            <span class="fill"></span>
+            <span class="label">${canActivate ? "\u9577\u62bc\u3057\u3067\u7740\u706b\u3078\u79fb\u52d5" : "\u958b\u59cb\u6642\u9593\u524d"}</span>
+          </button>
+        </article>
+      `;
+    })
+    .join("");
+
+  bindHoldButtons();
+}
+
+function bindHoldButtons() {
+  document.querySelectorAll(".hold-button:not([data-bound])").forEach((button) => {
+    button.dataset.bound = "true";
+    let frameId = 0;
+    let timeoutId = 0;
+    let startedAt = 0;
+
+    const fill = button.querySelector(".fill");
+
+    const reset = () => {
+      window.cancelAnimationFrame(frameId);
+      window.clearTimeout(timeoutId);
+      startedAt = 0;
+      fill.style.width = "0%";
+    };
+
+    const tick = () => {
+      if (!startedAt) return;
+      const progress = Math.min(((Date.now() - startedAt) / HOLD_DURATION_MS) * 100, 100);
+      fill.style.width = `${progress}%`;
+      frameId = window.requestAnimationFrame(tick);
+    };
+
+    const start = (event) => {
+      if (button.disabled) return;
+      event.preventDefault();
+      reset();
+      startedAt = Date.now();
+      tick();
+      timeoutId = window.setTimeout(() => {
+        runAction(button.dataset.action, button.dataset.id);
+        reset();
+      }, HOLD_DURATION_MS);
+    };
+
+    button.addEventListener("pointerdown", start);
+    button.addEventListener("pointerup", reset);
+    button.addEventListener("pointerleave", reset);
+    button.addEventListener("pointercancel", reset);
   });
 }
 
-/**
- * 品目タップ時の処理（バイブ + 状態トグル）
- * @param {HTMLElement} el
- */
-function handleItemTap(el) {
-  const orderId  = el.dataset.order;
-  const itemIdx  = parseInt(el.dataset.idx, 10);
-  const willDone = !getItemDone(orderId, itemIdx);
+function runAction(action, id) {
+  if (action === "complete") {
+    // #29: 完了時に提供時間を記録してから除去する
+    const completed = state.activeOrders.find((order) => order.id === id);
+    if (completed) recordCompletion(completed);
+    state.activeOrders = state.activeOrders.filter((order) => order.id !== id);
+  }
 
-  toggleItemDone(orderId, itemIdx);
-
-  const order = (window.KDS_ORDERS || []).find(o => o.id === orderId);
-  if (order) {
-    const nowAllDone = isOrderAllDone(order);
-
-    // #29: 完了なら提供時刻を記録、完了が崩れたら記録を取り消す
-    if (nowAllDone) {
-      recordCompletion(order, Date.now());
-    } else {
-      unrecordCompletion(order.id);
-    }
-
-    // 全品目完了になった瞬間は特別なバイブ
-    if (willDone && nowAllDone) {
-      vibrate(VIB.allDone);
-    } else {
-      vibrate(willDone ? VIB.itemDone : VIB.itemUndone);
+  if (action === "activate") {
+    const reservation = state.reservations.find((item) => item.id === id);
+    if (reservation) {
+      state.activeOrders = [
+        ...state.activeOrders,
+        {
+          ...reservation,
+          id: String(state.activeOrders.length + 1).padStart(3, "0"),
+          tableNumber: `A-${state.activeOrders.length + 1}`,
+          timestamp: new Date(),
+        },
+      ];
+      state.reservations = state.reservations.filter((item) => item.id !== id);
     }
   }
 
-  renderCards();
+  render();
 }
 
-// ============================================================
-// 時計
-// ============================================================
 function updateClock() {
-  const d = new Date();
-  document.getElementById('clock').textContent =
-    String(d.getHours()).padStart(2, '0') + ':' +
-    String(d.getMinutes()).padStart(2, '0') + ':' +
-    String(d.getSeconds()).padStart(2, '0');
+  const now = new Date();
+  clock.textContent = formatTime(now, true);
+  clock.dateTime = now.toISOString();
 }
 
-// ============================================================
-// 起動
-// ============================================================
-updateClock();
-renderCards();
-setInterval(updateClock, 1000);
-setInterval(renderCards, 1000); // 1秒ポーリング（タイマー更新 & danger 検知）
+function render() {
+  updateClock();
+  renderOrders();
+  renderReservations();
+}
+
+const logButton = document.querySelector("#log-export");
+if (logButton) {
+  logButton.addEventListener("click", () => {
+    showToast(serveLogSummaryText());
+    if (serveLog.length > 0) downloadServeLogCSV();
+  });
+}
+
+render();
+window.setInterval(render, 30 * 1000);
+window.setInterval(updateClock, 1000);
