@@ -118,6 +118,48 @@
   }
   .clock .sec { color: var(--text-secondary); font-size: 18px; }
 
+  /* #29 提供時間ログ ボタン */
+  .serve-log-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 4px 12px;
+    border: 2px solid var(--border);
+    border-radius: 0;
+    background: var(--bg-base);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    flex: 0 0 auto;
+    white-space: nowrap;
+    transition: color .1s ease, box-shadow .1s ease;
+  }
+  .serve-log-btn:hover { color: var(--text-primary); box-shadow: 3px 3px 0 var(--border); }
+  .serve-log-btn:active { box-shadow: none; transform: translate(1px, 1px); }
+
+  /* #29 提供時間ログ トースト */
+  .serve-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 28px;
+    transform: translate(-50%, 16px);
+    max-width: min(92vw, 560px);
+    padding: 12px 20px;
+    background: var(--text-primary);
+    color: var(--bg-base);
+    font-size: 15px;
+    font-weight: 700;
+    border: 2px solid var(--border);
+    box-shadow: 4px 4px 0 var(--border);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .16s ease, transform .16s ease;
+    z-index: 60;
+  }
+  .serve-toast.show { opacity: 1; transform: translate(-50%, 0); }
+
   /* 権限モード切替 */
   .mode-switch {
     display: flex;
@@ -920,6 +962,11 @@
       <span data-i18n="autoPrint">自動印刷</span>
     </button>
 
+    <button type="button" class="serve-log-btn" id="serveLogBtn" aria-label="提供時間ログを表示しCSV出力">
+      <span aria-hidden="true">📊</span>
+      <span>提供時間ログ</span>
+    </button>
+
   </header>
 
   <div class="shell">
@@ -941,6 +988,9 @@
       <div class="stock-list" id="stockList" aria-live="polite"></div>
     </aside>
   </div>
+
+  <!-- #29 提供時間ログ トースト -->
+  <div class="serve-toast" id="serveToast" role="status" aria-live="polite"></div>
 
   <!-- カード並べ替えの取消バー -->
   <div class="reorder-bar" id="reorderBar" role="status">
@@ -1023,6 +1073,7 @@
     var LS_MODE  = "kds_mode_v1";  // 権限モード (kitchen / hall)
     var LS_AUTOP = "kds_autoprint_v1"; // 自動印刷トグル
     var LS_LOCKED = "kds_locked_v1"; // タイマーロック状態
+    var LS_SERVE  = "kds_serve_log_v1"; // #29 提供時間ログ (KPIベースライン)
     var BC_NAME = "kds_sync";      // BroadcastChannel 名
     var WARN_MIN = 5, ALERT_MIN = 10;
     var SOON_MIN = 30;             // 予約30分前通知
@@ -1519,6 +1570,97 @@
       return items.every(function (it) { return !!it.done; });
     }
 
+    /* ===================== #29 提供時間ログ (注文受付→全完了の自動計測) =====================
+       注文受付(order.start)から全品目完了までの提供時間を記録し LocalStorage(LS_SERVE) へ追記する。
+       PRD KPI「平均提供時間20%減」の導入前ベースライン。#31(日次レポート)/#26(需要予測)の前提データ。
+       ※ 下記の純粋関数は serve-log.js (Nodeテスト付き) のインライン複製。単一HTML要件のため複製している。
+          ロジックを変える際は serve-log.js と serve-log.test.js も必ず同期すること。 */
+    var SERVE_TEN_MIN_MS = 10 * 60000;
+
+    function buildServeRecord(order, completedAt) {
+      var items = (order && order.items) || [];
+      var totalQty = items.reduce(function (s, it) { return s + (Number(it && it.qty) || 0); }, 0);
+      return {
+        orderId: order.id, table: order.table, type: order.type,
+        people: order.people, itemCount: items.length, totalQty: totalQty,
+        start: order.start, completedAt: completedAt, serveMs: completedAt - order.start
+      };
+    }
+    function computeServeStats(log) {
+      var r = Array.isArray(log) ? log : [], n = r.length;
+      if (!n) return { count: 0, avgServeMs: 0, maxServeMs: 0, minServeMs: 0, over10minCount: 0 };
+      var total = 0, max = -Infinity, min = Infinity, over = 0;
+      for (var i = 0; i < n; i++) {
+        var ms = Number(r[i].serveMs) || 0;
+        total += ms; if (ms > max) max = ms; if (ms < min) min = ms; if (ms >= SERVE_TEN_MIN_MS) over++;
+      }
+      return { count: n, avgServeMs: Math.round(total / n), maxServeMs: max, minServeMs: min, over10minCount: over };
+    }
+    function formatServeDuration(ms) {
+      var t = Math.max(0, Math.round(Number(ms) / 1000)), m = Math.floor(t / 60), s = t % 60;
+      return m + "分" + String(s).padStart(2, "0") + "秒";
+    }
+    function serveCsvCell(v) {
+      var s = String(v == null ? "" : v);
+      return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }
+    function serveToCSV(log) {
+      var r = Array.isArray(log) ? log : [];
+      var head = ["orderId", "table", "type", "people", "itemCount", "totalQty", "start_iso", "completedAt_iso", "serveSeconds"];
+      var rows = r.map(function (x) {
+        return [x.orderId, x.table, x.type, x.people, x.itemCount, x.totalQty,
+          new Date(x.start).toISOString(), new Date(x.completedAt).toISOString(),
+          Math.round((Number(x.serveMs) || 0) / 1000)].map(serveCsvCell).join(",");
+      });
+      return [head.join(",")].concat(rows).join("\r\n");
+    }
+
+    function loadServeLog() { return safeParse(localStorage.getItem(LS_SERVE), []) || []; }
+    function saveServeLog(log) { try { localStorage.setItem(LS_SERVE, JSON.stringify(log)); } catch (e) {} }
+
+    /* 全品目完了時に提供時間を記録 (orderId 重複はガード = 同期/再完了での二重計上防止) */
+    function recordServe(entry) {
+      var order = entry && entry.order;
+      if (!order) return;
+      var log = loadServeLog();
+      for (var i = 0; i < log.length; i++) {
+        if (String(log[i].orderId) === String(order.id)) return;
+      }
+      log.push(buildServeRecord(order, Date.now()));
+      saveServeLog(log);
+    }
+
+    /* 提供時間ログのトースト */
+    var serveToastTimer = 0;
+    function showServeToast(msg) {
+      var el = document.getElementById("serveToast");
+      if (!el) return;
+      el.textContent = msg;
+      el.classList.add("show");
+      clearTimeout(serveToastTimer);
+      serveToastTimer = setTimeout(function () { el.classList.remove("show"); }, 3600);
+    }
+    function serveLogSummaryText() {
+      var s = computeServeStats(loadServeLog());
+      if (!s.count) return "\u{1F4CA} 計測データはまだありません";
+      return "\u{1F4CA} 提供時間 " + s.count + "件 / 平均 " + formatServeDuration(s.avgServeMs) + "（CSV出力しました）";
+    }
+    function downloadServeCSV() {
+      var csv = "﻿" + serveToCSV(loadServeLog());
+      var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url; a.download = "kds-serve-log.csv";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    /* 検証・バックアップ用アクセサ (コンソールから利用可能) */
+    window.KDS_getServeLog = function () { return loadServeLog(); };
+    window.KDS_getServeStats = function () { return computeServeStats(loadServeLog()); };
+    window.KDS_exportServeCSV = downloadServeCSV;
+    window.KDS_clearServeLog = function () { saveServeLog([]); };
+
     /* 完了状態をカード DOM へ反映。全完了なら必要に応じてフェードアウト */
     function applyDoneToCard(entry, animateRemoval) {
       if (!entry || !entry.el) return;
@@ -1532,7 +1674,7 @@
         btns[i].setAttribute("aria-pressed", d ? "true" : "false");
       }
       if (isAllDone(entry)) {
-        if (animateRemoval) removeCard(order.id, /*fade*/ true);
+        if (animateRemoval) { recordServe(entry); removeCard(order.id, /*fade*/ true); } // #29
       }
     }
 
@@ -1569,7 +1711,7 @@
         btn.classList.toggle("done", next);
         btn.setAttribute("aria-pressed", next ? "true" : "false");
       }
-      if (isAllDone(entry)) removeCard(id, /*fade*/ true);
+      if (isAllDone(entry)) { recordServe(entry); removeCard(id, /*fade*/ true); } // #29
     }
 
     /* ===================== 操作: コンロ番号タップ ===================== */
@@ -2208,6 +2350,13 @@
       });
       if (printToggleEl) printToggleEl.addEventListener("click", function () { setAutoPrint(!autoPrint); });
       if (demoBtn) demoBtn.addEventListener("click", injectDemo);
+
+      // #29 提供時間ログ: 件数・平均をトースト表示し CSV をエクスポート
+      var serveLogBtn = document.getElementById("serveLogBtn");
+      if (serveLogBtn) serveLogBtn.addEventListener("click", function () {
+        showServeToast(serveLogSummaryText());
+        if (loadServeLog().length > 0) downloadServeCSV();
+      });
 
       // 予約ストック操作
       if (stockAddBtn) stockAddBtn.addEventListener("click", openModal);
