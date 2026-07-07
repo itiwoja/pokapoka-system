@@ -442,6 +442,14 @@
   .elapsed .val   { font-family: var(--font-num); font-size: 20px; font-variant-numeric: tabular-nums; }
   /* 10分超は数値も脈動させ警告を強める (色覚に依存しない動き) */
   .card.lvl-alert .elapsed { animation: pulse 1.4s ease-in-out infinite; }
+  /* #12 10分超カードは全体を点滅させ、見ていない瞬間の遅延に気付けるようにする。
+     赤アウトラインを常時付与し 1 秒周期で明滅（reduced-motion 時は静的な赤枠が残る）。 */
+  .card.lvl-alert {
+    outline: 4px solid var(--elapsed-alert);
+    outline-offset: 2px;
+    animation: alertBlink 1s steps(1, end) infinite;
+  }
+  @keyframes alertBlink { 50% { outline-color: transparent; } }
   @keyframes pulse { 0%,100% { transform: none; } 50% { transform: scale(1.04); } }
 
   /* 品目リスト */
@@ -962,6 +970,11 @@
       <span data-i18n="autoPrint">自動印刷</span>
     </button>
 
+    <button type="button" class="print-toggle" id="soundToggle" aria-pressed="true" aria-label="遅延アラート音のオン/オフ">
+      <span class="dot" aria-hidden="true"></span>
+      <span>アラート音</span>
+    </button>
+
     <button type="button" class="serve-log-btn" id="serveLogBtn" aria-label="提供時間ログを表示しCSV出力">
       <span aria-hidden="true">📊</span>
       <span>提供時間ログ</span>
@@ -1074,9 +1087,16 @@
     var LS_AUTOP = "kds_autoprint_v1"; // 自動印刷トグル
     var LS_LOCKED = "kds_locked_v1"; // タイマーロック状態
     var LS_SERVE  = "kds_serve_log_v1"; // #29 提供時間ログ (KPIベースライン)
+    var LS_SOUND  = "kds_alert_sound_v1"; // #12 遅延アラート音トグル
     var BC_NAME = "kds_sync";      // BroadcastChannel 名
     var WARN_MIN = 5, ALERT_MIN = 10;
+    var ALERT_REPEAT_MS = 60000;   // #12 10分超が続く間の再アラート間隔
     var SOON_MIN = 30;             // 予約30分前通知
+
+    // #12 遅延アラート状態
+    var alertSoundOn = true;       // 遅延アラート音のオン/オフ (LocalStorage 正本)
+    var lastAnyAlertBeepAt = 0;    // 直近に鳴らした時刻 (再アラート間隔の判定用)
+    var audioCtx = null;           // WebAudio コンテキスト (遅延ビープ生成用)
     var LONGPRESS_MS = 800;        // 並べ替え長押し (0.8〜2秒の下限)
     var KONRO_COUNT = 10;          // コンロ番号 1〜10
     /* コンロ状態サイクル: スケルトン(未使用) → 白(使用中) → 赤(タイマー管理中) → スケルトン */
@@ -1123,6 +1143,7 @@
     var demoBtn = document.getElementById("demoBtn");
     var modeBtns = Array.prototype.slice.call(document.querySelectorAll(".mode-btn"));
     var printToggleEl = document.getElementById("printToggle");
+    var soundToggleEl = document.getElementById("soundToggle");
     var stockListEl = document.getElementById("stockList");
     var stockCountEl = document.getElementById("stockCount");
     var stockAddBtn = document.getElementById("stockAddBtn");
@@ -2205,10 +2226,64 @@
       applyAutoPrint();
     }
 
+    /* ===================== #12 遅延アラート音 (10分超) =====================
+       WebAudio でビープを生成（外部ファイル不要 = 単一HTML/オフライン要件）。
+       ブラウザは初回ユーザー操作までAudioContextを鳴らさないため、
+       操作解禁まで音は出ない（点滅は常に表示される）。 */
+    function loadSoundPref() {
+      try {
+        var v = localStorage.getItem(LS_SOUND);
+        alertSoundOn = (v === null) ? true : (v === "1");
+      } catch (e) { alertSoundOn = true; }
+    }
+    function applySoundToggle() {
+      if (soundToggleEl) soundToggleEl.setAttribute("aria-pressed", alertSoundOn ? "true" : "false");
+    }
+    function setAlertSound(on) {
+      alertSoundOn = !!on;
+      try { localStorage.setItem(LS_SOUND, alertSoundOn ? "1" : "0"); } catch (e) {}
+      applySoundToggle();
+      if (alertSoundOn) { ensureAudio(); playAlertBeep(); } // ON時にテスト音を鳴らす
+    }
+    function ensureAudio() {
+      try {
+        if (!audioCtx) {
+          var AC = window.AudioContext || window.webkitAudioContext;
+          if (!AC) return null;
+          audioCtx = new AC();
+        }
+        if (audioCtx.state === "suspended") audioCtx.resume();
+      } catch (e) { audioCtx = null; }
+      return audioCtx;
+    }
+    /* 遅延アラート音: 2音のビープ (ピポ)。ジェスチャ前は無音 */
+    function playAlertBeep() {
+      if (!alertSoundOn) return;
+      var ctx = ensureAudio();
+      if (!ctx || ctx.state !== "running") return;
+      var now = ctx.currentTime;
+      [[0, 880], [0.18, 1175]].forEach(function (pair) {
+        var offset = pair[0], freq = pair[1];
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.type = "square";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, now + offset);
+        gain.gain.exponentialRampToValueAtTime(0.18, now + offset + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.14);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + offset);
+        osc.stop(now + offset + 0.16);
+      });
+    }
+
     /* ===================== タイマー (経過時間 / 時計) ===================== */
     function updateTimers() {
+      var newAlert = false;  // このtickで新たに10分超へ遷移したカードがあるか
+      var anyAlert = false;  // 現在10分超のカードが1枚でもあるか
       Object.keys(cards).forEach(function (id) {
-        if (lockedTimers[id]) return;   // タイマーロック中は更新しない
+        if (lockedTimers[id]) return;   // タイマーロック中は更新しない (＝確認済み扱いで再アラートしない)
         var entry = cards[id];
         if (!entry || !entry.el) return;
         var min = elapsedMin(entry.order.start);
@@ -2222,9 +2297,18 @@
           else if (lvl === "alert") badge.classList.add("alert");
           entry.el.classList.remove("lvl-warn", "lvl-alert");
           entry.el.classList.add("lvl-" + lvl);
+          if (lvl === "alert") newAlert = true;   // #12 10分超へ遷移
           entry.level = lvl;
         }
+        if (lvl === "alert") anyAlert = true;
       });
+      // #12 音声アラート: 新たな超過で即・以降は継続中も一定間隔で再アラート
+      if (alertSoundOn) {
+        if (newAlert || (anyAlert && Date.now() - lastAnyAlertBeepAt >= ALERT_REPEAT_MS)) {
+          playAlertBeep();
+          lastAnyAlertBeepAt = Date.now();
+        }
+      }
     }
 
     function updateClock() {
@@ -2341,14 +2425,19 @@
       loadLocked();
       loadStock();
       loadPrefs();
+      loadSoundPref();
       applyMode();
       applyAutoPrint();
+      applySoundToggle();
       initSync();
 
       modeBtns.forEach(function (b) {
         b.addEventListener("click", function () { setMode(b.getAttribute("data-mode")); });
       });
       if (printToggleEl) printToggleEl.addEventListener("click", function () { setAutoPrint(!autoPrint); });
+      if (soundToggleEl) soundToggleEl.addEventListener("click", function () { setAlertSound(!alertSoundOn); });
+      // 初回ユーザー操作でオーディオを解禁 (ブラウザの自動再生制限に対応)
+      document.addEventListener("pointerdown", ensureAudio, { once: true });
       if (demoBtn) demoBtn.addEventListener("click", injectDemo);
 
       // #29 提供時間ログ: 件数・平均をトースト表示し CSV をエクスポート
