@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KDS モックアップ — 土鍋飯ぽかぽか</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ===== Header ===== -->
+<header class="header">
+  <div class="header__title">🍲 土鍋飯ぽかぽか</div>
+  <div class="header__clock" id="clock">--:--:--</div>
+  <div class="header__order-count">
+    対応中: <span id="active-count">0</span>
+  </div>
+  <div class="lang-switcher">
+    <button class="lang-btn" data-lang="ja">日本語</button>
+    <button class="lang-btn" data-lang="ne">नेपाली</button>
+    <button class="lang-btn" data-lang="zh">繁體中文</button>
+  </div>
+  <button class="vib-test-btn" id="vib-test">📳 バイブテスト</button>
+  <button class="vib-test-btn" id="log-export">📊 提供時間ログ</button>
+</header>
+
+<!-- ===== Card Grid ===== -->
+<div class="grid-wrapper">
+  <div class="card-grid" id="card-grid"></div>
+</div>
+
+<!-- ===== トースト通知 ===== -->
+<div class="toast" id="toast"></div>
+
+<script src="serve-log.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
