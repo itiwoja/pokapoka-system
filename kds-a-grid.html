@@ -1064,8 +1064,8 @@
     <time class="clock" id="clock" aria-label="現在時刻">--:--<span class="sec">:--</span></time>
 
     <div class="mode-switch" role="group" aria-label="権限モード切り替え">
-      <button type="button" class="mode-btn" id="modeKitchen" data-mode="kitchen" data-i18n="modeKitchen" aria-pressed="true">キッチン</button>
-      <button type="button" class="mode-btn" id="modeHall" data-mode="hall" data-i18n="modeHall" aria-pressed="false">ホール</button>
+      <button type="button" class="mode-btn" id="modeKitchen" data-mode="kitchen" aria-pressed="true">キッチン</button>
+      <button type="button" class="mode-btn" id="modeHall" data-mode="hall" aria-pressed="false">ホール</button>
     </div>
 
     <div class="mode-switch" role="group" aria-label="表示切り替え">
@@ -1075,7 +1075,7 @@
 
     <button type="button" class="print-toggle" id="printToggle" aria-pressed="false">
       <span class="dot" aria-hidden="true"></span>
-      <span data-i18n="autoPrint">自動印刷</span>
+      <span>自動印刷</span>
     </button>
 
     <button type="button" class="print-toggle" id="soundToggle" aria-pressed="true" aria-label="遅延アラート音のオン/オフ">
@@ -1094,9 +1094,9 @@
     <main>
       <div class="board" id="board" aria-live="polite" aria-relevant="additions removals"></div>
       <div class="empty" id="empty">
-        <div class="big" data-i18n="emptyTitle">オーダー待機中</div>
-        <div data-i18n="emptyHint">POS からの注文がここに表示されます</div>
-        <button type="button" class="demo-btn" id="demoBtn" data-i18n="demo">デモデータを投入</button>
+        <div class="big">オーダー待機中</div>
+        <div>POS からの注文がここに表示されます</div>
+        <button type="button" class="demo-btn" id="demoBtn">デモデータを投入</button>
       </div>
 
       <!-- #13 レーン表示（カテゴリ別）: 未完了品目を卓番付きで3レーンに分割 -->
@@ -1118,7 +1118,7 @@
 
     <aside class="stock" aria-label="予約ストック">
       <div class="stock-head">
-        <span class="title" data-i18n="stockTitle">予約ストック</span>
+        <span class="title">予約ストック</span>
         <span class="count" id="stockCount">0</span>
         <button type="button" class="stock-add" id="stockAddBtn" aria-label="予約を追加">＋</button>
       </div>
@@ -1131,44 +1131,44 @@
 
   <!-- カード並べ替えの取消バー -->
   <div class="reorder-bar" id="reorderBar" role="status">
-    <span class="msg" data-i18n="reorderMsg">並べ替え中</span>
-    <button type="button" id="reorderUndo" data-i18n="undo">取消</button>
-    <button type="button" class="confirm" id="reorderDone" data-i18n="reorderDone">確定</button>
+    <span class="msg">並べ替え中</span>
+    <button type="button" id="reorderUndo">取消</button>
+    <button type="button" class="confirm" id="reorderDone">確定</button>
   </div>
 
   <!-- 予約追加フォーム -->
   <div class="modal-backdrop" id="modalBackdrop">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-      <h2 id="modalTitle" data-i18n="addReservation">予約を追加</h2>
+      <h2 id="modalTitle">予約を追加</h2>
       <form id="resForm">
         <div class="field-row">
           <div class="field">
-            <label for="resTime" data-i18n="fldTime">予約時間</label>
+            <label for="resTime">予約時間</label>
             <input type="time" id="resTime" required>
           </div>
         </div>
         <div class="field-row">
           <div class="field">
-            <label for="resAdults" data-i18n="fldAdults">大人</label>
+            <label for="resAdults">大人</label>
             <input type="number" id="resAdults" min="0" max="30" value="2" inputmode="numeric">
           </div>
           <div class="field">
-            <label for="resKids" data-i18n="fldKids">0-2歳</label>
+            <label for="resKids">0-2歳</label>
             <input type="number" id="resKids" min="0" max="20" value="0" inputmode="numeric">
           </div>
         </div>
         <div class="field">
-          <label for="resName" data-i18n="fldName">名前</label>
+          <label for="resName">名前</label>
           <input type="text" id="resName" maxlength="40" autocomplete="off">
         </div>
         <div class="field">
-          <label data-i18n="fldMenu">メニュー（個数）</label>
+          <label>メニュー（個数）</label>
           <div class="menu-pick" id="menuPick"></div>
         </div>
         <div class="form-error" id="formError" aria-live="assertive"></div>
         <div class="modal-actions">
-          <button type="button" class="btn-cancel" id="resCancel" data-i18n="cancel">キャンセル</button>
-          <button type="submit" class="btn-save" data-i18n="save">登録</button>
+          <button type="button" class="btn-cancel" id="resCancel">キャンセル</button>
+          <button type="submit" class="btn-save">登録</button>
         </div>
       </form>
     </div>
@@ -1182,8 +1182,8 @@
       <div class="slip-meta" id="slipMeta"></div>
       <ul id="slipItems"></ul>
       <div class="slip-actions">
-        <button type="button" class="slip-print" id="slipPrint" data-i18n="print">印刷</button>
-        <button type="button" class="slip-close" id="slipClose" data-i18n="close">閉じる</button>
+        <button type="button" class="slip-print" id="slipPrint">印刷</button>
+        <button type="button" class="slip-close" id="slipClose">閉じる</button>
       </div>
     </div>
   </div>
