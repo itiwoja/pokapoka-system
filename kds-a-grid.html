@@ -160,6 +160,109 @@
   }
   .serve-toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+  /* ===================== #13 レーン表示（カテゴリ別） ===================== */
+  .lanes {
+    display: none;   /* 既定はグリッド表示。body.view-lane で表示 */
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    height: 100%;
+    min-height: 0;
+  }
+  body.view-lane #board,
+  body.view-lane #empty { display: none !important; }
+  body.view-lane .lanes { display: grid; }
+
+  .lane {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border: 3px solid var(--border);
+    background: var(--bg-base);
+  }
+  .lane-head {
+    margin: 0;
+    padding: 10px 12px;
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--text-primary);
+    border-bottom: 3px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .lane[data-cat="rice"]  .lane-head { background: #FDEBCF; }
+  .lane[data-cat="side"]  .lane-head { background: #E9F0D8; }
+  .lane[data-cat="drink"] .lane-head { background: #DCECF2; }
+  .lane-count {
+    margin-left: auto;
+    font-family: var(--font-num);
+    font-size: 16px;
+    min-width: 30px;
+    text-align: center;
+    border: 2px solid var(--border);
+    padding: 0 6px;
+    background: var(--bg-base);
+  }
+  .lane-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .lane-item {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 2px solid var(--border);
+    border-left-width: 6px;
+    background: var(--card-new);
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: var(--text-primary);
+    transition: box-shadow .1s ease, transform .05s ease;
+  }
+  .lane-item:hover  { box-shadow: 3px 3px 0 var(--border); }
+  .lane-item:active { box-shadow: none; transform: translate(1px, 1px); }
+  .lane-item.reserved { background: var(--card-reserved); }
+  .lane-item.lvl-warn  { border-left-color: var(--elapsed-warn); }
+  .lane-item.lvl-alert { border-left-color: var(--elapsed-alert); }
+  .lane-table {
+    font-family: var(--font-num);
+    font-weight: 800;
+    font-size: 16px;
+    min-width: 36px;
+    padding: 2px 6px;
+    border: 2px solid var(--border);
+    background: var(--bg-base);
+    text-align: center;
+  }
+  .lane-item.reserved .lane-table { border-color: var(--accent-reserved); color: var(--accent-reserved); }
+  .lane-body .lane-name { font-size: 16px; font-weight: 700; line-height: 1.25; }
+  .lane-opt  { display: block; font-size: 12px; font-weight: 700; color: var(--accent-reserved); margin-top: 2px; }
+  .lane-min  { display: inline-block; margin-left: 6px; font-size: 11px; color: var(--text-secondary); font-weight: 700; }
+  .lane-min.lvl-alert { color: var(--elapsed-alert); }
+  .lane-qty {
+    font-family: var(--font-num);
+    font-size: 18px;
+    font-weight: 800;
+    min-width: 42px;
+    text-align: right;
+  }
+  .lane-empty {
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 700;
+    padding: 16px 8px;
+    text-align: center;
+  }
+
   /* 権限モード切替 */
   .mode-switch {
     display: flex;
@@ -965,6 +1068,11 @@
       <button type="button" class="mode-btn" id="modeHall" data-mode="hall" data-i18n="modeHall" aria-pressed="false">ホール</button>
     </div>
 
+    <div class="mode-switch" role="group" aria-label="表示切り替え">
+      <button type="button" class="mode-btn" id="viewGrid" data-view="grid" aria-pressed="true">グリッド</button>
+      <button type="button" class="mode-btn" id="viewLane" data-view="lane" aria-pressed="false">レーン</button>
+    </div>
+
     <button type="button" class="print-toggle" id="printToggle" aria-pressed="false">
       <span class="dot" aria-hidden="true"></span>
       <span data-i18n="autoPrint">自動印刷</span>
@@ -989,6 +1097,22 @@
         <div class="big" data-i18n="emptyTitle">オーダー待機中</div>
         <div data-i18n="emptyHint">POS からの注文がここに表示されます</div>
         <button type="button" class="demo-btn" id="demoBtn" data-i18n="demo">デモデータを投入</button>
+      </div>
+
+      <!-- #13 レーン表示（カテゴリ別）: 未完了品目を卓番付きで3レーンに分割 -->
+      <div class="lanes" id="lanes" aria-live="polite">
+        <section class="lane" data-cat="rice">
+          <h2 class="lane-head">🍚 ご飯類 <span class="lane-count" id="lane-count-rice">0</span></h2>
+          <div class="lane-body" id="lane-rice"></div>
+        </section>
+        <section class="lane" data-cat="side">
+          <h2 class="lane-head">🍢 サイド <span class="lane-count" id="lane-count-side">0</span></h2>
+          <div class="lane-body" id="lane-side"></div>
+        </section>
+        <section class="lane" data-cat="drink">
+          <h2 class="lane-head">🥤 ドリンク <span class="lane-count" id="lane-count-drink">0</span></h2>
+          <div class="lane-body" id="lane-drink"></div>
+        </section>
       </div>
     </main>
 
@@ -1088,6 +1212,7 @@
     var LS_LOCKED = "kds_locked_v1"; // タイマーロック状態
     var LS_SERVE  = "kds_serve_log_v1"; // #29 提供時間ログ (KPIベースライン)
     var LS_SOUND  = "kds_alert_sound_v1"; // #12 遅延アラート音トグル
+    var LS_VIEW   = "kds_view_v1"; // #13 表示モード (grid / lane)
     var BC_NAME = "kds_sync";      // BroadcastChannel 名
     var WARN_MIN = 5, ALERT_MIN = 10;
     var ALERT_REPEAT_MS = 60000;   // #12 10分超が続く間の再アラート間隔
@@ -1120,9 +1245,17 @@
     };
     /* 予約フォームのメニュー候補 (POS未接続のため静的。略称表示) */
     var MENU_OPTIONS = [
-      "土鍋ご飯（白米）", "土鍋ご飯（玄米）", "沖縄そば定食", "ソーキそば",
-      "タコライス", "ゴーヤチャンプルー", "アグー豚しゃぶ", "ジューシー",
-      "海ぶどう小鉢", "らふてー", "もずく酢", "沖縄天ぷら盛合せ"
+      // 土鍋御膳（ご飯類）
+      "山城牛の焼きすき土鍋御膳", "山城牛の肉たく土鍋御膳", "山城牛のカニクラ土鍋御膳",
+      "山城牛と海老天つゆしゃぶ土鍋御膳", "島黒ヒレカツ出汁とろろ土鍋御膳",
+      "マース煮アーサバター土鍋御膳", "うなぎ土鍋御膳", "今月のスポット土鍋御膳",
+      // 単品（サイド）
+      "島黒西京焼き", "海老天ぷら", "焼きすきセット", "山城牛のとろ煮",
+      // ご飯単品
+      "卵かけご飯セット", "白米1合", "出汁米1合",
+      // ドリンク
+      "オリオンビール（小瓶）", "ハイボール（角）", "レモンサワー", "ウーロンハイ",
+      "ウーロン茶", "オレンジ", "コーラ", "サイダー"
     ];
     /* ---- 状態 ---- */
     var doneMap = {};              // { orderId: [bool, bool, ...] }  完了状態(LocalStorage正本)
@@ -1132,6 +1265,7 @@
     var stock = [];                // 予約ストック (当日分。LS正本) [{rid,time,adults,kids,name,menu:[{name,qty}],seenAt}]
     var mode = "kitchen";          // 権限モード
     var autoPrint = false;         // 自動印刷トグル
+    var view = "grid";             // #13 表示モード (grid / lane)
     var lockedTimers = {};         // タイマーロック状態 { orderId: true }
     var bc = null;
     var seededIds = {};            // 自動印刷の二重発火防止 (このタブで既にプレビュー済みの orderId)
@@ -1144,6 +1278,17 @@
     var modeBtns = Array.prototype.slice.call(document.querySelectorAll(".mode-btn"));
     var printToggleEl = document.getElementById("printToggle");
     var soundToggleEl = document.getElementById("soundToggle");
+    var viewBtns = Array.prototype.slice.call(document.querySelectorAll("[data-view]"));
+    var laneBodies = {
+      rice:  document.getElementById("lane-rice"),
+      side:  document.getElementById("lane-side"),
+      drink: document.getElementById("lane-drink")
+    };
+    var laneCounts = {
+      rice:  document.getElementById("lane-count-rice"),
+      side:  document.getElementById("lane-count-side"),
+      drink: document.getElementById("lane-count-drink")
+    };
     var stockListEl = document.getElementById("stockList");
     var stockCountEl = document.getElementById("stockCount");
     var stockAddBtn = document.getElementById("stockAddBtn");
@@ -1186,6 +1331,113 @@
       if (min >= ALERT_MIN) return "alert";
       if (min >= WARN_MIN)  return "warn";
       return "ok";
+    }
+
+    /* ===================== #13 レーン表示（カテゴリ別） =====================
+       注文＝カードのグリッドとは別に、未完了品目をカテゴリ別3レーン（ご飯類/サイド/ドリンク）へ
+       横断表示する。コンロ側・中間スタッフ側での作業分担が目的。完了状態・同期はグリッドと共通
+       （onToggle / doneMap を流用）。品名→カテゴリはPOSデータに無いため KDS 内で自動分類する。 */
+    var LANE_CATS = ["rice", "side", "drink"];
+    var lastLaneSig = "";
+
+    /* 品名からカテゴリを推定する（実メニュー基準・未知はサイドへ寄せる） */
+    function itemCategory(name) {
+      var s = String(name == null ? "" : name);
+      if (/ビール|オリオン|焼酎|豊の国|黒霧島|ハイボール|サワー|ウーロンハイ|泡盛|薫長|純米|吟醸|辛口|ウーロン茶|オレンジ|コーラ|サイダー|ジュース|水割り|ソーダ|ロック|茶|酒/.test(s)) return "drink";
+      if (/御膳|ご飯|ごはん|丼|白米|出汁米|卵かけ|ライス|そば|うどん|麺|米/.test(s)) return "rice";
+      return "side";
+    }
+
+    /* レーン表示を描画する（未完了品目のみ・orderSeq 順）。
+       構造シグネチャが不変なら再描画しない（スクロール位置を保つ）。 */
+    function renderLanes(force) {
+      var buckets = { rice: [], side: [], drink: [] };
+      var ids = orderSeq.filter(function (id) { return cards[id]; });
+      Object.keys(cards).forEach(function (id) { if (ids.indexOf(id) === -1) ids.push(id); });
+      var sig = [];
+      ids.forEach(function (id) {
+        var entry = cards[id];
+        if (!entry || !entry.order) return;
+        var order = entry.order;
+        var done = doneMap[order.id] || [];
+        var lvl = lockedTimers[id] ? "ok" : levelOf(elapsedMin(order.start));
+        (order.items || []).forEach(function (it, idx) {
+          if (done[idx]) return;   // 完了品目はレーンに出さない
+          buckets[itemCategory(it.name)].push({ order: order, item: it, idx: idx, lvl: lvl });
+          sig.push(id + ":" + idx + ":" + lvl);
+        });
+      });
+      var sigStr = sig.join("|");
+      if (!force && sigStr === lastLaneSig) return;
+      lastLaneSig = sigStr;
+
+      LANE_CATS.forEach(function (cat) {
+        var body = laneBodies[cat];
+        if (!body) return;
+        body.innerHTML = "";
+        var rows = buckets[cat];
+        if (laneCounts[cat]) laneCounts[cat].textContent = String(rows.length);
+        if (!rows.length) {
+          var em = document.createElement("div");
+          em.className = "lane-empty";
+          em.textContent = "なし";
+          body.appendChild(em);
+          return;
+        }
+        rows.forEach(function (r) { body.appendChild(buildLaneItem(r)); });
+      });
+    }
+
+    function buildLaneItem(r) {
+      var order = r.order, it = r.item;
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "lane-item" + (order.type === "reserved" ? " reserved" : "") +
+        (r.lvl === "warn" ? " lvl-warn" : (r.lvl === "alert" ? " lvl-alert" : ""));
+
+      var tbl = document.createElement("span");
+      tbl.className = "lane-table";
+      tbl.textContent = order.table != null ? String(order.table) : "-";
+
+      var mid = document.createElement("span");
+      var nm = document.createElement("span");
+      nm.className = "lane-name";
+      nm.textContent = it.name != null ? String(it.name) : "";
+      mid.appendChild(nm);
+      if (it.options) {
+        var op = document.createElement("span");
+        op.className = "lane-opt";
+        op.textContent = String(it.options);
+        mid.appendChild(op);
+      }
+
+      var qty = document.createElement("span");
+      qty.className = "lane-qty";
+      qty.textContent = "×" + Number(it.qty || 1);
+
+      btn.appendChild(tbl);
+      btn.appendChild(mid);
+      btn.appendChild(qty);
+      btn.addEventListener("click", function () { onToggle(order.id, r.idx); });
+      return btn;
+    }
+
+    /* 表示モード (grid / lane) */
+    function loadView() {
+      try { var v = localStorage.getItem(LS_VIEW); view = (v === "lane") ? "lane" : "grid"; }
+      catch (e) { view = "grid"; }
+    }
+    function applyView() {
+      document.body.classList.toggle("view-lane", view === "lane");
+      viewBtns.forEach(function (b) {
+        b.setAttribute("aria-pressed", b.getAttribute("data-view") === view ? "true" : "false");
+      });
+      if (view === "lane") renderLanes(true);
+    }
+    function setView(next) {
+      view = (next === "lane") ? "lane" : "grid";
+      try { localStorage.setItem(LS_VIEW, view); } catch (e) {}
+      applyView();
     }
 
     /* ===================== LocalStorage (完了状態) ===================== */
@@ -1547,6 +1799,7 @@
 
       updateTimers();
       reflectEmpty();
+      if (view === "lane") renderLanes();   // #13 レーン表示も同期
     }
 
     /* orderSeq を生存注文に同期。新着は末尾へ。並べ替え中は触らない */
@@ -1733,6 +1986,7 @@
         btn.setAttribute("aria-pressed", next ? "true" : "false");
       }
       if (isAllDone(entry)) { recordServe(entry); removeCard(id, /*fade*/ true); } // #29
+      if (view === "lane") renderLanes();   // #13 レーンから完了品目を除く
     }
 
     /* ===================== 操作: コンロ番号タップ ===================== */
@@ -2329,49 +2583,53 @@
       var m = 60000;
       return [
         { id: now - 1,  table:"A1", type:"new",      start: now - 1*m,  people:2,
-          items:[ {name:"土鍋ご飯（白米）", qty:2, options:"辛さ控えめ", done:false},
-                  {name:"豚角煮トッピング", qty:1, options:null, done:false} ] },
+          items:[ {name:"山城牛の焼きすき土鍋御膳", qty:2, options:"大盛り", done:false},
+                  {name:"海老天ぷら", qty:1, options:null, done:false},
+                  {name:"オリオンビール（小瓶）", qty:2, options:null, done:false} ] },
         { id: now - 2,  table:"B2", type:"reserved", start: now - 3*m,  people:4,
-          items:[ {name:"沖縄そば定食", qty:3, options:null, done:false},
-                  {name:"ジューシー", qty:2, options:"大盛り", done:false},
-                  {name:"さんぴん茶", qty:4, options:null, done:false} ] },
+          items:[ {name:"山城牛の肉たく土鍋御膳", qty:2, options:"肉増し", done:false},
+                  {name:"島黒ヒレカツ出汁とろろ土鍋御膳", qty:1, options:null, done:false},
+                  {name:"ウーロン茶", qty:4, options:null, done:false} ] },
         { id: now - 3,  table:"A3", type:"new",      start: now - 6*m,  people:1,
-          items:[ {name:"タコライス", qty:1, options:"チーズ追加", done:false} ] },
+          items:[ {name:"うなぎ土鍋御膳", qty:1, options:null, done:false},
+                  {name:"山城牛のとろ煮", qty:1, options:null, done:false} ] },
         { id: now - 4,  table:"C1", type:"reserved", start: now - 8*m,  people:3,
-          items:[ {name:"土鍋ご飯（玄米）", qty:1, options:null, done:true},
-                  {name:"ゴーヤチャンプルー", qty:2, options:"卵多め", done:false} ] },
+          items:[ {name:"山城牛のカニクラ土鍋御膳", qty:1, options:null, done:true},
+                  {name:"焼きすきセット", qty:2, options:null, done:false},
+                  {name:"レモンサワー", qty:2, options:null, done:false} ] },
         { id: now - 5,  table:"A2", type:"new",      start: now - 11*m, people:2,
-          items:[ {name:"海ぶどう小鉢", qty:2, options:null, done:false},
-                  {name:"オリオンビール", qty:2, options:"よく冷えたもの", done:false} ] },
+          items:[ {name:"マース煮アーサバター土鍋御膳", qty:2, options:null, done:false},
+                  {name:"ハイボール（角）", qty:2, options:null, done:false} ] },
         { id: now - 6,  table:"B1", type:"new",      start: now - 2*m,  people:2,
-          items:[ {name:"アグー豚しゃぶ", qty:1, options:null, done:false} ] },
+          items:[ {name:"島黒ヒレカツ出汁とろろ土鍋御膳", qty:1, options:"大盛り", done:false} ] },
         { id: now - 7,  table:"C3", type:"reserved", start: now - 13*m, people:4,
-          items:[ {name:"土鍋ご飯（白米）", qty:4, options:null, done:false},
-                  {name:"らふてー", qty:2, options:"とろとろ", done:true},
-                  {name:"もずく酢", qty:3, options:null, done:false} ] },
+          items:[ {name:"山城牛の焼きすき土鍋御膳", qty:4, options:"山城牛追加", done:false},
+                  {name:"島黒西京焼き", qty:2, options:null, done:true},
+                  {name:"黒霧島", qty:3, options:"ロック", done:false} ] },
         { id: now - 8,  table:"A4", type:"new",      start: now - 4*m,  people:1,
-          items:[ {name:"ソーキそば", qty:1, options:"麺かため", done:false} ] },
+          items:[ {name:"今月のスポット土鍋御膳", qty:1, options:null, done:false} ] },
         { id: now - 9,  table:"B3", type:"reserved", start: now - 7*m,  people:2,
-          items:[ {name:"ミミガー和え", qty:1, options:null, done:false},
-                  {name:"泡盛ロック", qty:2, options:null, done:false} ] },
+          items:[ {name:"焼きすきセット", qty:1, options:null, done:false},
+                  {name:"薫長（特別純米）", qty:2, options:null, done:false} ] },
         { id: now - 10, table:"C2", type:"new",      start: now - 9*m,  people:3,
-          items:[ {name:"てびち煮込み", qty:2, options:"骨少なめ", done:false},
-                  {name:"白米", qty:3, options:null, done:false} ] },
+          items:[ {name:"山城牛の肉たく土鍋御膳", qty:2, options:"肉増し", done:false},
+                  {name:"白米1合", qty:3, options:null, done:false} ] },
         { id: now - 11, table:"A5", type:"new",      start: now - 30*1000, people:2,
-          items:[ {name:"島豆腐サラダ", qty:1, options:null, done:false},
-                  {name:"シークワーサージュース", qty:2, options:null, done:false} ] },
+          items:[ {name:"卵かけご飯セット", qty:1, options:null, done:false},
+                  {name:"オレンジ", qty:2, options:null, done:false} ] },
         { id: now - 12, table:"B4", type:"reserved", start: now - 5*m,  people:4,
-          items:[ {name:"土鍋ご飯（白米）", qty:2, options:null, done:false},
-                  {name:"グルクン唐揚げ", qty:1, options:null, done:false},
-                  {name:"ジーマーミ豆腐", qty:2, options:"わさび抜き", done:false} ] },
+          items:[ {name:"山城牛と海老天つゆしゃぶ土鍋御膳", qty:2, options:null, done:false},
+                  {name:"海老天ぷら", qty:1, options:null, done:false},
+                  {name:"出汁米1合", qty:2, options:null, done:false} ] },
         { id: now - 13, table:"C4", type:"new",      start: now - 15*m, people:1,
-          items:[ {name:"中身汁", qty:1, options:null, done:false} ] },
+          items:[ {name:"山城牛のカニクラ土鍋御膳", qty:1, options:null, done:false} ] },
         { id: now - 14, table:"A6", type:"new",      start: now - 10*m, people:2,
-          items:[ {name:"ラフテー丼", qty:2, options:"温玉のせ", done:false},
-                  {name:"アーサ汁", qty:2, options:null, done:false} ] },
+          items:[ {name:"うなぎ土鍋御膳", qty:2, options:null, done:false},
+                  {name:"ウーロンハイ", qty:2, options:null, done:false} ] },
         { id: now - 15, table:"B5", type:"reserved", start: now - 6*m,  people:3,
-          items:[ {name:"沖縄天ぷら盛合せ", qty:1, options:null, done:false},
-                  {name:"ぜんざい", qty:3, options:"白玉追加", done:false} ] }
+          items:[ {name:"山城牛のとろ煮", qty:1, options:null, done:false},
+                  {name:"豊の国", qty:2, options:"水割り", done:false},
+                  {name:"サイダー", qty:1, options:null, done:false} ] }
       ];
     }
 
@@ -2383,13 +2641,13 @@
       }
       return [
         { rid:"d1", time:tStr(20),  adults:2, kids:1, name:"比嘉様",
-          menu:[{name:"土鍋ご飯（白米）",qty:2},{name:"沖縄そば定食",qty:2}] },   // 30分以内 -> 通知
+          menu:[{name:"山城牛の焼きすき土鍋御膳",qty:2},{name:"オリオンビール（小瓶）",qty:2}] },   // 30分以内 -> 通知
         { rid:"d2", time:tStr(25),  adults:4, kids:0, name:"大城様",
-          menu:[{name:"タコライス",qty:2},{name:"ゴーヤチャンプルー",qty:1},{name:"もずく酢",qty:4}] }, // 通知
+          menu:[{name:"山城牛の肉たく土鍋御膳",qty:2},{name:"焼きすきセット",qty:1},{name:"ウーロン茶",qty:4}] }, // 通知
         { rid:"d3", time:tStr(75),  adults:3, kids:2, name:"宮城様",
-          menu:[{name:"土鍋ご飯（玄米）",qty:1},{name:"らふてー",qty:2}] },
+          menu:[{name:"うなぎ土鍋御膳",qty:1},{name:"山城牛のとろ煮",qty:2}] },
         { rid:"d4", time:tStr(140), adults:6, kids:0, name:"金城様",
-          menu:[{name:"沖縄天ぷら盛合せ",qty:2},{name:"ソーキそば",qty:4},{name:"海ぶどう小鉢",qty:3}] }
+          menu:[{name:"マース煮アーサバター土鍋御膳",qty:2},{name:"島黒西京焼き",qty:4},{name:"レモンサワー",qty:3}] }
       ];
     }
 
@@ -2426,9 +2684,11 @@
       loadStock();
       loadPrefs();
       loadSoundPref();
+      loadView();
       applyMode();
       applyAutoPrint();
       applySoundToggle();
+      applyView();
       initSync();
 
       modeBtns.forEach(function (b) {
@@ -2436,6 +2696,9 @@
       });
       if (printToggleEl) printToggleEl.addEventListener("click", function () { setAutoPrint(!autoPrint); });
       if (soundToggleEl) soundToggleEl.addEventListener("click", function () { setAlertSound(!alertSoundOn); });
+      viewBtns.forEach(function (b) {
+        b.addEventListener("click", function () { setView(b.getAttribute("data-view")); });
+      });
       // 初回ユーザー操作でオーディオを解禁 (ブラウザの自動再生制限に対応)
       document.addEventListener("pointerdown", ensureAudio, { once: true });
       if (demoBtn) demoBtn.addEventListener("click", injectDemo);
