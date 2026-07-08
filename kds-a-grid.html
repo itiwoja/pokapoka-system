@@ -561,7 +561,7 @@
   .elapsed.warn  { background: var(--elapsed-warn); border-color: var(--elapsed-warn); }
   .elapsed.alert { background: var(--elapsed-alert); border-color: var(--elapsed-alert); }
 
-  /* チビ伝プレビューを開く小ボタン */
+  /* チビ伝プレビューを開く小ボタン (印刷はキッチンの全操作に含まれる。ホール=読取専用では非表示) */
   .slip-btn {
     flex: 0 0 auto;
     min-width: 44px; min-height: 44px;
@@ -576,7 +576,7 @@
     transition: border-color .1s ease, color .1s ease;
   }
   .slip-btn:hover { color: var(--text-primary); border-color: var(--border); }
-  body.mode-kitchen .slip-btn { display: none; }
+  body.mode-hall .slip-btn { display: none; }
 
   /* 削除ボタン (card-head グリッド内 / キッチンモード専用) */
   .delete-btn {
@@ -1849,7 +1849,7 @@
       elapsed.innerHTML = '<span class="label js-elapsed-label">' + t("elapsed") + '</span>' +
         '<span class="val js-elapsed-val">0</span>' +
         '<span class="label js-min">' + t("min") + '</span>';
-      // チビ伝プレビュー (ホールモードのみ)
+      // チビ伝プレビュー (印刷はキッチン専用操作。ホールモードでは CSS で非表示)
       var slipBtn = document.createElement("button");
       slipBtn.type = "button";
       slipBtn.className = "slip-btn js-slip-btn";
