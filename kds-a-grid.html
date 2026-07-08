@@ -1329,7 +1329,7 @@
        単一HTML / Vanilla JS ES2020 / 外部参照ゼロ / 完全オフライン
        データ契約 (注文入力画面が吐く形式):
          window.KDS_ORDERS = [{ id, table, type:"new"|"reserved",
-           start, people, items:[{name, qty, options(無ければnull), done}] }]
+           start, people, items:[{name, qty, options(無ければnull), allergies(無ければnull), done}] }]
        ======================================================================== */
 
     /* ---- 定数 ---- */
@@ -1539,6 +1539,26 @@
       });
     }
 
+    /* 注文端末からの options / allergies を1本の注記テキストに正規化する。
+       アレルギーはキー表記ゆれ (allergies / allergy / allergyInfo)・配列を許容する。 */
+    function normalizeNoteValue(value) {
+      if (value == null || value === false) return "";
+      if (Array.isArray(value)) {
+        return value.filter(function (v) { return v != null && String(v).trim() !== ""; })
+          .map(function (v) { return String(v).trim(); }).join("、");
+      }
+      return String(value).trim();
+    }
+
+    function itemNotesText(item) {
+      var notes = [];
+      var optionText = normalizeNoteValue(item.options);
+      var allergyText = normalizeNoteValue(item.allergies || item.allergy || item.allergyInfo);
+      if (optionText) notes.push(optionText);
+      if (allergyText) notes.push("アレルギー: " + allergyText);
+      return notes.join(" / ");
+    }
+
     function buildLaneItem(r) {
       var order = r.order, it = r.item;
       var btn = document.createElement("button");
@@ -1555,10 +1575,11 @@
       nm.className = "lane-name";
       nm.textContent = it.name != null ? String(it.name) : "";
       mid.appendChild(nm);
-      if (it.options) {
+      var laneNotes = itemNotesText(it);
+      if (laneNotes) {
         var op = document.createElement("span");
         op.className = "lane-opt";
-        op.textContent = String(it.options);
+        op.textContent = laneNotes;
         mid.appendChild(op);
       }
 
@@ -1869,10 +1890,11 @@
         nm.className = "item-name";
         nm.textContent = it.name != null ? String(it.name) : "";
         main.appendChild(nm);
-        if (it.options) {
+        var notesText = itemNotesText(it);
+        if (notesText) {
           var op = document.createElement("span");
           op.className = "item-opt";
-          op.textContent = String(it.options);
+          op.textContent = notesText;
           main.appendChild(op);
         }
 
@@ -2506,7 +2528,13 @@
         adults: Number(r.adults) || 0,   // 内訳を保持 (配膳カードで「N名 幼M」表示)
         kids: Number(r.kids) || 0,
         items: (r.menu || []).map(function (m) {
-          return { name: m.name, qty: Number(m.qty) || 1, options: null, done: false };
+          return {
+            name: m.name,
+            qty: Number(m.qty) || 1,
+            options: m.options || null,
+            allergies: m.allergies || m.allergy || m.allergyInfo || null,
+            done: false
+          };
         })
       };
       ensureOrderInBus(order);
@@ -2605,11 +2633,12 @@
       (order.items || []).forEach(function (it) {
         var li = document.createElement("li");
         var nm = document.createElement("span");
-        nm.textContent = it.name + (it.options ? "" : "");
-        if (it.options) {
+        var slipNotes = itemNotesText(it);
+        nm.textContent = it.name;
+        if (slipNotes) {
           var o = document.createElement("span");
           o.className = "o";
-          o.textContent = " (" + it.options + ")";
+          o.textContent = " (" + slipNotes + ")";
           nm.appendChild(o);
         }
         var q = document.createElement("span");
@@ -2890,7 +2919,7 @@
       var m = 60000;
       return [
         { id: now - 1,  table:"A1", type:"new",      start: now - 1*m,  people:2,
-          items:[ {name:"山城牛の焼きすき土鍋御膳", qty:2, options:"大盛り", done:false},
+          items:[ {name:"山城牛の焼きすき土鍋御膳", qty:2, options:"大盛り", allergies:"卵", done:false},
                   {name:"海老天ぷら", qty:1, options:null, done:false},
                   {name:"オリオンビール（小瓶）", qty:2, options:null, done:false} ] },
         { id: now - 2,  table:"B2", type:"reserved", start: now - 3*m,  people:4,
@@ -2901,7 +2930,7 @@
           items:[ {name:"うなぎ土鍋御膳", qty:1, options:null, done:false},
                   {name:"山城牛のとろ煮", qty:1, options:null, done:false} ] },
         { id: now - 4,  table:"C1", type:"reserved", start: now - 8*m,  people:3,
-          items:[ {name:"山城牛のカニクラ土鍋御膳", qty:1, options:null, done:true},
+          items:[ {name:"山城牛のカニクラ土鍋御膳", qty:1, options:null, allergies:["乳", "小麦"], done:true},
                   {name:"焼きすきセット", qty:2, options:null, done:false},
                   {name:"レモンサワー", qty:2, options:null, done:false} ] },
         { id: now - 5,  table:"A2", type:"new",      start: now - 11*m, people:2,
@@ -2911,7 +2940,7 @@
           items:[ {name:"島黒ヒレカツ出汁とろろ土鍋御膳", qty:1, options:"大盛り", done:false} ] },
         { id: now - 7,  table:"C3", type:"reserved", start: now - 13*m, people:4,
           items:[ {name:"山城牛の焼きすき土鍋御膳", qty:4, options:"山城牛追加", done:false},
-                  {name:"島黒西京焼き", qty:2, options:null, done:true},
+                  {name:"島黒西京焼き", qty:2, options:null, allergyInfo:"卵", done:true},
                   {name:"黒霧島", qty:3, options:"ロック", done:false} ] },
         { id: now - 8,  table:"A4", type:"new",      start: now - 4*m,  people:1,
           items:[ {name:"今月のスポット土鍋御膳", qty:1, options:null, done:false} ] },
