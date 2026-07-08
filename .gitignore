@@ -1,3 +1,16 @@
 # Claude Code local settings
 .claude/
-.claude-coord
+
+# Claude Code session coordination state (coord MCP) — machine-specific, auto-generated
+.claude-coord/
+
+# Node.js dependencies / build output (mockup プロジェクト等)
+node_modules
+
+# モック関連の生成物（展開済みソースのみ管理、ZIP本体とスクショは除外）
+mockup/*.zip
+mockup/_screenshot*.png
+
+# ローカル環境変数
+.env
+.env.local
