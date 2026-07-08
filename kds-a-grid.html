@@ -1794,6 +1794,57 @@
       });
     }
 
+    /* 品目の構造シグネチャ (done は含めない = 完了トグルで再構築しない) */
+    function itemsSignature(items) {
+      return (items || []).map(function (it) {
+        return String(it.name) + "" + Number(it.qty || 1) + "" + itemNotesText(it);
+      }).join("");
+    }
+
+    /* 品目リスト <ul.items> を生成 (buildCard 初回 / ポーリングでの品目変更時の再構築で共用) */
+    function buildItemsList(order) {
+      var ul = document.createElement("ul");
+      ul.className = "items";
+      (order.items || []).forEach(function (it, idx) {
+        var li = document.createElement("li");
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "item" + (it.done ? " done" : "");
+        btn.setAttribute("data-index", String(idx));
+        btn.setAttribute("aria-pressed", it.done ? "true" : "false");
+
+        var chk = document.createElement("span");
+        chk.className = "check";
+        chk.setAttribute("aria-hidden", "true");
+
+        var main = document.createElement("span");
+        main.className = "item-main";
+        var nm = document.createElement("span");
+        nm.className = "item-name";
+        nm.textContent = it.name != null ? String(it.name) : "";
+        main.appendChild(nm);
+        var notesText = itemNotesText(it);
+        if (notesText) {
+          var op = document.createElement("span");
+          op.className = "item-opt";
+          op.textContent = notesText;
+          main.appendChild(op);
+        }
+
+        var qty = document.createElement("span");
+        qty.className = "item-qty";
+        qty.innerHTML = '<span class="x">×</span>' + Number(it.qty || 1);
+
+        btn.appendChild(chk);
+        btn.appendChild(main);
+        btn.appendChild(qty);
+        btn.addEventListener("click", function () { onToggle(order.id, idx); });
+        li.appendChild(btn);
+        ul.appendChild(li);
+      });
+      return ul;
+    }
+
     function buildCard(order) {
       var card = document.createElement("article");
       card.className = "card " + (order.type === "reserved" ? "reserved" : "new");
@@ -1870,45 +1921,7 @@
       timeRow.appendChild(slipBtn);
 
       /* items */
-      var ul = document.createElement("ul");
-      ul.className = "items";
-      (order.items || []).forEach(function (it, idx) {
-        var li = document.createElement("li");
-        var btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "item" + (it.done ? " done" : "");
-        btn.setAttribute("data-index", String(idx));
-        btn.setAttribute("aria-pressed", it.done ? "true" : "false");
-
-        var chk = document.createElement("span");
-        chk.className = "check";
-        chk.setAttribute("aria-hidden", "true");
-
-        var main = document.createElement("span");
-        main.className = "item-main";
-        var nm = document.createElement("span");
-        nm.className = "item-name";
-        nm.textContent = it.name != null ? String(it.name) : "";
-        main.appendChild(nm);
-        var notesText = itemNotesText(it);
-        if (notesText) {
-          var op = document.createElement("span");
-          op.className = "item-opt";
-          op.textContent = notesText;
-          main.appendChild(op);
-        }
-
-        var qty = document.createElement("span");
-        qty.className = "item-qty";
-        qty.innerHTML = '<span class="x">×</span>' + Number(it.qty || 1);
-
-        btn.appendChild(chk);
-        btn.appendChild(main);
-        btn.appendChild(qty);
-        btn.addEventListener("click", function () { onToggle(order.id, idx); });
-        li.appendChild(btn);
-        ul.appendChild(li);
-      });
+      var ul = buildItemsList(order);
 
       /* konro: コンロ番号 1〜10 (2行 = 5列×2) */
       var konro = document.createElement("div");
@@ -1963,12 +1976,20 @@
         if (!entry) {
           var el = buildCard(order);
           boardEl.appendChild(el);
-          entry = cards[order.id] = { el: el, order: order, level: null, items: order.items };
+          entry = cards[order.id] = { el: el, order: order, level: null, items: order.items,
+            itemsSig: itemsSignature(order.items) };
           added.push(String(order.id));
           maybeAutoPrint(order);     // 新着注文 -> 自動印刷 (トグルON時のみ)
         } else {
           entry.order = order;
           entry.items = order.items;
+          // POS 側で品目が追加・変更・削除されたら品目リスト DOM を再構築 (#60)
+          var sig = itemsSignature(order.items);
+          if (sig !== entry.itemsSig) {
+            entry.itemsSig = sig;
+            var oldUl = entry.el.querySelector(".items");
+            if (oldUl) entry.el.replaceChild(buildItemsList(order), oldUl);
+          }
         }
         applyDoneToCard(entry, /*animateRemoval*/ false);
         applyKonroToCard(order.id);   // LS のコンロ状態を DOM へ反映 (他タブ更新の取り込み)
