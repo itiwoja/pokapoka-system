@@ -1348,6 +1348,7 @@
     var LS_VIEW   = "kds_view_v1"; // #13 表示モード (grid / lane)
     var LS_NEWORDER_SOUND = "kds_neworder_sound_v1"; // 新着通知音トグル
     var LS_DAY = "kds_day_v1";     // 最終利用日 (YYYY-MM-DD)。日付が変わったら当日データを破棄 (#63)
+    var LS_DELETED = "kds_deleted_v1"; // 削除済み注文ID (POS再送で復活させないトゥームストーン #67)
     var BC_NAME = "kds_sync";      // BroadcastChannel 名
     var WARN_MIN = 5, ALERT_MIN = 10;
     var ALERT_REPEAT_MS = 60000;   // #12 10分超が続く間の再アラート間隔
@@ -1403,6 +1404,7 @@
     var autoPrint = false;         // 自動印刷トグル
     var view = "grid";             // #13 表示モード (grid / lane)
     var lockedTimers = {};         // タイマーロック状態 { orderId: true }
+    var deletedIds = {};           // 削除済み注文ID { orderId: true } (LS正本 #67)
     var bc = null;
     var seededIds = {};            // 自動印刷の二重発火防止 (このタブで既にプレビュー済みの orderId)
     var newOrderSoundOn = false;   // 新着通知音トグル (#12 の遅延アラート音とは別トグル)
@@ -1626,7 +1628,7 @@
       try {
         var last = localStorage.getItem(LS_DAY);
         if (last && last !== today) {
-          [LS_STOCK, LS_DONE, LS_ORDER, LS_KONRO, LS_LOCKED].forEach(function (key) {
+          [LS_STOCK, LS_DONE, LS_ORDER, LS_KONRO, LS_LOCKED, LS_DELETED].forEach(function (key) {
             localStorage.removeItem(key);
           });
         }
@@ -1774,7 +1776,9 @@
             stock = msg.stock; saveStock(); renderStock();
             if (msg.order) ensureOrderInBus(msg.order);
           } else if (msg.type === "deleteOrder" && msg.id) {
-            // 注文削除の同期 (キッチン側の削除を他タブへ反映)
+            // 注文削除の同期 (キッチン側の削除を他タブへ反映)。受信側もトゥームストーンを保持 (#67)
+            deletedIds[String(msg.id)] = true;
+            saveDeleted();
             if (Array.isArray(window.KDS_ORDERS)) {
               window.KDS_ORDERS = window.KDS_ORDERS.filter(function(o) { return String(o.id) !== String(msg.id); });
             }
@@ -1828,9 +1832,10 @@
     function getOrders() {
       var src = window.KDS_ORDERS;
       if (!Array.isArray(src)) return [];
-      // データ契約に最低限合致するものだけ通す (システム境界の入力検証)
+      // データ契約に最低限合致するものだけ通す (システム境界の入力検証)。削除済みは除外 (#67)
       return src.filter(function (o) {
-        return o && (o.id !== undefined && o.id !== null) && Array.isArray(o.items);
+        return o && (o.id !== undefined && o.id !== null) && Array.isArray(o.items) &&
+          !deletedIds[String(o.id)];
       });
     }
 
@@ -2733,6 +2738,8 @@
     /* ===================== 注文削除 ===================== */
     function deleteOrder(id) {
       if (!confirm("この注文を削除しますか?")) return;
+      deletedIds[String(id)] = true;   // トゥームストーン: POSが再送しても復活させない (#67)
+      saveDeleted();
       if (Array.isArray(window.KDS_ORDERS)) {
         window.KDS_ORDERS = window.KDS_ORDERS.filter(function (o) { return String(o.id) !== String(id); });
       }
@@ -2755,6 +2762,29 @@
     function saveLocked() {
       try { localStorage.setItem(LS_LOCKED, JSON.stringify(lockedTimers)); } catch (e) {}
     }
+    /* ----- 削除済み注文ID (トゥームストーン #67) -----
+       POS接続後は window.KDS_ORDERS が毎秒上書きされるため、配列から除くだけでは
+       次のポーリングで削除した注文が復活する。削除済みIDを保持し getOrders() で除外し続ける。
+       POS側APIへの削除伝播はテーブルチェック連携の仕様確定後に設計する (#74)。 */
+    function loadDeleted() {
+      var v = safeParse(localStorage.getItem(LS_DELETED), {}) || {};
+      deletedIds = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+    }
+    function saveDeleted() {
+      try { localStorage.setItem(LS_DELETED, JSON.stringify(deletedIds)); } catch (e) {}
+    }
+    /* フィード(生データ)から居なくなった削除済みIDは掃除する (POSが再送し続ける間だけ保持) */
+    function pruneDeleted() {
+      var src = Array.isArray(window.KDS_ORDERS) ? window.KDS_ORDERS : [];
+      var live = {};
+      src.forEach(function (o) { if (o && o.id != null) live[String(o.id)] = true; });
+      var changed = false;
+      Object.keys(deletedIds).forEach(function (id) {
+        if (!live[id]) { delete deletedIds[id]; changed = true; }
+      });
+      if (changed) saveDeleted();
+    }
+
     function toggleTimerLock(id) {
       lockedTimers[String(id)] = !lockedTimers[String(id)];
       saveLocked();
@@ -3070,6 +3100,8 @@
 
     /* ===================== ポーリング ===================== */
     function poll() {
+      loadDeleted();              // 削除済みIDを LS から取り込み (#67)
+      pruneDeleted();             // フィードから消えた削除済みIDは掃除
       var orders = getOrders();
       loadDone();                 // 他タブ/リロードで更新された LS を取り込む (フォールバック同期)
       loadKonro();                // コンロ状態も LS から取り込む (BroadcastChannel 非対応時のフォールバック同期)
@@ -3082,6 +3114,7 @@
     /* ===================== 初期化 ===================== */
     function init() {
       purgeStaleDay();   // 日付が変わっていたら前日の運用データを破棄 (#63)
+      loadDeleted();
       loadDone();
       loadKonro();
       loadOrderSeq();
