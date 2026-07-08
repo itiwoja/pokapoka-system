@@ -2461,6 +2461,21 @@
 
     function renderStock() {
       sortStock();
+      // 全再描画で卓番入力中のテキスト・フォーカスが失われないよう退避する (#66)
+      // (他端末の予約更新が BroadcastChannel で届くと入力途中でも再描画されるため)
+      var pendingSeats = {};
+      var focusRid = null, selStart = 0, selEnd = 0;
+      var oldCards = stockListEl.querySelectorAll(".res-card");
+      for (var i = 0; i < oldCards.length; i++) {
+        var orid = oldCards[i].getAttribute("data-rid");
+        var oinp = oldCards[i].querySelector(".res-seat");
+        if (!oinp) continue;
+        if (oinp.value) pendingSeats[orid] = oinp.value;
+        if (document.activeElement === oinp) {
+          focusRid = orid;
+          selStart = oinp.selectionStart; selEnd = oinp.selectionEnd;
+        }
+      }
       stockCountEl.textContent = String(stock.length);
       stockListEl.innerHTML = "";
       if (!stock.length) {
@@ -2474,6 +2489,18 @@
       stock.forEach(function (r) {
         stockListEl.appendChild(buildResCard(r));
       });
+      // 退避した入力値・フォーカスを復元 (消えた予約カードの分は自然に破棄される)
+      var newCards = stockListEl.querySelectorAll(".res-card");
+      for (var j = 0; j < newCards.length; j++) {
+        var nrid = newCards[j].getAttribute("data-rid");
+        var ninp = newCards[j].querySelector(".res-seat");
+        if (!ninp) continue;
+        if (pendingSeats[nrid]) ninp.value = pendingSeats[nrid];
+        if (focusRid === nrid) {
+          ninp.focus();
+          try { ninp.setSelectionRange(selStart, selEnd); } catch (e) {}
+        }
+      }
       updateStockSoon();
     }
 
