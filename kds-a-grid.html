@@ -1347,6 +1347,7 @@
     var LS_SOUND  = "kds_alert_sound_v1"; // #12 遅延アラート音トグル
     var LS_VIEW   = "kds_view_v1"; // #13 表示モード (grid / lane)
     var LS_NEWORDER_SOUND = "kds_neworder_sound_v1"; // 新着通知音トグル
+    var LS_DAY = "kds_day_v1";     // 最終利用日 (YYYY-MM-DD)。日付が変わったら当日データを破棄 (#63)
     var BC_NAME = "kds_sync";      // BroadcastChannel 名
     var WARN_MIN = 5, ALERT_MIN = 10;
     var ALERT_REPEAT_MS = 60000;   // #12 10分超が続く間の再アラート間隔
@@ -1610,6 +1611,27 @@
       view = (next === "lane") ? "lane" : "grid";
       try { localStorage.setItem(LS_VIEW, view); } catch (e) {}
       applyView();
+    }
+
+    /* ===================== 当日分のみ運用 (#63) =====================
+       「データ保存は当日分のみ・永続DB無し」(deshup-spec / 議事録6/18)。
+       日付が変わって起動したら前日の運用データを破棄する。
+       設定 (権限モード/トグル類) と提供時間ログ (#29 KPIベースライン用に意図的に永続) は対象外。 */
+    function todayStr() {
+      var d = new Date();
+      return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+    }
+    function purgeStaleDay() {
+      var today = todayStr();
+      try {
+        var last = localStorage.getItem(LS_DAY);
+        if (last && last !== today) {
+          [LS_STOCK, LS_DONE, LS_ORDER, LS_KONRO, LS_LOCKED].forEach(function (key) {
+            localStorage.removeItem(key);
+          });
+        }
+        localStorage.setItem(LS_DAY, today);
+      } catch (e) {}
     }
 
     /* ===================== LocalStorage (完了状態) ===================== */
@@ -3034,6 +3056,7 @@
 
     /* ===================== 初期化 ===================== */
     function init() {
+      purgeStaleDay();   // 日付が変わっていたら前日の運用データを破棄 (#63)
       loadDone();
       loadKonro();
       loadOrderSeq();
