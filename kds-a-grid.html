@@ -593,6 +593,14 @@
     transition: color .1s ease, border-color .1s ease, background .1s ease;
   }
   .delete-btn:hover { color: #fff; background: var(--elapsed-alert); border-color: var(--elapsed-alert); }
+  /* 削除の2段階確認: 1タップ目で警告状態、猶予内の再タップで削除 (#68) */
+  .delete-btn.armed {
+    color: #fff;
+    background: var(--elapsed-alert);
+    border-color: var(--elapsed-alert);
+    min-width: 56px;
+    font-size: 12px;
+  }
   body.mode-hall .delete-btn { display: none; }
 
   /* タイマーロックボタン */
@@ -1361,6 +1369,7 @@
     var audioCtx = null;           // WebAudio コンテキスト (遅延ビープ / 新着チャイム共用)
     var LONGPRESS_MS = 800;        // 並べ替え長押し (0.8〜2秒の下限)
     var UNDO_TOAST_MS = 6000;      // 全完了カードの取り消し猶予
+    var DELETE_ARM_MS = 3000;      // 削除ボタン2段階確認の猶予 (#68)
     var KONRO_COUNT = 10;          // コンロ番号 1〜10
     /* コンロ状態サイクル: スケルトン(未使用) → 白(使用中) → 赤(タイマー管理中) → スケルトン */
     var KONRO_CYCLE = { "skeleton": "white", "white": "red", "red": "skeleton" };
@@ -1922,15 +1931,32 @@
       var table = document.createElement("div");
       table.className = "table-no";
       table.textContent = order.table != null ? String(order.table) : "--";
-      // 削除ボタン (キッチンモード専用)
+      // 削除ボタン (キッチンモード専用)。ネイティブ confirm() はメインスレッドを塞ぎ
+      // ポーリング・経過時間更新まで止めるため、2段階タップのインライン確認にする (#68)
       var delBtn = document.createElement("button");
       delBtn.type = "button";
       delBtn.className = "delete-btn";
       delBtn.setAttribute("aria-label", "注文削除");
       delBtn.textContent = "×";
+      var delArmTimer = null;
+      function disarmDelete() {
+        if (delArmTimer) { clearTimeout(delArmTimer); delArmTimer = null; }
+        delBtn.classList.remove("armed");
+        delBtn.textContent = "×";
+        delBtn.setAttribute("aria-label", "注文削除");
+      }
       delBtn.addEventListener("click", function (e) {
         e.stopPropagation();
-        deleteOrder(order.id);
+        if (delBtn.classList.contains("armed")) {
+          disarmDelete();
+          deleteOrder(order.id);
+          return;
+        }
+        delBtn.classList.add("armed");
+        delBtn.textContent = "削除?";
+        delBtn.setAttribute("aria-label", "もう一度タップで注文削除");
+        if (delArmTimer) clearTimeout(delArmTimer);
+        delArmTimer = setTimeout(disarmDelete, DELETE_ARM_MS);
       });
       head.appendChild(badge);
       head.appendChild(people);
@@ -2801,8 +2827,8 @@
     var autoPrintArmed = false;   // 初期シード後に解禁 (起動時の15件で連発させない)
 
     /* ===================== 注文削除 ===================== */
+    /* 確認は削除ボタン側の2段階タップで済ませている (#68)。ここでは即実行する */
     function deleteOrder(id) {
-      if (!confirm("この注文を削除しますか?")) return;
       deletedIds[String(id)] = true;   // トゥームストーン: POSが再送しても復活させない (#67)
       saveDeleted();
       if (Array.isArray(window.KDS_ORDERS)) {
