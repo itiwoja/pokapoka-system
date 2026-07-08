@@ -812,7 +812,8 @@
     border-radius: 2px;
     box-shadow: var(--sh);
   }
-  body.is-reordering .reorder-bar { display: flex; }
+  body.is-reordering .reorder-bar,
+  .reorder-bar.show { display: flex; }   /* .show = 確定直後の「戻す」猶予表示 (#62) */
   .reorder-bar .msg { font-size: 15px; font-weight: 800; color: var(--text-primary); }
   .reorder-bar button {
     min-height: 48px; padding: 8px 18px;
@@ -1258,7 +1259,7 @@
 
   <!-- カード並べ替えの取消バー -->
   <div class="reorder-bar" id="reorderBar" role="status">
-    <span class="msg">並べ替え中</span>
+    <span class="msg">並べ替え中（離して確定 / 取消で戻す）</span>
     <button type="button" id="reorderUndo">取消</button>
     <button type="button" class="confirm" id="reorderDone">確定</button>
   </div>
@@ -1377,6 +1378,7 @@
       fldName:"名前", fldMenu:"メニュー（個数）", cancel:"キャンセル", save:"登録",
       print:"印刷", close:"閉じる", soon:"まもなく", seatPh:"卓番", go:"配膳へ", del:"削除",
       reorderMsg:"並べ替え中（離して確定 / 取消で戻す）", undo:"取消", reorderDone:"確定",
+      reorderCommitted:"並べ替えを確定しました", restore:"戻す",
       errTime:"予約時間を入力してください", errMenu:"メニューを1つ以上選択してください",
       errSeat:"卓番を入力してください", slipMeta:"受付", kidsLabel:"幼"
     };
@@ -1447,6 +1449,8 @@
     var slipItemsEl = document.getElementById("slipItems");
     var slipPrintBtn = document.getElementById("slipPrint");
     var slipCloseBtn = document.getElementById("slipClose");
+    var reorderBarEl = document.getElementById("reorderBar");
+    var reorderBarMsg = reorderBarEl ? reorderBarEl.querySelector(".msg") : null;
     var reorderUndoBtn = document.getElementById("reorderUndo");
     var reorderDoneBtn = document.getElementById("reorderDone");
     var newOrderSoundToggleEl = document.getElementById("newOrderSoundToggle");
@@ -2411,7 +2415,10 @@
       function onUp() {
         document.removeEventListener("pointermove", onMove);
         document.removeEventListener("pointerup", onUp);
-        // 確定: DOM順を orderSeq に取り込む (確定ボタンでも同じ。離した時点で仮確定)
+        // 文言通り「離して確定」(#62)。誤操作防止として確定後数秒間「戻す」を提示する
+        var snapshot = grab ? grab.seqBefore.slice() : null;
+        commitReorder();
+        if (snapshot) offerReorderUndo(snapshot);
       }
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);
@@ -2443,6 +2450,37 @@
       setReorderingClass(false);
       saveOrderSeq();
       applyOrderSeq();      // 元の並びへ戻す
+    }
+
+    /* 確定直後の「戻す」猶予 (#62)。誤操作防止 (仕様: 長押し必須＋取消/戻る) */
+    var reorderUndoSnapshot = null;
+    var reorderUndoTimer = null;
+    var REORDER_UNDO_MS = 6000;
+    function offerReorderUndo(snapshot) {
+      if (!reorderBarEl) return;
+      reorderUndoSnapshot = snapshot;
+      if (reorderBarMsg) reorderBarMsg.textContent = t("reorderCommitted");
+      if (reorderDoneBtn) reorderDoneBtn.style.display = "none";
+      if (reorderUndoBtn) reorderUndoBtn.textContent = t("restore");
+      reorderBarEl.classList.add("show");
+      if (reorderUndoTimer) clearTimeout(reorderUndoTimer);
+      reorderUndoTimer = setTimeout(hideReorderUndoBar, REORDER_UNDO_MS);
+    }
+    function hideReorderUndoBar() {
+      if (reorderUndoTimer) { clearTimeout(reorderUndoTimer); reorderUndoTimer = null; }
+      reorderUndoSnapshot = null;
+      if (reorderBarEl) reorderBarEl.classList.remove("show");
+      if (reorderBarMsg) reorderBarMsg.textContent = t("reorderMsg");
+      if (reorderDoneBtn) reorderDoneBtn.style.display = "";
+      if (reorderUndoBtn) reorderUndoBtn.textContent = t("undo");
+    }
+    function undoReorderCommit() {
+      if (!reorderUndoSnapshot) return;
+      orderSeq = reorderUndoSnapshot.slice();
+      hideReorderUndoBar();
+      saveOrderSeq();
+      broadcastOrderSeq();
+      applyOrderSeq();
     }
 
     /* ===================== 予約ストック ===================== */
@@ -3190,8 +3228,11 @@
       if (slipCloseBtn) slipCloseBtn.addEventListener("click", closeSlip);
       if (slipBackdrop) slipBackdrop.addEventListener("click", function (e) { if (e.target === slipBackdrop) closeSlip(); });
 
-      // 並べ替え取消/確定
-      if (reorderUndoBtn) reorderUndoBtn.addEventListener("click", cancelReorder);
+      // 並べ替え取消/確定 (取消ボタンは掴み中=取消 / 確定直後=戻す の2役 #62)
+      if (reorderUndoBtn) reorderUndoBtn.addEventListener("click", function () {
+        if (grab) cancelReorder();
+        else undoReorderCommit();
+      });
       if (reorderDoneBtn) reorderDoneBtn.addEventListener("click", commitReorder);
 
       // ESC でモーダル/伝票を閉じる / 並べ替え取消
@@ -3200,6 +3241,7 @@
         if (document.body.classList.contains("slip-open")) closeSlip();
         else if (document.body.classList.contains("modal-open")) closeModal();
         else if (isReordering) cancelReorder();
+        else if (reorderUndoSnapshot) hideReorderUndoBar();
       });
 
       updateClock();
