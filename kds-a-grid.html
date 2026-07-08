@@ -2764,6 +2764,28 @@
     }
     function closeModal() { document.body.classList.remove("modal-open"); }
 
+    /* フォーカストラップ (#69): aria-modal はマークアップだけではフォーカスを閉じ込めないため、
+       Tab/Shift+Tab をダイアログ内で循環させる。予約追加モーダルとチビ伝プレビューに適用 */
+    function trapModalFocus(e) {
+      if (e.key !== "Tab") return;
+      var container = document.body.classList.contains("slip-open") ? slipBackdrop
+                    : document.body.classList.contains("modal-open") ? modalBackdrop
+                    : null;
+      if (!container) return;
+      var nodes = container.querySelectorAll(
+        'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])');
+      var list = [];
+      for (var i = 0; i < nodes.length; i++) {
+        if (!nodes[i].disabled && nodes[i].offsetParent !== null) list.push(nodes[i]);
+      }
+      if (!list.length) return;
+      var first = list[0], last = list[list.length - 1];
+      var active = document.activeElement;
+      if (!container.contains(active)) { e.preventDefault(); first.focus(); return; }
+      if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+    }
+
     function submitRes(ev) {
       ev.preventDefault();
       var time = document.getElementById("resTime").value;
@@ -3269,6 +3291,9 @@
         else if (isReordering) cancelReorder();
         else if (reorderUndoSnapshot) hideReorderUndoBar();
       });
+
+      // モーダル表示中は Tab フォーカスをダイアログ内で循環させる (#69)
+      document.addEventListener("keydown", trapModalFocus);
 
       updateClock();
       renderStock();
