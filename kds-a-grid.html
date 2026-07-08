@@ -292,8 +292,8 @@
     background: var(--text-primary);
     box-shadow: var(--sh-sm);
   }
-  /* 印刷自動化トグル */
-  .print-toggle {
+  /* ヘッダー右側トグル (自動印刷 / 通知音) */
+  .head-toggle {
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -309,18 +309,88 @@
     flex: 0 0 auto;
     transition: color .1s ease, box-shadow .1s ease;
   }
-  .print-toggle:hover { color: var(--text-primary); background: var(--bg-inset); }
-  .print-toggle:active { transform: translate(2px,2px); box-shadow: none; }
-  .print-toggle .dot {
+  .head-toggle:hover { color: var(--text-primary); background: var(--bg-inset); }
+  .head-toggle:active { transform: translate(2px,2px); box-shadow: none; }
+  .head-toggle .dot {
     width: 12px; height: 12px; border-radius: 50%;
     border: 2px solid var(--text-secondary);
     background: transparent;
     transition: background-color .1s ease, border-color .1s ease;
   }
-  .print-toggle[aria-pressed="true"] { color: var(--text-primary); box-shadow: var(--sh-sm); }
-  .print-toggle[aria-pressed="true"] .dot { background: var(--elapsed-ok); border-color: var(--elapsed-ok); }
+  .head-toggle[aria-pressed="true"] { color: var(--text-primary); box-shadow: var(--sh-sm); }
+  .head-toggle[aria-pressed="true"] .dot { background: var(--elapsed-ok); border-color: var(--elapsed-ok); }
 
   :focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+
+  /* ============================================================ HUD (ヘッダー下サマリー帯)
+     進行中件数・10分超過件数・まもなく予約件数 + コンロ1〜10の全カード横断ビュー。
+     遠目からでも厨房全体の逼迫度が一目でわかる。 */
+  .hud {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px var(--pad-shell);
+    background: var(--bg-base);
+    border-bottom: 2px solid var(--border);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .hud-stat {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 3px 12px;
+    border: 2px solid var(--border);
+    background: #FFFFFF;
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+  .hud-stat .k {
+    font-size: 11px;
+    letter-spacing: .12em;
+    font-weight: 800;
+    color: var(--text-secondary);
+  }
+  .hud-stat .v {
+    font-family: var(--font-num);
+    font-size: 20px;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+  }
+  .hud-stat.alert-on {
+    background: var(--elapsed-alert);
+    border-color: var(--elapsed-alert);
+    box-shadow: var(--sh-sm);
+  }
+  .hud-stat.alert-on .k, .hud-stat.alert-on .v { color: #FFFFFF; }
+  /* 琥珀地は白文字だと AA 未達のため濃炭文字にする */
+  .hud-stat.warn-on {
+    background: var(--elapsed-warn);
+    border-color: var(--elapsed-warn);
+    box-shadow: var(--sh-sm);
+  }
+  .hud-stat.warn-on .k, .hud-stat.warn-on .v { color: var(--text-primary); }
+  .hud-sep { width: 2px; align-self: stretch; background: var(--border-soft); flex: 0 0 auto; }
+
+  .konro-hud { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+  .konro-hud .kh-label {
+    font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--text-secondary); font-weight: 800; margin-right: 4px;
+  }
+  .kh-cell {
+    width: 28px; height: 28px;
+    display: inline-grid; place-items: center;
+    border: 2px solid var(--border-soft);
+    background: var(--bg-base);
+    font-family: var(--font-num);
+    font-size: 13px; font-weight: 900;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+  .kh-cell[data-state="white"] { background: var(--text-primary); border-color: var(--text-primary); color: var(--bg-base); }
+  .kh-cell[data-state="red"]   { background: var(--elapsed-alert); border-color: var(--elapsed-alert); color: #FFFFFF; }
 
   /* ============================================================ 2ペインシェル (左=メイン配膳 / 右=予約ストック) */
   .shell {
@@ -447,6 +517,7 @@
   }
   .people .n { font-family: var(--font-num); font-size: 18px; }
   .people .unit { color: var(--text-secondary); font-size: 13px; margin-left: 2px; }
+  .people .kids-inline { color: var(--text-secondary); font-size: 12px; font-weight: 800; margin-left: 6px; }
 
   .table-no {
     grid-area: table;
@@ -754,6 +825,40 @@
   .reorder-bar button:active { transform: translate(2px,2px); box-shadow: none; }
   .reorder-bar button.confirm { border-color: var(--elapsed-ok); color: var(--elapsed-ok); }
 
+  /* ============================================================ 全完了の取り消しトースト
+     全品目タップ完了で消えたカードを、誤タップに備え数秒だけ戻せるようにする */
+  .toast {
+    position: fixed;
+    left: 18px; bottom: 18px;
+    z-index: 60;
+    display: none;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px;
+    background: var(--text-primary);
+    color: var(--bg-base);
+    border: 2px solid var(--border);
+    box-shadow: var(--sh);
+    font-size: 16px;
+    font-weight: 800;
+  }
+  .toast.show { display: flex; animation: cardIn .22s cubic-bezier(.16,1,.3,1); }
+  .toast .undo-btn {
+    min-height: 48px;
+    padding: 8px 18px;
+    border: 2px solid var(--bg-base);
+    border-radius: 0;
+    background: transparent;
+    color: var(--bg-base);
+    font-family: var(--font-ui);
+    font-size: 15px;
+    font-weight: 900;
+    cursor: pointer;
+    transition: background-color .1s ease, color .1s ease;
+  }
+  .toast .undo-btn:hover { background: var(--bg-base); color: var(--text-primary); }
+  .toast .undo-btn:active { transform: translate(2px,2px); }
+
   /* ============================================================ 右ペイン: 予約ストックパネル */
   .stock {
     flex: 0 0 340px;
@@ -831,7 +936,8 @@
     box-shadow: var(--sh);
     animation: cardIn .22s cubic-bezier(.16,1,.3,1);
   }
-  .res-card.soon { border-left-color: var(--elapsed-alert); }
+  .res-card.soon { border-left-color: var(--elapsed-warn); }
+  .res-card.late { border-left-color: var(--elapsed-alert); }
   .res-top {
     display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
   }
@@ -856,21 +962,27 @@
   }
   .res-menu li { overflow-wrap: anywhere; }
   .res-menu li .q { font-family: var(--font-num); color: var(--text-primary); margin-left: 4px; }
-  /* 30分前通知バッジ (右上・点滅) */
+  /* 30分前通知バッジ (右上・点滅)。琥珀地は白文字だと AA 未達のため濃炭文字 */
   .res-soon-badge {
     position: absolute;
     top: -8px; right: -6px;
     padding: 4px 10px;
     border-radius: 0;
-    background: var(--elapsed-alert);
+    background: var(--elapsed-warn);
     border: 2px solid var(--border);
-    color: #fff;
+    color: var(--text-primary);
     font-size: 12px; font-weight: 900; letter-spacing: .02em;
     box-shadow: 2px 2px 0 var(--border);
     display: none;
     animation: soonPulse 1.3s ease-in-out infinite;
   }
   .res-card.soon .res-soon-badge { display: inline-block; }
+  /* 予約時刻を過ぎたら「超過 +N分」の赤バッジに切り替え (黙って消さない) */
+  .res-card.late .res-soon-badge {
+    display: inline-block;
+    background: var(--elapsed-alert);
+    color: #fff;
+  }
   @keyframes soonPulse { 0%,100%{ transform: scale(1); } 50%{ transform: scale(1.12); } }
 
   .res-actions { display: flex; gap: 8px; margin-top: 10px; align-items: stretch; }
@@ -1073,12 +1185,16 @@
       <button type="button" class="mode-btn" id="viewLane" data-view="lane" aria-pressed="false">レーン</button>
     </div>
 
-    <button type="button" class="print-toggle" id="printToggle" aria-pressed="false">
+    <button type="button" class="head-toggle" id="newOrderSoundToggle" aria-pressed="false" aria-label="新着通知音のオン/オフ">
+      <span class="dot" aria-hidden="true"></span>
+      <span>新着音</span>
+    </button>
+    <button type="button" class="head-toggle" id="printToggle" aria-pressed="false">
       <span class="dot" aria-hidden="true"></span>
       <span>自動印刷</span>
     </button>
 
-    <button type="button" class="print-toggle" id="soundToggle" aria-pressed="true" aria-label="遅延アラート音のオン/オフ">
+    <button type="button" class="head-toggle" id="soundToggle" aria-pressed="true" aria-label="遅延アラート音のオン/オフ">
       <span class="dot" aria-hidden="true"></span>
       <span>アラート音</span>
     </button>
@@ -1089,6 +1205,17 @@
     </button>
 
   </header>
+
+  <!-- HUD: 状況サマリー + コンロ全体ビュー -->
+  <div class="hud">
+    <span class="hud-stat"><span class="k">進行中</span><span class="v" id="hudActive">0</span></span>
+    <span class="hud-stat" id="hudAlertWrap"><span class="k">10分超過</span><span class="v" id="hudAlert">0</span></span>
+    <span class="hud-stat" id="hudSoonWrap"><span class="k">まもなく予約</span><span class="v" id="hudSoon">0</span></span>
+    <span class="hud-sep" aria-hidden="true"></span>
+    <div class="konro-hud" id="konroHud" role="group" aria-label="コンロ使用状況">
+      <span class="kh-label" aria-hidden="true">コンロ</span>
+    </div>
+  </div>
 
   <div class="shell">
     <main>
@@ -1134,6 +1261,12 @@
     <span class="msg">並べ替え中</span>
     <button type="button" id="reorderUndo">取消</button>
     <button type="button" class="confirm" id="reorderDone">確定</button>
+  </div>
+
+  <!-- 全完了カードの取り消しトースト -->
+  <div class="toast" id="undoToast" role="status">
+    <span id="undoToastMsg"></span>
+    <button type="button" class="undo-btn" id="undoToastBtn">戻す</button>
   </div>
 
   <!-- 予約追加フォーム -->
@@ -1213,6 +1346,7 @@
     var LS_SERVE  = "kds_serve_log_v1"; // #29 提供時間ログ (KPIベースライン)
     var LS_SOUND  = "kds_alert_sound_v1"; // #12 遅延アラート音トグル
     var LS_VIEW   = "kds_view_v1"; // #13 表示モード (grid / lane)
+    var LS_NEWORDER_SOUND = "kds_neworder_sound_v1"; // 新着通知音トグル
     var BC_NAME = "kds_sync";      // BroadcastChannel 名
     var WARN_MIN = 5, ALERT_MIN = 10;
     var ALERT_REPEAT_MS = 60000;   // #12 10分超が続く間の再アラート間隔
@@ -1221,8 +1355,9 @@
     // #12 遅延アラート状態
     var alertSoundOn = true;       // 遅延アラート音のオン/オフ (LocalStorage 正本)
     var lastAnyAlertBeepAt = 0;    // 直近に鳴らした時刻 (再アラート間隔の判定用)
-    var audioCtx = null;           // WebAudio コンテキスト (遅延ビープ生成用)
+    var audioCtx = null;           // WebAudio コンテキスト (遅延ビープ / 新着チャイム共用)
     var LONGPRESS_MS = 800;        // 並べ替え長押し (0.8〜2秒の下限)
+    var UNDO_TOAST_MS = 6000;      // 全完了カードの取り消し猶予
     var KONRO_COUNT = 10;          // コンロ番号 1〜10
     /* コンロ状態サイクル: スケルトン(未使用) → 白(使用中) → 赤(タイマー管理中) → スケルトン */
     var KONRO_CYCLE = { "skeleton": "white", "white": "red", "red": "skeleton" };
@@ -1269,6 +1404,12 @@
     var lockedTimers = {};         // タイマーロック状態 { orderId: true }
     var bc = null;
     var seededIds = {};            // 自動印刷の二重発火防止 (このタブで既にプレビュー済みの orderId)
+    var newOrderSoundOn = false;   // 新着通知音トグル (#12 の遅延アラート音とは別トグル)
+    var newOrderSoundArmed = false; // 初期シード分は鳴らさない (autoPrintArmed と同じタイミングで解禁)
+    var suppressChimeOnce = false; // 完了取り消しでカードが復帰した時に新着音を鳴らさない
+    var undoInfo = null;           // { id, index } 全完了直後の取り消し対象
+    var undoTimer = null;
+    var khCells = [];              // HUD のコンロセル DOM
 
     /* ---- DOM ---- */
     var boardEl = document.getElementById("board");
@@ -1305,6 +1446,16 @@
     var slipCloseBtn = document.getElementById("slipClose");
     var reorderUndoBtn = document.getElementById("reorderUndo");
     var reorderDoneBtn = document.getElementById("reorderDone");
+    var newOrderSoundToggleEl = document.getElementById("newOrderSoundToggle");
+    var hudActiveEl = document.getElementById("hudActive");
+    var hudAlertEl = document.getElementById("hudAlert");
+    var hudAlertWrap = document.getElementById("hudAlertWrap");
+    var hudSoonEl = document.getElementById("hudSoon");
+    var hudSoonWrap = document.getElementById("hudSoonWrap");
+    var konroHudEl = document.getElementById("konroHud");
+    var undoToastEl = document.getElementById("undoToast");
+    var undoToastMsgEl = document.getElementById("undoToastMsg");
+    var undoToastBtn = document.getElementById("undoToastBtn");
 
     /* ===================== ユーティリティ ===================== */
     function t(key) { return LABELS[key] || key; }
@@ -1475,13 +1626,14 @@
       try { localStorage.setItem(LS_STOCK, JSON.stringify(stock)); } catch (e) {}
     }
 
-    /* ----- 権限モード / 自動印刷 ----- */
+    /* ----- 権限モード / 自動印刷 / 新着通知音 ----- */
     function loadPrefs() {
       try {
         var m = localStorage.getItem(LS_MODE);
         mode = (m === "hall") ? "hall" : "kitchen";
         autoPrint = localStorage.getItem(LS_AUTOP) === "1";
-      } catch (e) { mode = "kitchen"; autoPrint = false; }
+        newOrderSoundOn = localStorage.getItem(LS_NEWORDER_SOUND) === "1";
+      } catch (e) { mode = "kitchen"; autoPrint = false; newOrderSoundOn = false; }
     }
 
     function konroState(cardId, num) {
@@ -1550,6 +1702,7 @@
             setKonroState(msg.id, msg.num, msg.state);
             saveKonro();
             applyKonroToCard(msg.id);   // 他カードの同番号には影響させない (グローバルロックなし)
+            updateKonroHud();
           } else if (msg.type === "stock") {
             // 予約ストック全体を受信側へ反映 (当日分・小規模なので全置換でシンプルに)
             if (Array.isArray(msg.stock)) { stock = msg.stock; saveStock(); renderStock(); }
@@ -1632,10 +1785,19 @@
       head.className = "card-head";
       var badge = document.createElement("span");
       badge.className = "badge-type js-badge";
+      badge.textContent = order.type === "reserved" ? t("reserved") : t("new");
       var people = document.createElement("span");
       people.className = "people";
-      people.innerHTML = '<span class="n">' + Number(order.people || 0) +
-        '</span><span class="unit js-unit"></span>';
+      // 予約→配膳では大人/幼児の内訳を保持して表示 (POS由来で内訳が無ければ合計のみ)
+      var kidsN = Number(order.kids) || 0;
+      if (order.adults != null) {
+        people.innerHTML = '<span class="n">' + (Number(order.adults) || 0) +
+          '</span><span class="unit">' + t("people") + '</span>' +
+          (kidsN > 0 ? '<span class="kids-inline">' + t("kidsLabel") + kidsN + '</span>' : '');
+      } else {
+        people.innerHTML = '<span class="n">' + Number(order.people || 0) +
+          '</span><span class="unit js-unit">' + t("people") + '</span>';
+      }
       var table = document.createElement("div");
       table.className = "table-no";
       table.textContent = order.table != null ? String(order.table) : "--";
@@ -1659,13 +1821,13 @@
       timeRow.className = "card-time";
       var recv = document.createElement("span");
       recv.className = "recv";
-      recv.innerHTML = '<span class="label js-recv"></span> <span class="hhmm">' +
+      recv.innerHTML = '<span class="label js-recv">' + t("recv") + '</span> <span class="hhmm">' +
         hhmm(order.start) + '</span>';
       var elapsed = document.createElement("span");
       elapsed.className = "elapsed js-elapsed";
-      elapsed.innerHTML = '<span class="label js-elapsed-label"></span>' +
+      elapsed.innerHTML = '<span class="label js-elapsed-label">' + t("elapsed") + '</span>' +
         '<span class="val js-elapsed-val">0</span>' +
-        '<span class="label js-min"></span>';
+        '<span class="label js-min">' + t("min") + '</span>';
       // チビ伝プレビュー (ホールモードのみ)
       var slipBtn = document.createElement("button");
       slipBtn.type = "button";
@@ -1731,6 +1893,7 @@
       konro.className = "konro";
       var kLabel = document.createElement("div");
       kLabel.className = "konro-label js-konro-label";
+      kLabel.textContent = t("konro");
       var kGrid = document.createElement("div");
       kGrid.className = "konro-grid";
       kGrid.setAttribute("role", "group");
@@ -1769,8 +1932,12 @@
       var seen = {};
       var added = [];
       orders.forEach(function (order) {
-        seen[order.id] = true;
         var entry = cards[order.id];
+        // 全品目完了済みの注文は再表示しない (完了消去したカードがポーリングで復活しないように)
+        var allDone = (order.items || []).length > 0 &&
+          order.items.every(function (it) { return !!it.done; });
+        if (!entry && allDone) return;
+        seen[order.id] = true;
         if (!entry) {
           var el = buildCard(order);
           boardEl.appendChild(el);
@@ -1791,7 +1958,15 @@
       });
 
       // 生存している注文 id を集め、消えた注文のコンロ状態を掃除
-      pruneKonro(seen);
+      // (完了取り消しの猶予中はその注文のコンロ状態を残す)
+      if (undoInfo && !seen[undoInfo.id]) {
+        var keep = {};
+        Object.keys(seen).forEach(function (k) { keep[k] = true; });
+        keep[undoInfo.id] = true;
+        pruneKonro(keep);
+      } else {
+        pruneKonro(seen);
+      }
 
       // 並び順の整合: 消えた id を除去し、新着を末尾に追加 (時系列。手動並べ替えは保持)
       reconcileOrderSeq(seen, added);
@@ -1799,7 +1974,12 @@
 
       updateTimers();
       reflectEmpty();
+      updateKonroHud();
       if (view === "lane") renderLanes();   // #13 レーン表示も同期
+
+      // 新着チャイム (初期シード分と完了取り消しの復帰では鳴らさない)
+      if (added.length && newOrderSoundArmed && !suppressChimeOnce) chimeNew();
+      suppressChimeOnce = false;
     }
 
     /* orderSeq を生存注文に同期。新着は末尾へ。並べ替え中は触らない */
@@ -1985,8 +2165,37 @@
         btn.classList.toggle("done", next);
         btn.setAttribute("aria-pressed", next ? "true" : "false");
       }
-      if (isAllDone(entry)) { recordServe(entry); removeCard(id, /*fade*/ true); } // #29
+      if (isAllDone(entry)) {
+        recordServe(entry);              // #29 提供時間ログ
+        removeCard(id, /*fade*/ true);
+        showUndoToast(entry.order, index);
+      }
       if (view === "lane") renderLanes();   // #13 レーンから完了品目を除く
+    }
+
+    /* ===================== 全完了の取り消しトースト ===================== */
+    function showUndoToast(order, lastIndex) {
+      undoInfo = { id: String(order.id), index: lastIndex };
+      undoToastMsgEl.textContent = "卓 " + (order.table != null ? order.table : "--") + " " + t("done");
+      undoToastEl.classList.add("show");
+      if (undoTimer) clearTimeout(undoTimer);
+      undoTimer = setTimeout(hideUndoToast, UNDO_TOAST_MS);
+    }
+    function hideUndoToast() {
+      undoToastEl.classList.remove("show");
+      undoInfo = null;
+      if (undoTimer) { clearTimeout(undoTimer); undoTimer = null; }
+    }
+    function undoComplete() {
+      if (!undoInfo) return;
+      var id = undoInfo.id, idx = undoInfo.index;
+      hideUndoToast();
+      if (!doneMap[id]) doneMap[id] = [];
+      doneMap[id][idx] = false;          // 最後にタップした品目を未完了へ戻す
+      saveDone();
+      broadcastToggle(id, idx, false);
+      suppressChimeOnce = true;
+      poll();                            // 配膳カードを復帰させる
     }
 
     /* ===================== 操作: コンロ番号タップ ===================== */
@@ -2005,6 +2214,7 @@
           setKonroBtnAria(btn, num, next);
         }
       }
+      updateKonroHud();
     }
 
     /* LS / BroadcastChannel から来た状態をカード全体へ反映 */
@@ -2163,6 +2373,7 @@
         em.className = "stock-empty";
         em.textContent = t("stockEmpty");
         stockListEl.appendChild(em);
+        updateHud();
         return;
       }
       stock.forEach(function (r) {
@@ -2239,7 +2450,8 @@
       return el;
     }
 
-    /* 30分前通知: 該当カードに .soon を付ける (毎分更新) */
+    /* 30分前通知: 該当カードに .soon を付ける (毎分更新)。
+       予約時刻を過ぎたら .late に切り替え「超過 +N分」を表示 (黙って消さない) */
     function updateStockSoon() {
       var nodes = stockListEl.querySelectorAll(".res-card");
       for (var i = 0; i < nodes.length; i++) {
@@ -2247,8 +2459,13 @@
         var r = findRes(rid);
         if (!r) continue;
         var mu = minutesUntil(r.time);
-        nodes[i].classList.toggle("soon", mu <= SOON_MIN && mu >= -5);
+        var isLate = mu < 0;
+        nodes[i].classList.toggle("soon", !isLate && mu <= SOON_MIN);
+        nodes[i].classList.toggle("late", isLate);
+        var badge = nodes[i].querySelector(".res-soon-badge");
+        if (badge) badge.textContent = isLate ? ("超過 +" + (-mu) + t("min")) : t("soon");
       }
+      updateHud();
     }
 
     function findRes(rid) {
@@ -2286,6 +2503,8 @@
         type: "reserved",
         start: Date.now(),
         people: (Number(r.adults) || 0) + (Number(r.kids) || 0),
+        adults: Number(r.adults) || 0,   // 内訳を保持 (配膳カードで「N名 幼M」表示)
+        kids: Number(r.kids) || 0,
         items: (r.menu || []).map(function (m) {
           return { name: m.name, qty: Number(m.qty) || 1, options: null, done: false };
         })
@@ -2563,6 +2782,94 @@
           lastAnyAlertBeepAt = Date.now();
         }
       }
+      updateHud();
+    }
+
+    /* ===================== HUD (状況サマリー / コンロ全体ビュー) ===================== */
+    function updateHud() {
+      var ids = Object.keys(cards);
+      var alertN = 0;
+      ids.forEach(function (id) {
+        var e = cards[id];
+        if (e && !lockedTimers[id] && levelOf(elapsedMin(e.order.start)) === "alert") alertN++;
+      });
+      var soonN = 0;
+      stock.forEach(function (r) {
+        if (minutesUntil(r.time) <= SOON_MIN) soonN++;   // 30分前〜時間超過を含む
+      });
+      hudActiveEl.textContent = String(ids.length);
+      hudAlertEl.textContent = String(alertN);
+      hudSoonEl.textContent = String(soonN);
+      hudAlertWrap.classList.toggle("alert-on", alertN > 0);
+      hudSoonWrap.classList.toggle("warn-on", soonN > 0);
+    }
+
+    /* コンロ 1〜10 を全カード横断で集約表示 (赤 > 白 > 未使用の優先で1状態に潰す) */
+    function buildKonroHud() {
+      for (var n = 1; n <= KONRO_COUNT; n++) {
+        var cell = document.createElement("span");
+        cell.className = "kh-cell";
+        cell.setAttribute("data-state", "skeleton");
+        cell.textContent = String(n);
+        konroHudEl.appendChild(cell);
+        khCells.push(cell);
+      }
+    }
+    function updateKonroHud() {
+      for (var n = 1; n <= KONRO_COUNT; n++) {
+        var state = "skeleton";
+        var owner = "";
+        Object.keys(konroMap).forEach(function (cid) {
+          var s = konroMap[cid] && konroMap[cid][String(n)];
+          if (s === "red") { state = "red"; owner = ownerTable(cid); }
+          else if (s === "white" && state !== "red") { state = "white"; owner = ownerTable(cid); }
+        });
+        var cell = khCells[n - 1];
+        if (!cell) continue;
+        if (cell.getAttribute("data-state") !== state) cell.setAttribute("data-state", state);
+        var stateLabel = state === "white" ? t("konroWhite")
+                       : state === "red"   ? t("konroRed")
+                       : t("konroSkeleton");
+        cell.setAttribute("aria-label", t("konro") + n + " " + stateLabel + (owner ? "（卓" + owner + "）" : ""));
+        cell.title = stateLabel + (owner ? " 卓" + owner : "");
+      }
+    }
+    function ownerTable(cardId) {
+      var e = cards[cardId];
+      return (e && e.order && e.order.table != null) ? String(e.order.table) : "";
+    }
+
+    /* ===================== 新着通知音 (#12 の遅延アラート音とは別トグル。ensureAudio は共用) ===================== */
+    function playTone(ctx, freq, when, dur, vol) {
+      var osc = ctx.createOscillator();
+      var g = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, when);
+      g.gain.linearRampToValueAtTime(vol, when + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+      osc.connect(g);
+      g.connect(ctx.destination);
+      osc.start(when);
+      osc.stop(when + dur + 0.05);
+    }
+    /* 新着 = 上昇2音 (10分超過のアラート音とは音の形でも聞き分けられるように) */
+    function chimeNew() {
+      if (!newOrderSoundOn) return;
+      var ctx = ensureAudio();
+      if (!ctx) return;
+      var t0 = ctx.currentTime;
+      playTone(ctx, 880, t0, 0.15, 0.2);
+      playTone(ctx, 1318.5, t0 + 0.12, 0.2, 0.2);
+    }
+    function applyNewOrderSound() {
+      newOrderSoundToggleEl.setAttribute("aria-pressed", newOrderSoundOn ? "true" : "false");
+    }
+    function setNewOrderSound(on) {
+      newOrderSoundOn = !!on;
+      try { localStorage.setItem(LS_NEWORDER_SOUND, newOrderSoundOn ? "1" : "0"); } catch (e) {}
+      applyNewOrderSound();
+      if (newOrderSoundOn) chimeNew();   // 動作確認を兼ねた短い音 (クリック直後なので確実に再生できる)
     }
 
     function updateClock() {
@@ -2689,6 +2996,8 @@
       applyAutoPrint();
       applySoundToggle();
       applyView();
+      applyNewOrderSound();
+      buildKonroHud();
       initSync();
 
       modeBtns.forEach(function (b) {
@@ -2696,11 +3005,13 @@
       });
       if (printToggleEl) printToggleEl.addEventListener("click", function () { setAutoPrint(!autoPrint); });
       if (soundToggleEl) soundToggleEl.addEventListener("click", function () { setAlertSound(!alertSoundOn); });
+      if (newOrderSoundToggleEl) newOrderSoundToggleEl.addEventListener("click", function () { setNewOrderSound(!newOrderSoundOn); });
       viewBtns.forEach(function (b) {
         b.addEventListener("click", function () { setView(b.getAttribute("data-view")); });
       });
       // 初回ユーザー操作でオーディオを解禁 (ブラウザの自動再生制限に対応)
       document.addEventListener("pointerdown", ensureAudio, { once: true });
+      if (undoToastBtn) undoToastBtn.addEventListener("click", undoComplete);
       if (demoBtn) demoBtn.addEventListener("click", injectDemo);
 
       // #29 提供時間ログ: 件数・平均をトースト表示し CSV をエクスポート
@@ -2742,8 +3053,8 @@
         injectDemo();
       }
 
-      // 初期シード分は自動印刷を抑止。以降の新着のみ対象にする
-      setTimeout(function () { autoPrintArmed = true; }, 1500);
+      // 初期シード分は自動印刷・通知音を抑止。以降の新着のみ対象にする
+      setTimeout(function () { autoPrintArmed = true; newOrderSoundArmed = true; }, 1500);
 
       setInterval(poll, POLL_MS);
       setInterval(function () { updateTimers(); updateClock(); }, TICK_MS);
