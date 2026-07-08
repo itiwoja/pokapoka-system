@@ -1708,6 +1708,24 @@
       if (changed) saveKonro();
     }
 
+    /* フィードから消えた注文の doneMap / lockedTimers を掃除 (#64)。
+       全完了で非表示だがフィードに残る注文の doneMap は保持する
+       (掃除すると次ポーリングで完了状態が失われカードが復活するため、カードではなくフィード基準で判定) */
+    function pruneDone(liveIds) {
+      var changed = false;
+      Object.keys(doneMap).forEach(function (id) {
+        if (!liveIds[id]) { delete doneMap[id]; changed = true; }
+      });
+      if (changed) saveDone();
+    }
+    function pruneLocked(liveIds) {
+      var changed = false;
+      Object.keys(lockedTimers).forEach(function (id) {
+        if (!liveIds[id]) { delete lockedTimers[id]; changed = true; }
+      });
+      if (changed) saveLocked();
+    }
+
     /* 注文配列に対して doneMap を「正本」として上書き適用 (リロード復元 / ポーリング時) */
     function applyDoneToOrders(orders) {
       orders.forEach(function (o) {
@@ -2032,6 +2050,13 @@
       } else {
         pruneKonro(seen);
       }
+
+      // doneMap / lockedTimers はフィード全体を生存基準に掃除 (#64)
+      var feedIds = {};
+      orders.forEach(function (o) { feedIds[String(o.id)] = true; });
+      if (undoInfo) feedIds[undoInfo.id] = true;
+      pruneDone(feedIds);
+      pruneLocked(feedIds);
 
       // 並び順の整合: 消えた id を除去し、新着を末尾に追加 (時系列。手動並べ替えは保持)
       reconcileOrderSeq(seen, added);
