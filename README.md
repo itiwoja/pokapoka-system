@@ -20,7 +20,7 @@ python -m http.server 8000
 # → http://127.0.0.1:8000/kds-a-grid.html
 ```
 
-`window.KDS_ORDERS` に注文データ（`{id, table, type, start, people, items:[{name, qty, options, done}]}`）を投入すると表示されます。空の場合は「デモデータを投入」ボタンでサンプルを表示できます。
+`window.KDS_ORDERS` に注文データ（`{id, table, type, start, people, items:[{name, qty, options, allergies, done}]}`）を投入すると表示されます。アレルギー情報は `allergies`（`allergy` / `allergyInfo`・配列も可）で受け取り、品目直下に「アレルギー: …」として常時表示します。空の場合は「デモデータを投入」ボタンでサンプルを表示できます。
 
 ## 提供時間の自動計測（Issue #29）
 
