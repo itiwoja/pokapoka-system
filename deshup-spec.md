@@ -5,7 +5,7 @@
 
 ## 技術制約（厳守）
 - **単一HTMLファイル**・HTML/CSS/Vanilla JS(ES2020)のみ・**外部CDN/参照ゼロ**・**完全オフライン**。
-- ダークテーマ基調 `#111110`。文字主 `#f0ede8` / 副 `#a09890`。
+- **ライト基調（産業用KDS）**：地 `#FFF9F0`（生成り温白）。文字主 `#1A1612` / 副 `#6B5E50`。厨房照明下での視認性・グレア低減を優先。色は「意味」にのみ使い、装飾で多用しない（種別=低彩度ボーダー / 緊急=高彩度バッジ、赤は経過警告専用）。
 - **データ契約**：`window.KDS_ORDERS=[{id,table,type:"new"|"reserved",start,people,items:[{name,qty,options,allergies,done}]}]` を1秒ポーリング。
 - 2台同期＝BroadcastChannel＋LocalStorage。**データ保存は当日分のみ・永続DB無し**（議事録6/18）。
 - AA(本文4.5:1/非テキスト3:1)・卓番号28px+・品名22px+・タップ64px+・1MB以下。

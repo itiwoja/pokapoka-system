@@ -29,12 +29,14 @@
     --border:         #1A1612;  /* ブルータル太枠 */
     --border-soft:    #C8B89A;
 
-    /* アクセント (種別 / 状態を意味で使う) */
-    --accent-new:      #C84B2F;  /* 新規 = 朱赤 */
-    --accent-reserved: #C4901A;  /* 予約 = 琥珀金 */
-    --elapsed-ok:      #2D6A2D;  /* 0-4分 深緑 */
-    --elapsed-warn:    #C4701A;  /* 5-9分 琥珀橙 */
-    --elapsed-alert:   #B82020;  /* 10分+ 朱赤 */
+    /* アクセント — 産業用KDSの2軸配色:
+       種別 (新規/予約) = 低彩度・カード左縁 / 緊急度 (経過) = 高彩度・バッジ塗り。
+       赤は経過警告(10分+)専用に予約し、種別には使わない (誤認防止)。 */
+    --accent-new:      #2A6A8C;  /* 新規 = 藍水色 (低彩度・種別) */
+    --accent-reserved: #C4901A;  /* 予約 = 琥珀金 (低彩度・種別) */
+    --elapsed-ok:      #2D6A2D;  /* 0-4分 深緑 (緊急度) */
+    --elapsed-warn:    #C4701A;  /* 5-9分 琥珀橙 (緊急度) */
+    --elapsed-alert:   #B82020;  /* 10分+ 朱赤 (緊急度・赤は警告専用) */
 
     /* ブルータルシャドウ (ぼかしゼロ・オフセット) */
     --sh:    4px 4px 0 var(--border);
@@ -45,7 +47,7 @@
     --pad-card:   16px;
     --pad-shell:  18px;
 
-    --focus: #C84B2F;
+    --focus: #2A6A8C;
 
     --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN",
                "Noto Sans CJK JP", "Noto Sans", "Yu Gothic", Meiryo, sans-serif;
