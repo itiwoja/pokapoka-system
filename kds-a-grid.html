@@ -7,45 +7,54 @@
 <title>KDS - 土鍋飯ぽかぽか厨房</title>
 <style>
   /* ============================================================
-     デザイントークン — ニューブルータリズム和
-     方向性: 生成り温白の地・濃炭の太ボーダー・ぼかしなしオフセット影。
-     厨房で「一目でわかる」鮮明さ + 和食店の落ち着いた温度感。
+     デザイントークン — 産業用KDS (完全機能特化・無機質)
+     方向性: 中間グレーの無彩色地・白カード・影ゼロ・細枠。
+     色は「意味」にのみ使う:
+       緊急度 = ヘッダー帯を高彩度で塗る (緑→黄→赤・経過でカウントアップ)
+       種別   = 低彩度の左縁 + チップ (新規=藍水色 / 予約=金)
+       赤は経過警告(10分+)専用。厨房の距離から一瞬で状態を読ませる。
      ============================================================ */
   :root {
-    /* ベース */
-    --bg-base:        #FFF9F0;  /* 生成り温白 */
-    --bg-raise:       #F0E8D8;  /* ヘッダー・モーダル帯 */
-    --bg-inset:       #E8DCC8;  /* インセット領域 */
+    /* ベース — 中間グレー無彩色 */
+    --bg-base:        #D6D9DD;  /* 中間グレー地 */
+    --bg-raise:       #C7CBD1;  /* サブ帯・ヘッダー */
+    --bg-inset:       #BBC0C7;  /* インセット (コンロ地) */
 
-    /* カード地 */
+    /* カード面 (白・高コントラスト) */
     --card-new:       #FFFFFF;
-    --card-reserved:  #FFFBE8;
+    --card-reserved:  #FFFFFF;
 
-    /* テキスト */
-    --text-primary:   #1A1612;  /* 濃炭 (純黒避け) */
-    --text-secondary: #6B5E50;
+    /* テキスト (ニュートラル) */
+    --text-primary:   #16181B;
+    --text-secondary: #565B61;
 
-    /* ボーダー */
-    --border:         #1A1612;  /* ブルータル太枠 */
-    --border-soft:    #C8B89A;
+    /* ボーダー (細・無彩色) */
+    --border:         #6B7178;  /* カード外枠 */
+    --border-soft:    #C7CBD1;  /* 区切り線 */
 
-    /* アクセント (種別 / 状態を意味で使う) */
-    --accent-new:      #C84B2F;  /* 新規 = 朱赤 */
-    --accent-reserved: #C4901A;  /* 予約 = 琥珀金 */
-    --elapsed-ok:      #2D6A2D;  /* 0-4分 深緑 */
-    --elapsed-warn:    #C4701A;  /* 5-9分 琥珀橙 */
-    --elapsed-alert:   #B82020;  /* 10分+ 朱赤 */
+    /* 種別 = 低彩度 (2軸: 控えめ・左縁/チップ) */
+    --accent-new:      #2A6A8C;  /* 新規 = 藍水色 */
+    --accent-reserved: #8A6D16;  /* 予約 = 金 */
 
-    /* ブルータルシャドウ (ぼかしゼロ・オフセット) */
-    --sh:    4px 4px 0 var(--border);
-    --sh-sm: 2px 2px 0 var(--border);
+    /* 緊急度 = 高彩度 (ヘッダー帯を塗る / 赤は警告専用) */
+    --elapsed-ok:      #1E8E3E;  /* 0-4分 緑 */
+    --elapsed-warn:    #F2A100;  /* 5-9分 琥珀 */
+    --elapsed-alert:   #D62F26;  /* 10分+ 赤 */
+    /* 帯上テキスト色 (帯背景に対しAA) */
+    --on-ok:    #FFFFFF;
+    --on-warn:  #16181B;
+    --on-alert: #FFFFFF;
 
-    /* 余白リズム */
-    --gap-card:   14px;
-    --pad-card:   16px;
-    --pad-shell:  18px;
+    /* 影 = 無し (無機質) */
+    --sh:    none;
+    --sh-sm: none;
 
-    --focus: #C84B2F;
+    /* 余白リズム (高密度) */
+    --gap-card:   12px;
+    --pad-card:   14px;
+    --pad-shell:  16px;
+
+    --focus: #2A6A8C;
 
     --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN",
                "Noto Sans CJK JP", "Noto Sans", "Yu Gothic", Meiryo, sans-serif;
@@ -460,174 +469,159 @@
   /* ============================================================ カード */
   .card {
     grid-row: span 1;
-    border-radius: 2px;
+    position: relative;
+    border-radius: 0;
     background: var(--card-new);
-    border: 2px solid var(--border);
-    border-left: 5px solid var(--accent-new);   /* 新規 = 朱赤の太左縁 */
-    box-shadow: var(--sh);
+    border: 1px solid var(--border);
+    border-left: 6px solid var(--accent-new);   /* 種別(低彩度): 新規=藍水色 */
     overflow: hidden;
     display: flex;
     flex-direction: column;
     will-change: opacity, transform;
-    animation: cardIn .22s cubic-bezier(.16,1,.3,1);
+    animation: cardIn .18s cubic-bezier(.16,1,.3,1);
   }
-  .card.reserved {
-    background: var(--card-reserved);
-    border-left-color: var(--accent-reserved);  /* 予約 = 琥珀金の太左縁 */
-  }
-  .card.removing {
-    animation: cardOut .3s ease forwards;
-  }
+  .card.reserved { border-left-color: var(--accent-reserved); }  /* 予約=金 */
+  .card.removing { animation: cardOut .3s ease forwards; }
   @keyframes cardIn  { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
   @keyframes cardOut { from { opacity: 1; } to { opacity: 0; transform: scale(.97); } }
 
-  /* カード上段: 卓番号 + 種別 + 人数 + 削除 */
-  .card-head {
-    padding: 10px var(--pad-card) 8px;
-    display: grid;
-    grid-template-columns: 1fr auto auto;
-    grid-template-areas:
-      "type   people  del"
-      "table  table   table";
-    gap: 4px 8px;
+  /* 上段バナー = 緊急度で塗る帯 (卓番 + 経過を特大表示・離れて一瞬で読ませる) */
+  .card-banner {
+    display: flex;
     align-items: center;
-    background: transparent;
-    border-bottom: 2px solid var(--border);
+    gap: 10px;
+    padding: 7px 8px 7px 12px;
+    background: var(--elapsed-ok);          /* 既定=緑 (初回tick前) */
+    color: var(--on-ok);
+    cursor: grab;                            /* 長押しで並べ替え掴み */
+  }
+  .card.lvl-warn  .card-banner { background: var(--elapsed-warn);  color: var(--on-warn); }
+  .card.lvl-alert .card-banner { background: var(--elapsed-alert); color: var(--on-alert); }
+  .table-no {
+    font-size: 40px;
+    line-height: 0.9;
+    font-weight: 900;
+    letter-spacing: .01em;
+    margin-right: auto;                      /* 左詰め・残りを経過側へ押し出す */
+    color: inherit;
+  }
+  .people {
+    display: flex; flex-direction: column; align-items: flex-end;
+    font-size: 13px; font-weight: 800; color: inherit; line-height: 1.05;
+  }
+  .people .n { font-family: var(--font-num); font-size: 18px; }
+  .people .unit { opacity: .85; font-size: 11px; margin-left: 1px; }
+  .people .kids-inline { opacity: .85; font-size: 11px; font-weight: 800; }
+
+  /* 経過時間 = バナー内の特大数字 (バッジではなく帯の文字として) */
+  .elapsed {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    padding: 0;
+    border: none;
+    background: none;
+    box-shadow: none;
+    color: inherit;
+    font-weight: 900;
+    white-space: nowrap;
+  }
+  .elapsed .label { font-size: 12px; letter-spacing: .06em; font-weight: 800; opacity: .92; }
+  .elapsed .val   { font-family: var(--font-num); font-size: 34px; line-height: 1; font-variant-numeric: tabular-nums; }
+
+  /* サブ行 = 種別チップ + 受付 + 操作 (無彩色・低い視覚重量) */
+  .card-sub {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px 5px 12px;
+    background: var(--bg-raise);
+    border-bottom: 1px solid var(--border-soft);
   }
   .badge-type {
-    grid-area: type;
-    justify-self: start;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 900;
-    letter-spacing: .14em;
-    text-transform: uppercase;
-    padding: 3px 9px;
+    letter-spacing: .1em;
+    padding: 2px 8px;
     border-radius: 0;
     border: 2px solid currentColor;
   }
   .card.new      .badge-type { color: var(--accent-new); }
   .card.reserved .badge-type { color: var(--accent-reserved); }
-
-  .people {
-    grid-area: people;
-    justify-self: end;
-    font-size: 15px;
-    font-weight: 800;
-    color: var(--text-primary);
-  }
-  .people .n { font-family: var(--font-num); font-size: 18px; }
-  .people .unit { color: var(--text-secondary); font-size: 13px; margin-left: 2px; }
-  .people .kids-inline { color: var(--text-secondary); font-size: 12px; font-weight: 800; margin-left: 6px; }
-
-  .table-no {
-    grid-area: table;
-    font-size: 32px;
-    line-height: 1.05;
-    font-weight: 900;
-    letter-spacing: 0.01em;
-  }
-
-  /* 受付時刻 + 経過バッジ */
-  .card-time {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 6px var(--pad-card);
-    border-bottom: 1px solid var(--border-soft);
-    background: var(--bg-raise);
-  }
   .recv {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--text-secondary);
     white-space: nowrap;
+    margin-right: auto;
   }
-  .recv .label { letter-spacing: .12em; text-transform: uppercase; font-size: 10px; font-weight: 700; }
-  .recv .hhmm { font-family: var(--font-num); font-size: 16px; color: var(--text-primary); font-weight: 800; font-variant-numeric: tabular-nums; margin-left: 6px; }
-
-  .elapsed {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 6px;
-    padding: 5px 10px;
-    border-radius: 0;
-    border: 2px solid var(--elapsed-ok);
-    background: var(--elapsed-ok);
-    color: #ffffff;
-    font-weight: 900;
-    white-space: nowrap;
-    box-shadow: var(--sh-sm);
-  }
-  .elapsed.warn  { background: var(--elapsed-warn); border-color: var(--elapsed-warn); }
-  .elapsed.alert { background: var(--elapsed-alert); border-color: var(--elapsed-alert); }
+  .recv .label { letter-spacing: .1em; font-size: 10px; font-weight: 700; }
+  .recv .hhmm { font-family: var(--font-num); font-size: 15px; color: var(--text-primary); font-weight: 800; font-variant-numeric: tabular-nums; margin-left: 4px; }
 
   /* チビ伝プレビューを開く小ボタン (印刷はキッチンの全操作に含まれる。ホール=読取専用では非表示) */
   .slip-btn {
     flex: 0 0 auto;
-    min-width: 44px; min-height: 44px;
-    margin-left: 4px;
+    min-width: 44px; min-height: 40px;
     border-radius: 0;
-    border: 2px solid var(--border-soft);
-    background: var(--bg-raise);
+    border: 1px solid var(--border-soft);
+    background: var(--card-new);
     color: var(--text-secondary);
     font-family: var(--font-ui);
-    font-size: 17px; font-weight: 800;
+    font-size: 16px; font-weight: 800;
     cursor: pointer;
     transition: border-color .1s ease, color .1s ease;
   }
   .slip-btn:hover { color: var(--text-primary); border-color: var(--border); }
   body.mode-hall .slip-btn { display: none; }
 
-  /* 削除ボタン (card-head グリッド内 / キッチンモード専用) */
+  /* 削除ボタン (バナー内・帯色に載る / キッチンモード専用) */
   .delete-btn {
-    grid-area: del;
-    align-self: start;
-    min-width: 28px; min-height: 28px;
-    background: transparent;
-    border: 2px solid var(--border-soft);
+    flex: 0 0 auto;
+    align-self: flex-start;
+    min-width: 26px; min-height: 26px;
+    background: rgba(255,255,255,.16);
+    border: 1px solid currentColor;
     border-radius: 0;
-    color: var(--text-secondary);
-    font-size: 14px; font-weight: 900; line-height: 1;
+    color: inherit;
+    font-size: 13px; font-weight: 900; line-height: 1;
     cursor: pointer;
     padding: 0;
-    transition: color .1s ease, border-color .1s ease, background .1s ease;
+    transition: background .1s ease;
   }
-  .delete-btn:hover { color: #fff; background: var(--elapsed-alert); border-color: var(--elapsed-alert); }
+  .delete-btn:hover { background: rgba(255,255,255,.30); }
   /* 削除の2段階確認: 1タップ目で警告状態、猶予内の再タップで削除 (#68) */
   .delete-btn.armed {
-    color: #fff;
-    background: var(--elapsed-alert);
-    border-color: var(--elapsed-alert);
-    min-width: 56px;
+    background: #fff;
+    color: var(--elapsed-alert);
+    border-color: #fff;
+    min-width: 52px;
     font-size: 12px;
   }
   body.mode-hall .delete-btn { display: none; }
 
-  /* タイマーロックボタン */
+  /* タイマーロックボタン (サブ行) */
   .lock-btn {
     flex: 0 0 auto;
-    min-width: 30px; min-height: 30px;
-    background: var(--bg-raise);
-    border: 2px solid var(--border-soft);
+    min-width: 40px; min-height: 40px;
+    background: var(--card-new);
+    border: 1px solid var(--border-soft);
     border-radius: 0;
     color: var(--text-secondary);
-    font-size: 11px; font-weight: 800; letter-spacing: .02em;
+    font-size: 12px; font-weight: 800;
     cursor: pointer;
     padding: 0;
     transition: color .1s ease, border-color .1s ease, background .1s ease;
   }
   .lock-btn:hover { color: var(--text-primary); border-color: var(--border); }
   .lock-btn[aria-pressed="true"] { color: #fff; background: var(--elapsed-warn); border-color: var(--elapsed-warn); }
-  .card.timer-locked .js-elapsed-val { opacity: 0.5; }
-  .card.timer-locked .js-elapsed { text-decoration: line-through; text-decoration-style: dotted; }
-  .elapsed .label { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; opacity: .9; font-weight: 800; }
-  .elapsed .val   { font-family: var(--font-num); font-size: 20px; font-variant-numeric: tabular-nums; }
-  /* 10分超は数値も脈動させ警告を強める (色覚に依存しない動き) */
+  .card.timer-locked .js-elapsed-val { opacity: 0.55; }
+  .card.timer-locked .elapsed .val { text-decoration: line-through; text-decoration-style: dotted; }
+
+  /* 10分超は数値を脈動 + カード全体を明滅 (色覚に依存しない動き) */
   .card.lvl-alert .elapsed { animation: pulse 1.4s ease-in-out infinite; }
   /* #12 10分超カードは全体を点滅させ、見ていない瞬間の遅延に気付けるようにする。
      赤アウトラインを常時付与し 1 秒周期で明滅（reduced-motion 時は静的な赤枠が残る）。 */
   .card.lvl-alert {
-    outline: 4px solid var(--elapsed-alert);
+    outline: 3px solid var(--elapsed-alert);
     outline-offset: 2px;
     animation: alertBlink 1s steps(1, end) infinite;
   }
@@ -1905,14 +1899,15 @@
 
     function buildCard(order) {
       var card = document.createElement("article");
-      card.className = "card " + (order.type === "reserved" ? "reserved" : "new");
+      card.className = "card " + (order.type === "reserved" ? "reserved" : "new") +
+        " lvl-" + (lockedTimers[order.id] ? "ok" : levelOf(elapsedMin(order.start)));
       card.setAttribute("data-id", String(order.id));
       card.setAttribute("aria-label",
         "卓 " + (order.table || "") + " " + (order.type === "reserved" ? t("reserved") : t("new")));
 
-      /* head */
+      /* banner (帯) = 緊急度で塗る上段 */
       var head = document.createElement("div");
-      head.className = "card-head";
+      head.className = "card-banner";
       var badge = document.createElement("span");
       badge.className = "badge-type js-badge";
       badge.textContent = order.type === "reserved" ? t("reserved") : t("new");
@@ -1958,14 +1953,9 @@
         if (delArmTimer) clearTimeout(delArmTimer);
         delArmTimer = setTimeout(disarmDelete, DELETE_ARM_MS);
       });
-      head.appendChild(badge);
-      head.appendChild(people);
-      head.appendChild(table);
-      head.appendChild(delBtn);
-
-      /* time */
+      /* sub 行 = 種別チップ + 受付 + 操作 */
       var timeRow = document.createElement("div");
-      timeRow.className = "card-time";
+      timeRow.className = "card-sub";
       var recv = document.createElement("span");
       recv.className = "recv";
       recv.innerHTML = '<span class="label js-recv">' + t("recv") + '</span> <span class="hhmm">' +
@@ -1990,8 +1980,14 @@
       lockBtn.setAttribute("aria-pressed", "false");
       lockBtn.textContent = "停";
       lockBtn.addEventListener("click", function () { toggleTimerLock(order.id); });
+      // バナー(帯): 卓番(特大) + 経過(特大) + 人数 + 削除
+      head.appendChild(table);
+      head.appendChild(elapsed);
+      head.appendChild(people);
+      head.appendChild(delBtn);
+      // サブ行: 種別チップ + 受付 + 停 + 伝
+      timeRow.appendChild(badge);
       timeRow.appendChild(recv);
-      timeRow.appendChild(elapsed);
       timeRow.appendChild(lockBtn);
       timeRow.appendChild(slipBtn);
 
@@ -3008,7 +3004,7 @@
           badge.classList.remove("warn", "alert");
           if (lvl === "warn") badge.classList.add("warn");
           else if (lvl === "alert") badge.classList.add("alert");
-          entry.el.classList.remove("lvl-warn", "lvl-alert");
+          entry.el.classList.remove("lvl-ok", "lvl-warn", "lvl-alert");
           entry.el.classList.add("lvl-" + lvl);
           if (lvl === "alert") newAlert = true;   // #12 10分超へ遷移
           entry.level = lvl;
