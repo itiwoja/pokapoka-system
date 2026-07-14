@@ -535,7 +535,7 @@
 
   /* チビ伝プレビュー (ゴースト・ホール=読取専用では非表示) */
   .slip-btn {
-    flex: 0 0 auto; min-width: 40px; min-height: 36px;
+    flex: 0 0 auto; min-width: 44px; min-height: 44px; /* 補助操作のタップ下限 44px (#58) */
     border: none; border-radius: 2px; background: transparent;
     color: var(--text-secondary);
     font-family: var(--font-ui); font-size: 16px; font-weight: 800;
@@ -547,7 +547,7 @@
   /* 削除 (バナー内・ゴースト / キッチンモード専用) */
   .delete-btn {
     flex: 0 0 auto; align-self: flex-start;
-    min-width: 24px; min-height: 24px;
+    min-width: 44px; min-height: 44px; /* 補助操作のタップ下限 44px (#58, 既定OFF=#59) */
     background: transparent; border: none; border-radius: 2px;
     color: inherit; opacity: .75;
     font-size: 15px; font-weight: 900; line-height: 1;
@@ -564,7 +564,7 @@
 
   /* タイマーロック (ゴースト) */
   .lock-btn {
-    flex: 0 0 auto; min-width: 36px; min-height: 36px;
+    flex: 0 0 auto; min-width: 44px; min-height: 44px; /* 補助操作のタップ下限 44px (#58, 既定OFF=#59) */
     background: transparent; border: none; border-radius: 2px;
     color: var(--text-secondary);
     font-size: 12px; font-weight: 800;
@@ -691,7 +691,7 @@
   .konro-btn {
     position: relative;
     min-width: 0;
-    min-height: 40px;
+    min-height: 44px; /* 補助操作のタップ下限 WCAG AA相当 44px (#58) */
     padding: 4px 2px;
     border-radius: 2px;
     border: 1px solid var(--border-soft);
