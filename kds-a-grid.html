@@ -1150,9 +1150,9 @@
       <span class="dot" aria-hidden="true"></span>
       <span>新着音</span>
     </button>
-    <button type="button" class="head-toggle" id="printToggle" aria-pressed="false">
+    <button type="button" class="head-toggle" id="printToggle" aria-pressed="false" aria-label="新着注文で伝票プレビューを自動表示（印刷は手動）">
       <span class="dot" aria-hidden="true"></span>
-      <span>自動印刷</span>
+      <span>自動プレビュー</span>
     </button>
 
     <button type="button" class="head-toggle" id="soundToggle" aria-pressed="true" aria-label="遅延アラート音のオン/オフ">
@@ -1311,6 +1311,9 @@
     var LS_DAY = "kds_day_v1";     // 最終利用日 (YYYY-MM-DD)。日付が変わったら当日データを破棄 (#63)
     var LS_DELETED = "kds_deleted_v1"; // 削除済み注文ID (POS再送で復活させないトゥームストーン #67)
     var BC_NAME = "kds_sync";      // BroadcastChannel 名
+    // #59 仕様未決定の先行実装は既定OFF (フィーチャーフラグ)。会議決定が出たら true にして仕様追記。
+    var FEATURE_TIMER_LOCK   = false; // タイマーロック (停/再) ボタン
+    var FEATURE_DELETE_ORDER = false; // 注文削除 (×) ボタン
     var WARN_MIN = 5, ALERT_MIN = 10;
     var ALERT_REPEAT_MS = 60000;   // #12 10分超が続く間の再アラート間隔
     var SOON_MIN = 30;             // 予約30分前通知
@@ -1333,7 +1336,7 @@
       min:"分", emptyTitle:"オーダー待機中", emptyHint:"POS からの注文がここに表示されます",
       demo:"デモデータを投入",
       konro:"コンロ", konroSkeleton:"未使用", konroWhite:"使用中", konroRed:"タイマー管理中",
-      modeKitchen:"キッチン", modeHall:"ホール", autoPrint:"自動印刷",
+      modeKitchen:"キッチン", modeHall:"ホール", autoPrint:"自動プレビュー",
       stockTitle:"予約ストック", stockEmpty:"本日の予約はありません",
       addReservation:"予約を追加", fldTime:"予約時間", fldAdults:"大人", fldKids:"0-2歳",
       fldName:"名前", fldMenu:"メニュー（個数）", cancel:"キャンセル", save:"登録",
@@ -1942,11 +1945,11 @@
       head.appendChild(table);
       head.appendChild(elapsed);
       head.appendChild(people);
-      head.appendChild(delBtn);
+      if (FEATURE_DELETE_ORDER) head.appendChild(delBtn); // #59 既定OFF
       // サブ行: 種別チップ + 受付 + 停 + 伝
       timeRow.appendChild(badge);
       timeRow.appendChild(recv);
-      timeRow.appendChild(lockBtn);
+      if (FEATURE_TIMER_LOCK) timeRow.appendChild(lockBtn); // #59 既定OFF
       timeRow.appendChild(slipBtn);
 
       /* items */
