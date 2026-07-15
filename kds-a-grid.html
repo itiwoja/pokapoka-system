@@ -15,50 +15,94 @@
        赤は経過警告(10分+)専用。厨房の距離から一瞬で状態を読ませる。
      ============================================================ */
   :root {
-    /* ベース — 中間グレー無彩色 */
-    --bg-base:        #D6D9DD;  /* 中間グレー地 */
-    --bg-raise:       #C7CBD1;  /* サブ帯・ヘッダー */
-    --bg-inset:       #BBC0C7;  /* インセット (コンロ地) */
+    /* ═══ 盤面: 明るく締まったクール無彩 (旧 #D6D9DD の濁り解消) ═══ */
+    --bg-board:  #E9ECEF;   /* 盤面地 */
+    --bg-raise:  #F4F5F7;   /* HUD帯・淡い面 */
+    --bg-inset:  #DFE3E7;   /* 溝・進捗トラック */
 
-    /* カード面 (白・高コントラスト) */
-    --card-new:       #FFFFFF;
-    --card-reserved:  #FFFFFF;
+    /* ═══ クローム: 黒はヘッダー/予約頭のみ (盤面は白) ═══ */
+    --chrome:      #1A1A1A;
+    --chrome-2:    #2A2E33;
+    --chrome-line: #3A3F45;
+    --on-chrome:     #FFFFFF;
+    --on-chrome-dim: #B8BDC4;
 
-    /* テキスト (ニュートラル) */
-    --text-primary:   #16181B;
+    /* ═══ カード面 ═══ */
+    --card:          #FFFFFF;
+    --card-reserved: #FFFDF6;   /* 予約のみ極僅か暖味 */
+
+    /* ═══ テキスト ═══ */
+    --text-primary:   #14161A;
     --text-secondary: #565B61;
+    --text-muted:     #868C94;
 
-    /* ボーダー (細・無彩色) */
-    --border:         #6B7178;  /* カード外枠 */
-    --border-soft:    #C7CBD1;  /* 区切り線 */
+    /* ═══ ボーダー (明盤面向けに軽量化 + 定義用 strong) ═══ */
+    --border:        #C2C7CD;
+    --border-strong: #9098A0;
+    --border-soft:   #E2E5E9;
+    --border-hair:   #ECEEF1;
 
-    /* 種別 = 低彩度 (2軸: 控えめ・左縁/チップ) */
-    --accent-new:      #2A6A8C;  /* 新規 = 藍水色 */
-    --accent-reserved: #8A6D16;  /* 予約 = 金 */
+    /* ═══ 種別 = 控えめ2軸 (Okage の頭直下色下線を種別軸へ) ═══ */
+    --type-new:          #2A6A8C;  /* 新規 = 藍水色 */
+    --type-new-soft:     #E4F0F5;
+    --type-reserved:     #6E5300;  /* 予約 = 金 (本文用・soft地/白/盤面で4.5:1+) */
+    --type-reserved-edge:#A97F26;  /* 予約 = 金 (縁・チップ・非テキスト3:1+) */
+    --type-reserved-soft:#F5EEDA;
 
-    /* 緊急度 = 高彩度 (ヘッダー帯を塗る / 赤は警告専用) */
-    --elapsed-ok:      #1E8E3E;  /* 0-4分 緑 */
-    --elapsed-warn:    #F2A100;  /* 5-9分 琥珀 */
-    --elapsed-alert:   #D62F26;  /* 10分+ 赤 */
-    /* 帯上テキスト色 (帯背景に対しAA) */
-    --on-ok:    #FFFFFF;
-    --on-warn:  #16181B;
-    --on-alert: #FFFFFF;
+    /* ═══ 緊急度 = 帯を塗る唯一の強色 (赤は10分+専用・死守) ═══ */
+    --u-ok:    #178235;  --on-u-ok:    #FFFFFF;   /* 白の小文字で4.5:1+ を確保 */
+    --u-warn:  #F2A100;  --on-u-warn:  #14161A;   /* 琥珀地は濃文字でAA */
+    --u-alert: #D62F26;  --on-u-alert: #FFFFFF;
 
-    /* 影 = 無し (無機質) */
-    --sh:    none;
-    --sh-sm: none;
+    /* ═══ 主要CTA = オレンジ (赤hueと分離・ぽかぽか温感)。白文字でAA4.5:1確保のため#C25200 ═══ */
+    --cta:       #C25200;   /* white on this = 4.67:1 (AA) */
+    --cta-hover: #A84800;
+    --cta-soft:  #FDE9D6;
+    --on-cta:    #FFFFFF;
 
-    /* 余白リズム (高密度) */
-    --gap-card:   12px;
-    --pad-card:   14px;
-    --pad-shell:  16px;
+    /* ═══ 署名: 黒塗り数量box ═══ */
+    --qty-box: #14161A;
+    --qty-num: #FFFFFF;
+
+    /* ═══ タイポスケール (距離可読・数字巨大化) ═══ */
+    --fz-table:   48px;   /* 卓番 特大 */
+    --fz-elapsed: 34px;   /* 経過 */
+    --fz-item:    23px;   /* 品名 (要件22px+) */
+    --fz-qty:     20px;   /* 黒塗りbox内数字 */
+    --fz-clock:   32px;   /* ヘッダー時計 */
+
+    /* ═══ 影 (のっぺり解消・清潔な浮き) ═══ */
+    --sh-card:   0 1px 2px rgba(16,18,22,.10), 0 2px 6px rgba(16,18,22,.08);
+    --sh-pop:    0 6px 20px rgba(16,18,22,.22);
+    --sh-chrome: 0 2px 0 rgba(0,0,0,.35);
+
+    /* ═══ 余白・角丸・グリッド ═══ */
+    --gap-card:  12px;
+    --pad-card:  12px;
+    --pad-shell: 16px;
+    --row-item:  64px;    /* 品目タップ域 */
+    --col-min:   264px;   /* 折返し下限: 幅追従で右余白解消 */
+    --r-card: 8px; --r-chip: 4px; --r-box: 5px; --r-pill: 999px;
 
     --focus: #2A6A8C;
 
     --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN",
                "Noto Sans CJK JP", "Noto Sans", "Yu Gothic", Meiryo, sans-serif;
     --font-num: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Consolas, monospace;
+
+    /* ═══ 旧トークン互換エイリアス (既存CSSを新パレットへ自動追従) ═══ */
+    --bg-base:         var(--bg-board);
+    --card-new:        var(--card);
+    --accent-new:      var(--type-new);
+    --accent-reserved: var(--type-reserved);
+    --elapsed-ok:      var(--u-ok);
+    --elapsed-warn:    var(--u-warn);
+    --elapsed-alert:   var(--u-alert);
+    --on-ok:    var(--on-u-ok);
+    --on-warn:  var(--on-u-warn);
+    --on-alert: var(--on-u-alert);
+    --sh:    var(--sh-card);
+    --sh-sm: var(--sh-card);
   }
 
   * { box-sizing: border-box; }
@@ -81,51 +125,55 @@
   /* ============================================================ ヘッダー */
   header {
     position: relative;
-    z-index: 2;
+    z-index: 3;
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     gap: 16px;
-    padding: 10px var(--pad-shell);
-    background: var(--bg-raise);
-    border-bottom: 2px solid var(--border);
+    height: 60px;
+    padding: 0 var(--pad-shell);
+    background: var(--chrome);
+    color: var(--on-chrome);
+    box-shadow: var(--sh-chrome);
+    overflow-x: auto;          /* 狭幅でツール群が溢れてもページ横スクロールを出さない */
   }
 
   .brand {
     display: flex;
     align-items: baseline;
-    gap: 12px;
+    gap: 10px;
     min-width: 0;
   }
   .brand .mark {
-    font-size: 22px;
+    font-size: 20px;
     font-weight: 900;
     letter-spacing: 0.02em;
     white-space: nowrap;
+    color: var(--on-chrome);
   }
-  .brand .mark .accent { color: var(--accent-new); }
+  .brand .mark .accent { color: var(--cta); }   /* ぽかぽか = 温感オレンジ */
   .brand .sub {
-    font-size: 11px;
+    font-size: 10px;
     letter-spacing: 0.22em;
     text-transform: uppercase;
-    color: var(--text-secondary);
+    color: var(--on-chrome-dim);
     font-weight: 700;
     white-space: nowrap;
   }
 
   .clock {
-    margin-left: auto;
+    order: -1;                        /* 時計を最左のヒーローに (Okage) */
     font-family: var(--font-num);
-    font-size: 26px;
+    font-size: var(--fz-clock);
     font-weight: 800;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.02em;
     font-variant-numeric: tabular-nums;
-    color: var(--text-primary);
-    background: var(--bg-base);
-    border: 2px solid var(--border);
-    padding: 2px 12px;
+    color: var(--on-chrome);
+    background: transparent;
+    border: 0;
+    padding: 0;
   }
-  .clock .sec { color: var(--text-secondary); font-size: 18px; }
+  .clock .sec { color: var(--on-chrome-dim); font-size: 20px; }
 
   /* #29 提供時間ログ ボタン */
   .serve-log-btn {
@@ -133,20 +181,20 @@
     align-items: center;
     gap: 6px;
     min-height: 44px;
-    padding: 4px 12px;
-    border: 2px solid var(--border);
-    border-radius: 0;
-    background: var(--bg-base);
-    color: var(--text-secondary);
+    padding: 0 14px;
+    border: 1px solid var(--chrome-line);
+    border-radius: var(--r-pill);
+    background: var(--chrome-2);
+    color: var(--on-chrome-dim);
     font-size: 13px;
-    font-weight: 700;
+    font-weight: 800;
     cursor: pointer;
     flex: 0 0 auto;
     white-space: nowrap;
-    transition: color .1s ease, box-shadow .1s ease;
+    transition: color .12s ease, background-color .12s ease;
   }
-  .serve-log-btn:hover { color: var(--text-primary); box-shadow: 3px 3px 0 var(--border); }
-  .serve-log-btn:active { box-shadow: none; transform: translate(1px, 1px); }
+  .serve-log-btn:hover { color: var(--on-chrome); background: #3A3F45; }
+  .serve-log-btn:active { transform: translateY(1px); }
 
   /* #29 提供時間ログ トースト */
   .serve-toast {
@@ -160,8 +208,9 @@
     color: var(--bg-base);
     font-size: 15px;
     font-weight: 700;
-    border: 2px solid var(--border);
-    box-shadow: 4px 4px 0 var(--border);
+    border: 1px solid var(--chrome-line);
+    border-radius: var(--r-card);
+    box-shadow: var(--sh-pop);
     opacity: 0;
     pointer-events: none;
     transition: opacity .16s ease, transform .16s ease;
@@ -237,8 +286,8 @@
     color: var(--text-primary);
     transition: box-shadow .1s ease, transform .05s ease;
   }
-  .lane-item:hover  { box-shadow: 3px 3px 0 var(--border); }
-  .lane-item:active { box-shadow: none; transform: translate(1px, 1px); }
+  .lane-item:hover  { box-shadow: var(--sh-card); border-color: var(--border-strong); }
+  .lane-item:active { box-shadow: none; transform: translateY(1px); }
   .lane-item.reserved { background: var(--card-reserved); }
   .lane-item.lvl-warn  { border-left-color: var(--elapsed-warn); }
   .lane-item.lvl-alert { border-left-color: var(--elapsed-alert); }
@@ -277,29 +326,34 @@
     display: flex;
     gap: 0;
     flex: 0 0 auto;
+    height: 44px;
+    border: 1px solid var(--chrome-line);
+    border-radius: var(--r-pill);
+    overflow: hidden;
+    background: var(--chrome-2);
   }
+  header > .mode-switch:first-of-type { margin-left: auto; }  /* 以降のツール群を右へ */
   .mode-btn {
-    min-width: 88px;
+    min-width: 84px;
     min-height: 44px;
-    padding: 6px 14px;
-    border: 2px solid var(--border);
+    padding: 0 16px;
+    border: 0;
     border-radius: 0;
-    background: var(--bg-base);
-    color: var(--text-secondary);
+    background: transparent;
+    color: var(--on-chrome-dim);
     font-family: var(--font-ui);
     font-size: 15px;
     font-weight: 800;
     letter-spacing: .04em;
     cursor: pointer;
-    transition: background-color .1s ease, color .1s ease, box-shadow .1s ease;
+    transition: background-color .12s ease, color .12s ease;
   }
-  .mode-btn:first-child { border-right: 1px solid var(--border); }
-  .mode-btn:hover  { background: var(--bg-inset); color: var(--text-primary); }
-  .mode-btn:active { transform: translate(2px,2px); box-shadow: none; }
+  .mode-btn + .mode-btn { border-left: 1px solid var(--chrome-line); }
+  .mode-btn:hover  { color: var(--on-chrome); }
+  .mode-btn:active { transform: translateY(1px); }
   .mode-btn[aria-pressed="true"] {
-    color: var(--bg-base);
-    background: var(--text-primary);
-    box-shadow: var(--sh-sm);
+    color: var(--chrome);
+    background: #fff;
   }
   /* ヘッダー右側トグル (自動印刷 / 通知音) */
   .head-toggle {
@@ -307,27 +361,31 @@
     align-items: center;
     gap: 8px;
     min-height: 44px;
-    padding: 4px 12px;
-    border: 2px solid var(--border);
-    border-radius: 0;
-    background: var(--bg-base);
-    color: var(--text-secondary);
+    padding: 0 14px;
+    border: 1px solid var(--chrome-line);
+    border-radius: var(--r-pill);
+    background: var(--chrome-2);
+    color: var(--on-chrome-dim);
     font-size: 13px;
-    font-weight: 700;
+    font-weight: 800;
     cursor: pointer;
     flex: 0 0 auto;
-    transition: color .1s ease, box-shadow .1s ease;
+    transition: color .12s ease, background-color .12s ease, border-color .12s ease;
   }
-  .head-toggle:hover { color: var(--text-primary); background: var(--bg-inset); }
-  .head-toggle:active { transform: translate(2px,2px); box-shadow: none; }
+  .head-toggle:hover { color: var(--on-chrome); background: #3A3F45; }
+  .head-toggle:active { transform: translateY(1px); }
   .head-toggle .dot {
-    width: 12px; height: 12px; border-radius: 50%;
-    border: 2px solid var(--text-secondary);
+    width: 10px; height: 10px; border-radius: 50%;
+    border: 2px solid var(--on-chrome-dim);
     background: transparent;
-    transition: background-color .1s ease, border-color .1s ease;
+    transition: background-color .12s ease, border-color .12s ease;
   }
-  .head-toggle[aria-pressed="true"] { color: var(--text-primary); box-shadow: var(--sh-sm); }
-  .head-toggle[aria-pressed="true"] .dot { background: var(--elapsed-ok); border-color: var(--elapsed-ok); }
+  .head-toggle[aria-pressed="true"] {
+    color: #fff;
+    background: var(--type-new);
+    border-color: var(--type-new);
+  }
+  .head-toggle[aria-pressed="true"] .dot { background: #fff; border-color: #fff; }
 
   :focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
 
@@ -338,10 +396,11 @@
     flex: 0 0 auto;
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 8px var(--pad-shell);
-    background: var(--bg-base);
-    border-bottom: 2px solid var(--border);
+    gap: 10px;
+    height: 52px;
+    padding: 0 var(--pad-shell);
+    background: var(--bg-raise);
+    border-bottom: 1px solid var(--border);
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
@@ -349,39 +408,40 @@
     display: inline-flex;
     align-items: baseline;
     gap: 8px;
-    padding: 3px 12px;
-    border: 2px solid var(--border);
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-chip);
     background: #FFFFFF;
     white-space: nowrap;
     flex: 0 0 auto;
   }
   .hud-stat .k {
     font-size: 11px;
-    letter-spacing: .12em;
+    letter-spacing: .1em;
     font-weight: 800;
     color: var(--text-secondary);
+    align-self: center;
   }
   .hud-stat .v {
     font-family: var(--font-num);
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 900;
     font-variant-numeric: tabular-nums;
     color: var(--text-primary);
   }
   .hud-stat.alert-on {
-    background: var(--elapsed-alert);
-    border-color: var(--elapsed-alert);
-    box-shadow: var(--sh-sm);
+    background: var(--u-alert);
+    border-color: var(--u-alert);
   }
   .hud-stat.alert-on .k, .hud-stat.alert-on .v { color: #FFFFFF; }
   /* 琥珀地は白文字だと AA 未達のため濃炭文字にする */
   .hud-stat.warn-on {
-    background: var(--elapsed-warn);
-    border-color: var(--elapsed-warn);
-    box-shadow: var(--sh-sm);
+    background: var(--u-warn);
+    border-color: var(--u-warn);
   }
-  .hud-stat.warn-on .k, .hud-stat.warn-on .v { color: var(--text-primary); }
-  .hud-sep { width: 2px; align-self: stretch; background: var(--border-soft); flex: 0 0 auto; }
+  .hud-stat.warn-on .k, .hud-stat.warn-on .v { color: var(--on-u-warn); }
+  .hud-sep { width: 1px; align-self: stretch; margin: 8px 2px; background: var(--border); flex: 0 0 auto; }
 
   .konro-hud { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
   .konro-hud .kh-label {
@@ -389,17 +449,18 @@
     color: var(--text-secondary); font-weight: 800; margin-right: 4px;
   }
   .kh-cell {
-    width: 28px; height: 28px;
+    width: 30px; height: 30px;
     display: inline-grid; place-items: center;
-    border: 2px solid var(--border-soft);
-    background: var(--bg-base);
+    border: 1px solid var(--border);
+    border-radius: var(--r-chip);
+    background: #FFFFFF;
     font-family: var(--font-num);
-    font-size: 13px; font-weight: 900;
+    font-size: 14px; font-weight: 900;
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
   }
-  .kh-cell[data-state="white"] { background: var(--text-primary); border-color: var(--text-primary); color: var(--bg-base); }
-  .kh-cell[data-state="red"]   { background: var(--elapsed-alert); border-color: var(--elapsed-alert); color: #FFFFFF; }
+  .kh-cell[data-state="white"] { background: var(--text-primary); border-color: var(--text-primary); color: #FFFFFF; }
+  .kh-cell[data-state="red"]   { background: var(--u-alert); border-color: var(--u-alert); color: #FFFFFF; }
 
   /* ============================================================ 2ペインシェル (左=メイン配膳 / 右=予約ストック) */
   .shell {
@@ -427,11 +488,10 @@
      各カードは自前の高さ (grid-auto-rows:max-content)。新着は末尾(行優先)へ。縦スクロール。 */
   .board {
     display: grid;
-    grid-template-columns: repeat(auto-fill, 300px);   /* カード幅 280-320px 範囲で固定・複数列 */
+    grid-template-columns: repeat(auto-fill, minmax(var(--col-min), 1fr));  /* 幅追従で右余白ゼロ・5-6列に伸縮 */
     grid-auto-rows: max-content;
     gap: var(--gap-card);
     align-content: start;
-    justify-content: start;
     height: 100%;
   }
 
@@ -453,31 +513,34 @@
   .empty .demo-btn {
     min-height: 56px;
     padding: 12px 24px;
-    border: 2px solid var(--border);
-    border-radius: 2px;
-    background: var(--bg-base);
-    color: var(--text-primary);
+    border: 0;
+    border-radius: var(--r-chip);
+    background: var(--cta);
+    color: #fff;
     font-size: 17px;
     font-weight: 800;
     cursor: pointer;
-    box-shadow: var(--sh);
-    transition: box-shadow .1s ease, transform .1s ease;
+    box-shadow: var(--sh-card);
+    transition: background-color .12s ease, transform .1s ease;
   }
-  .empty .demo-btn:hover { background: var(--bg-raise); }
-  .empty .demo-btn:active { transform: translate(4px,4px); box-shadow: none; }
+  .empty .demo-btn:hover { background: var(--cta-hover); }
+  .empty .demo-btn:active { transform: translateY(1px); }
 
   /* ============================================================ カード */
   .card {
     grid-row: span 1;
     position: relative;
-    border-radius: 3px;
-    background: var(--card-new);
+    border-radius: var(--r-card);
+    background: var(--card);
+    border: 1px solid var(--border);
+    box-shadow: var(--sh-card);
     overflow: hidden;
     display: flex;
     flex-direction: column;
     will-change: opacity, transform;
     animation: cardIn .18s cubic-bezier(.16,1,.3,1);
   }
+  .card.reserved { background: var(--card-reserved); }
   .card.removing { animation: cardOut .3s ease forwards; }
   @keyframes cardIn  { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
   @keyframes cardOut { from { opacity: 1; } to { opacity: 0; transform: scale(.97); } }
@@ -487,19 +550,20 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 6px 10px 6px 12px;
-    background: var(--elapsed-ok);          /* 既定=緑 (初回tick前) */
-    color: var(--on-ok);
+    padding: 8px 12px 9px;
+    background: var(--u-ok);                 /* 既定=緑 (初回tick前) */
+    color: var(--on-u-ok);
     cursor: grab;                            /* 長押しで並べ替え掴み */
   }
-  .card.lvl-warn  .card-banner { background: var(--elapsed-warn);  color: var(--on-warn); }
-  .card.lvl-alert .card-banner { background: var(--elapsed-alert); color: var(--on-alert); }
+  .card.lvl-warn  .card-banner { background: var(--u-warn);  color: var(--on-u-warn); }
+  .card.lvl-alert .card-banner { background: var(--u-alert); color: var(--on-u-alert); }
   .table-no {
-    font-size: 38px;
-    line-height: 0.9;
+    font-size: var(--fz-table);              /* 特大卓番 (Okage) */
+    line-height: 0.86;
     font-weight: 900;
-    letter-spacing: .01em;
+    letter-spacing: .005em;
     margin-right: auto;                      /* 左詰め・残りを経過側へ押し出す */
+    font-variant-numeric: tabular-nums;
     color: inherit;
   }
   .people {
@@ -510,25 +574,32 @@
   .people .unit { opacity: .85; font-size: 11px; margin-left: 1px; }
   .people .kids-inline { opacity: .85; font-size: 11px; font-weight: 800; }
 
-  /* 経過時間 = バナー内の特大数字 */
+  /* 経過時間 = バナー内の特大数字 (砂時計付き) */
   .elapsed {
     display: inline-flex; align-items: baseline; gap: 4px;
     padding: 0; border: none; background: none; box-shadow: none;
     color: inherit; font-weight: 900; white-space: nowrap;
   }
   .elapsed .label { font-size: 12px; letter-spacing: .06em; font-weight: 800; opacity: .9; }
-  .elapsed .val   { font-family: var(--font-num); font-size: 32px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .elapsed .val   { font-family: var(--font-num); font-size: var(--fz-elapsed); line-height: 1; font-variant-numeric: tabular-nums; }
+
+  /* 種別アンダーライン = Okageの頭直下色下線を種別軸へ (緊急度=塗り帯 と 物理分離) */
+  .type-underline { height: 4px; width: 100%; background: var(--type-new); }
+  .card.reserved .type-underline { background: var(--type-reserved-edge); }
 
   /* サブ行 = 種別 + 受付 + 操作 (囲みなし・ハーフトーンで視覚重量を最小化) */
   .card-sub {
     display: flex; align-items: center; gap: 10px;
-    padding: 4px 8px 4px 12px;
+    padding: 6px 10px 6px 12px;
     background: transparent;
     border-bottom: 1px solid var(--border-soft);
   }
-  .badge-type { font-size: 12px; font-weight: 900; letter-spacing: .06em; }
-  .card.new      .badge-type { color: var(--accent-new); }
-  .card.reserved .badge-type { color: var(--accent-reserved); }
+  .badge-type {
+    font-size: 12px; font-weight: 900; letter-spacing: .04em;
+    padding: 3px 8px; border-radius: var(--r-chip); line-height: 1;
+  }
+  .card.new      .badge-type { color: var(--type-new);      background: var(--type-new-soft); }
+  .card.reserved .badge-type { color: var(--type-reserved); background: var(--type-reserved-soft); }
   .recv { font-size: 12px; color: var(--text-secondary); white-space: nowrap; margin-right: auto; }
   .recv .label { letter-spacing: .08em; font-size: 10px; font-weight: 700; }
   .recv .hhmm { font-family: var(--font-num); font-size: 14px; color: var(--text-primary); font-weight: 800; font-variant-numeric: tabular-nums; margin-left: 4px; }
@@ -588,21 +659,20 @@
 
   /* 品目リスト */
   .items {
-    padding: 6px 8px 10px;
+    padding: 4px 0 0;
     list-style: none;
     margin: 0;
-    background: var(--card-new);
+    background: transparent;
     flex: 1 1 auto;
   }
-  .card.reserved .items { background: var(--card-reserved); }
   .item {
     display: grid;
-    grid-template-columns: 28px 1fr auto;
+    grid-template-columns: 30px 1fr auto;
     align-items: center;
-    column-gap: 8px;
+    column-gap: 10px;
     width: 100%;
-    min-height: 64px;
-    padding: 8px;
+    min-height: var(--row-item);
+    padding: 8px 12px;
     border: none;
     border-radius: 0;
     background: transparent;
@@ -617,11 +687,11 @@
   .item:active { background: var(--bg-inset); transform: translateY(1px); }
 
   .check {
-    width: 26px; height: 26px;
-    border-radius: 0;
-    border: 2px solid var(--border);
+    width: 28px; height: 28px;
+    border-radius: var(--r-chip);
+    border: 2px solid #6C747C;   /* 空チェックの枠: 白地で非テキスト3:1+ (実測4.7:1) */
     display: grid; place-items: center;
-    color: var(--bg-base);
+    color: transparent;
     font-size: 18px; font-weight: 900; line-height: 1;
     transition: background-color .1s ease, border-color .1s ease;
   }
@@ -646,22 +716,27 @@
     -webkit-line-clamp: 2;
     line-clamp: 2;
   }
+  /* 署名: 黒塗り四角 + 白数字 (Okage) */
   .item-qty  {
+    min-width: 34px; height: 34px; padding: 0 7px;
+    display: inline-grid; place-items: center;
+    background: var(--qty-box); color: var(--qty-num);
+    border-radius: var(--r-box);
     font-family: var(--font-num);
-    font-size: 20px; font-weight: 800;
-    color: var(--text-primary);
-    font-variant-numeric: tabular-nums;
+    font-size: var(--fz-qty); font-weight: 900;
+    font-variant-numeric: tabular-nums; line-height: 1;
     white-space: nowrap;
   }
-  .item-qty .x { color: var(--text-secondary); font-size: 15px; margin-right: 1px; }
+  .item-qty .x { display: none; }   /* × を消し数字のみを box 内に */
 
   /* 完了状態: 打ち消し線 + 減光 (色だけに頼らず線で示す) */
   .item.done .item-name { text-decoration: line-through; text-decoration-thickness: 2px; color: var(--text-secondary); }
   .item.done .item-opt  { text-decoration: line-through; opacity: .7; }
-  .item.done .item-qty  { color: var(--text-secondary); text-decoration: line-through; }
+  .item.done .item-qty  { opacity: .4; }
   .item.done .check {
-    background: var(--elapsed-ok);
-    border-color: var(--elapsed-ok);
+    background: var(--u-ok);
+    border-color: var(--u-ok);
+    color: #fff;
   }
   .item.done .check::after { content: "\2713"; }   /* チェックマーク */
 
@@ -670,10 +745,18 @@
      ・カードidに紐付け (注文 KDS_ORDERS とは別管理)。LS + BroadcastChannel で2台同期。
      ・経過警告の赤(大きいバッジ)と区別するため、コンロは小さめ・番号ラベル付き。
      ・他カードで同番号が赤でもグローバルロックしない (コンロ移動対応)。 */
+  /* 既定は使用中(white/red)のみの細帯 (40px)、「割当」で全1-10を展開 = 電卓の壁を解消。
+     10ボタンは常にDOM保持し skeleton をCSSで隠すだけ → 同期(setAttribute data-state)契約は不変。 */
   .konro {
-    padding: 8px var(--pad-card) 10px;
+    padding: 0 var(--pad-card) 6px;
     background: transparent;
     border-top: 1px solid var(--border-soft);
+  }
+  .konro-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
   }
   .konro-label {
     font-size: 10px;
@@ -681,45 +764,69 @@
     text-transform: uppercase;
     color: var(--text-secondary);
     font-weight: 800;
-    margin-bottom: 6px;
   }
+  .konro-toggle {
+    margin-left: auto;
+    min-height: 44px; min-width: 44px;
+    padding: 0 12px;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--r-chip);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--font-ui);
+    font-size: 13px; font-weight: 800;
+    cursor: pointer;
+    transition: color .1s ease, border-color .1s ease, background .1s ease;
+  }
+  .konro-toggle:hover { color: var(--text-primary); border-color: var(--text-primary); }
+  .konro.expanded .konro-toggle { border-style: solid; border-color: var(--border-strong); }
+  body.mode-hall .konro-toggle { display: none; }
+
+  /* 既定(畳): 使用中のみ横並び。skeleton は隠す */
   .konro-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .konro:not(.expanded) .konro-btn[data-state="skeleton"] { display: none; }
+  /* 展開: 全1-10を5列グリッドで (タップ域確保) */
+  .konro.expanded .konro-grid {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 5px;
+    gap: 6px;
+    padding-top: 2px;
   }
   .konro-btn {
     position: relative;
-    min-width: 0;
-    min-height: 44px; /* 補助操作のタップ下限 WCAG AA相当 44px (#58) */
-    padding: 4px 2px;
-    border-radius: 2px;
-    border: 1px solid var(--border-soft);
-    background: transparent;
+    min-width: 44px;
+    min-height: 44px; /* 補助操作のタップ下限 44px (#58) */
+    padding: 4px 6px;
+    border-radius: var(--r-chip);
+    border: 1px solid var(--border);
+    background: #fff;
     color: var(--text-secondary);
     font-family: var(--font-num);
-    font-size: 17px;
+    font-size: 16px;
     font-weight: 900;
     font-variant-numeric: tabular-nums;
     line-height: 1;
     cursor: pointer;
-    transition: box-shadow .1s ease, transform .1s ease;
+    transition: background-color .1s ease, border-color .1s ease, transform .1s ease;
   }
-  .konro-btn:hover  { border-color: var(--border); color: var(--text-primary); }
-  .konro-btn:active { transform: translate(2px,2px); box-shadow: none; }
+  .konro.expanded .konro-btn { min-height: 46px; font-size: 18px; }
+  .konro-btn:hover  { border-color: var(--border-strong); color: var(--text-primary); }
+  .konro-btn:active { transform: translateY(1px); }
   /* state=white: コンロ使用中 (濃炭塗り・白数字) */
   .konro-btn[data-state="white"] {
     background: var(--text-primary);
     border-color: var(--text-primary);
-    color: var(--bg-base);
-    box-shadow: var(--sh-sm);
+    color: #fff;
   }
   /* state=red: タイマー管理中 (朱赤塗り・白数字) */
   .konro-btn[data-state="red"] {
-    background: var(--elapsed-alert);
-    border-color: var(--elapsed-alert);
+    background: var(--u-alert);
+    border-color: var(--u-alert);
     color: #ffffff;
-    box-shadow: var(--sh-sm);
   }
   /* 状態を色だけに頼らない (WCAG 1.4.1) */
   .konro-btn[data-state="white"]::after,
@@ -768,23 +875,23 @@
     gap: 14px;
     padding: 12px 18px;
     background: var(--bg-raise);
-    border: 2px solid var(--border);
-    border-radius: 2px;
-    box-shadow: var(--sh);
+    border: 1px solid var(--border);
+    border-radius: var(--r-card);
+    box-shadow: var(--sh-pop);
   }
   body.is-reordering .reorder-bar,
   .reorder-bar.show { display: flex; }   /* .show = 確定直後の「戻す」猶予表示 (#62) */
   .reorder-bar .msg { font-size: 15px; font-weight: 800; color: var(--text-primary); }
   .reorder-bar button {
     min-height: 48px; padding: 8px 18px;
-    border-radius: 0; border: 2px solid var(--border);
-    background: var(--bg-base); color: var(--text-primary);
+    border-radius: var(--r-chip); border: 1px solid var(--border-strong);
+    background: var(--card); color: var(--text-primary);
     font-size: 15px; font-weight: 800; cursor: pointer;
-    transition: box-shadow .1s ease, transform .1s ease;
+    transition: background-color .1s ease, transform .1s ease;
   }
-  .reorder-bar button:hover { box-shadow: var(--sh-sm); }
-  .reorder-bar button:active { transform: translate(2px,2px); box-shadow: none; }
-  .reorder-bar button.confirm { border-color: var(--elapsed-ok); color: var(--elapsed-ok); }
+  .reorder-bar button:hover { background: var(--bg-raise); }
+  .reorder-bar button:active { transform: translateY(1px); }
+  .reorder-bar button.confirm { border-color: var(--u-ok); color: var(--u-ok); }
 
   /* ============================================================ 全完了の取り消しトースト
      全品目タップ完了で消えたカードを、誤タップに備え数秒だけ戻せるようにする */
@@ -798,8 +905,9 @@
     padding: 12px 16px;
     background: var(--text-primary);
     color: var(--bg-base);
-    border: 2px solid var(--border);
-    box-shadow: var(--sh);
+    border: 1px solid var(--chrome-line);
+    border-radius: var(--r-card);
+    box-shadow: var(--sh-pop);
     font-size: 16px;
     font-weight: 800;
   }
@@ -808,7 +916,7 @@
     min-height: 48px;
     padding: 8px 18px;
     border: 2px solid var(--bg-base);
-    border-radius: 0;
+    border-radius: var(--r-chip);
     background: transparent;
     color: var(--bg-base);
     font-family: var(--font-ui);
@@ -818,7 +926,7 @@
     transition: background-color .1s ease, color .1s ease;
   }
   .toast .undo-btn:hover { background: var(--bg-base); color: var(--text-primary); }
-  .toast .undo-btn:active { transform: translate(2px,2px); }
+  .toast .undo-btn:active { transform: translateY(1px); }
 
   /* ============================================================ 右ペイン: 予約ストックパネル */
   .stock {
@@ -827,45 +935,46 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    background: var(--card-reserved);
-    border-left: 2px solid var(--border);
+    background: var(--bg-raise);
+    border-left: 1px solid var(--border);
   }
   .stock-head {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 12px 16px 10px;
-    border-bottom: 2px solid var(--border);
-    background: var(--bg-raise);
+    height: 52px;
+    padding: 0 14px;
+    background: var(--chrome);
+    color: var(--on-chrome);
   }
   .stock-head .title {
     font-size: 16px; font-weight: 900; letter-spacing: .02em;
-    color: var(--text-primary);
+    color: var(--on-chrome);
   }
   .stock-head .count {
-    font-family: var(--font-num); font-size: 13px; font-weight: 800;
-    color: var(--accent-reserved);
+    font-family: var(--font-num); font-size: 14px; font-weight: 900;
+    color: var(--chrome);
     font-variant-numeric: tabular-nums;
-    border: 2px solid var(--accent-reserved);
-    padding: 0 7px;
-    border-radius: 0;
+    background: var(--type-reserved-edge);
+    border: 0;
+    padding: 1px 8px;
+    border-radius: var(--r-chip);
   }
   .stock-add {
     margin-left: auto;
     min-width: 44px; min-height: 44px;
-    padding: 6px 14px;
-    border-radius: 0;
-    border: 2px solid var(--accent-reserved);
-    background: var(--accent-reserved);
+    padding: 0;
+    border-radius: var(--r-chip);
+    border: 0;
+    background: var(--cta);
     color: #fff;
-    font-size: 20px; font-weight: 900; line-height: 1;
+    font-size: 24px; font-weight: 900; line-height: 1;
     cursor: pointer;
-    box-shadow: var(--sh-sm);
-    transition: box-shadow .1s ease, transform .1s ease;
+    transition: background-color .12s ease, transform .1s ease;
   }
-  .stock-add:hover  { background: #A87616; }
-  .stock-add:active { transform: translate(2px,2px); box-shadow: none; }
+  .stock-add:hover  { background: var(--cta-hover); }
+  .stock-add:active { transform: translateY(1px); }
 
   .stock-list {
     flex: 1 1 auto;
@@ -889,51 +998,51 @@
 
   .res-card {
     position: relative;
-    border-radius: 0;
-    background: #FFFFFF;
-    border: 2px solid var(--border);
-    border-left: 5px solid var(--accent-reserved);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border-radius: var(--r-card);
+    background: var(--card-reserved);
+    border: 1px solid var(--border);
+    border-left: 5px solid var(--type-reserved-edge);
     padding: 12px 14px;
-    box-shadow: var(--sh);
+    box-shadow: var(--sh-card);
     animation: cardIn .22s cubic-bezier(.16,1,.3,1);
   }
-  .res-card.soon { border-left-color: var(--elapsed-warn); }
-  .res-card.late { border-left-color: var(--elapsed-alert); }
+  .res-card.soon { border-left-color: var(--u-warn); }
+  .res-card.late { border-left-color: var(--u-alert); }
   .res-top {
     display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
   }
   .res-time {
     font-family: var(--font-num);
-    font-size: 26px; font-weight: 900;
+    font-size: 30px; font-weight: 900;
     letter-spacing: .01em;
     color: var(--text-primary);
     font-variant-numeric: tabular-nums;
   }
-  .res-people { font-size: 14px; color: var(--text-primary); font-weight: 700; text-align: right; }
-  .res-people .n { font-family: var(--font-num); font-size: 17px; }
+  .res-people { font-size: 14px; color: var(--text-primary); font-weight: 800; text-align: right; }
+  .res-people .n { font-family: var(--font-num); font-size: 18px; }
   .res-people .kids { color: var(--text-secondary); font-size: 12px; display:block; }  /* 白カード地なので AA(4.5:1) を満たす濃色トークンを使う */
-  .res-name { font-size: 18px; font-weight: 700; margin-top: 4px; color: var(--text-primary); overflow-wrap: anywhere; }
+  .res-name { font-size: 16px; font-weight: 700; color: var(--text-primary); overflow-wrap: anywhere; }
   .res-menu {
-    margin: 8px 0 0;
-    padding: 6px 8px; list-style: none;
+    margin: 6px 0 0;
+    padding: 8px 0 0; list-style: none;
     font-size: 14px; color: var(--text-secondary); line-height: 1.5;
-    background: var(--bg-inset);
-    border: 1px solid var(--border-soft);
-    border-radius: 0;
+    border-top: 1px solid var(--border-soft);
   }
-  .res-menu li { overflow-wrap: anywhere; }
-  .res-menu li .q { font-family: var(--font-num); color: var(--text-primary); margin-left: 4px; }
-  /* 30分前通知バッジ (右上・点滅)。琥珀地は白文字だと AA 未達のため濃炭文字 */
+  .res-menu li { display: flex; align-items: baseline; gap: 4px; overflow-wrap: anywhere; padding: 2px 0; }
+  .res-menu li::before { content: "\25A0"; font-size: 8px; color: var(--type-reserved-edge); flex: 0 0 auto; }
+  .res-menu li .q { font-family: var(--font-num); color: var(--text-primary); font-weight: 800; margin-left: auto; }
+  /* 30分前通知バッジ (フロー先頭・被り皆無)。琥珀地は濃文字でAA */
   .res-soon-badge {
-    position: absolute;
-    top: -8px; right: -6px;
-    padding: 4px 10px;
-    border-radius: 0;
-    background: var(--elapsed-warn);
-    border: 2px solid var(--border);
-    color: var(--text-primary);
+    align-self: flex-start;
+    order: -1;                          /* カード先頭に置き被りを回避 */
+    padding: 3px 10px;
+    border-radius: var(--r-chip);
+    background: var(--u-warn);
+    color: var(--on-u-warn);
     font-size: 12px; font-weight: 900; letter-spacing: .02em;
-    box-shadow: 2px 2px 0 var(--border);
     display: none;
     animation: soonPulse 1.3s ease-in-out infinite;
   }
@@ -941,50 +1050,49 @@
   /* 予約時刻を過ぎたら「超過 +N分」の赤バッジに切り替え (黙って消さない) */
   .res-card.late .res-soon-badge {
     display: inline-block;
-    background: var(--elapsed-alert);
+    background: var(--u-alert);
     color: #fff;
   }
-  @keyframes soonPulse { 0%,100%{ transform: scale(1); } 50%{ transform: scale(1.12); } }
+  @keyframes soonPulse { 0%,100%{ transform: scale(1); } 50%{ transform: scale(1.08); } }
 
   .res-actions { display: flex; gap: 8px; margin-top: 10px; align-items: stretch; }
   .res-seat {
     flex: 1 1 auto; min-width: 0;
     min-height: 48px;
-    padding: 8px 10px;
-    border-radius: 0;
-    border: 2px solid var(--border);
-    background: var(--bg-base);
+    padding: 8px 12px;
+    border-radius: var(--r-chip);
+    border: 2px solid var(--type-new);
+    background: #fff;
     color: var(--text-primary);
-    font-family: var(--font-ui);
-    font-size: 16px; font-weight: 800;
+    font-family: var(--font-num);
+    font-size: 18px; font-weight: 800;
   }
-  .res-seat::placeholder { color: var(--text-secondary); font-weight: 600; }
+  .res-seat::placeholder { color: var(--text-secondary); font-weight: 600; font-family: var(--font-ui); }
   .res-go {
     flex: 0 0 auto;
     min-height: 48px;
-    padding: 8px 14px;
-    border-radius: 0;
-    border: 2px solid var(--elapsed-ok);
-    background: var(--elapsed-ok);
+    padding: 8px 16px;
+    border-radius: var(--r-chip);
+    border: 0;
+    background: var(--cta);
     color: #ffffff;
-    font-size: 15px; font-weight: 900;
+    font-size: 16px; font-weight: 900;
     cursor: pointer;
-    box-shadow: var(--sh-sm);
-    transition: box-shadow .1s ease, transform .1s ease;
+    transition: background-color .12s ease, transform .1s ease;
   }
-  .res-go:hover  { background: #246024; }
-  .res-go:active { transform: translate(2px,2px); box-shadow: none; }
+  .res-go:hover  { background: var(--cta-hover); }
+  .res-go:active { transform: translateY(1px); }
   .res-del {
     flex: 0 0 auto;
     min-width: 44px; min-height: 48px;
-    border-radius: 0;
-    border: 2px solid var(--border-soft);
-    background: var(--bg-raise);
+    border-radius: var(--r-chip);
+    border: 1px solid var(--border);
+    background: #fff;
     color: var(--text-secondary);
     font-size: 18px; font-weight: 800; cursor: pointer;
     transition: color .1s ease, border-color .1s ease, background .1s ease;
   }
-  .res-del:hover { color: #fff; background: var(--elapsed-alert); border-color: var(--elapsed-alert); }
+  .res-del:hover { color: #fff; background: var(--u-alert); border-color: var(--u-alert); }
 
   /* ============================================================ モーダル (予約追加フォーム) */
   .modal-backdrop {
@@ -999,10 +1107,10 @@
     width: min(460px, 100%);
     max-height: 92vh;
     overflow-y: auto;
-    background: var(--bg-base);
-    border: 2px solid var(--border);
-    border-radius: 0;
-    box-shadow: 6px 6px 0 var(--border);
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: var(--r-card);
+    box-shadow: var(--sh-pop);
     padding: 20px;
   }
   .modal h2 { margin: 0 0 14px; font-size: 19px; font-weight: 900; color: var(--text-primary); }
@@ -1014,9 +1122,9 @@
     width: 100%;
     min-height: 48px;
     padding: 8px 12px;
-    border-radius: 0;
-    border: 2px solid var(--border);
-    background: var(--bg-base);
+    border-radius: var(--r-chip);
+    border: 2px solid var(--border-strong);
+    background: #fff;
     color: var(--text-primary);
     font-family: var(--font-ui);
     font-size: 16px; font-weight: 700;
@@ -1035,20 +1143,19 @@
   .menu-pick .row:hover { background: var(--bg-raise); }
   .menu-pick .row label { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 15px; color: var(--text-primary); font-weight: 700; cursor: pointer; }
   .menu-pick .row input[type="checkbox"] { width: 24px; height: 24px; accent-color: var(--accent-reserved); }
-  .menu-pick .row input[type="number"] { width: 64px; min-height: 40px; padding: 4px 6px; text-align: center; border-radius: 0; border: 2px solid var(--border); }
+  .menu-pick .row input[type="number"] { width: 64px; min-height: 44px; padding: 4px 6px; text-align: center; border-radius: var(--r-chip); border: 2px solid var(--border-strong); }
   .menu-pick .row input[type="number"]:disabled { opacity: .35; }
   .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
   .modal-actions button {
     min-height: 48px; padding: 10px 20px;
-    border-radius: 0; font-size: 16px; font-weight: 900; cursor: pointer;
-    box-shadow: var(--sh-sm);
-    transition: box-shadow .1s ease, transform .1s ease;
+    border-radius: var(--r-chip); font-size: 16px; font-weight: 900; cursor: pointer;
+    transition: background-color .12s ease, transform .1s ease;
   }
-  .modal-actions button:active { transform: translate(2px,2px); box-shadow: none; }
-  .btn-cancel { border: 2px solid var(--border); background: var(--bg-raise); color: var(--text-secondary); }
-  .btn-cancel:hover { color: var(--text-primary); }
-  .btn-save { border: 2px solid var(--accent-reserved); background: var(--accent-reserved); color: #fff; }
-  .btn-save:hover { background: #A87616; }
+  .modal-actions button:active { transform: translateY(1px); }
+  .btn-cancel { border: 1px solid var(--border-strong); background: #fff; color: var(--text-secondary); }
+  .btn-cancel:hover { color: var(--text-primary); background: var(--bg-raise); }
+  .btn-save { border: 0; background: var(--cta); color: #fff; }
+  .btn-save:hover { background: var(--cta-hover); }
   .form-error { color: var(--elapsed-alert); font-size: 13px; font-weight: 700; margin-top: 8px; min-height: 16px; }
 
   /* ============================================================ チビ伝印刷プレビュー */
@@ -1112,6 +1219,10 @@
     *, *::before, *::after { animation: none !important; transition: none !important; }
   }
 
+  /* 狭幅: 装飾サブラベルを隠してヘッダーのツール群との重なりを防ぐ */
+  @media (max-width: 1560px) {
+    .brand .sub { display: none; }
+  }
   /* 中幅: 予約ストックを少し狭める */
   @media (max-width: 1100px) {
     .stock { flex-basis: 280px; width: 280px; }
@@ -1124,7 +1235,7 @@
   }
   /* 横向きでない / 小幅でも崩れない: カード幅を僅かに縮める (折り返し列も追随) */
   @media (max-width: 360px) {
-    .board { grid-template-columns: repeat(auto-fill, 280px); }
+    .board { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -1955,12 +2066,27 @@
       /* items */
       var ul = buildItemsList(order);
 
-      /* konro: コンロ番号 1〜10 (2行 = 5列×2) */
+      /* konro: コンロ番号 1〜10 (既定=使用中のみ細帯 / 「割当」で全1-10を展開) */
       var konro = document.createElement("div");
       konro.className = "konro";
+      var kHead = document.createElement("div");
+      kHead.className = "konro-head";
       var kLabel = document.createElement("div");
       kLabel.className = "konro-label js-konro-label";
       kLabel.textContent = t("konro");
+      var kToggle = document.createElement("button");
+      kToggle.type = "button";
+      kToggle.className = "konro-toggle";
+      kToggle.textContent = "割当";
+      kToggle.setAttribute("aria-expanded", "false");
+      kToggle.setAttribute("aria-label", "コンロ番号を割り当て");
+      kToggle.addEventListener("click", function () {
+        var open = konro.classList.toggle("expanded");
+        kToggle.setAttribute("aria-expanded", open ? "true" : "false");
+        kToggle.textContent = open ? "閉じる" : "割当";
+      });
+      kHead.appendChild(kLabel);
+      kHead.appendChild(kToggle);
       var kGrid = document.createElement("div");
       kGrid.className = "konro-grid";
       kGrid.setAttribute("role", "group");
@@ -1976,8 +2102,12 @@
           kGrid.appendChild(kbtn);
         })(kn);
       }
-      konro.appendChild(kLabel);
+      konro.appendChild(kHead);
       konro.appendChild(kGrid);
+
+      /* 種別アンダーライン (緊急度バンドの直下・新規=藍/予約=金) */
+      var typeUnderline = document.createElement("div");
+      typeUnderline.className = "type-underline";
 
       /* 長押し進捗リング (誤操作防止の可視フィードバック) */
       var prog = document.createElement("div");
@@ -1985,6 +2115,7 @@
 
       card.appendChild(prog);
       card.appendChild(head);
+      card.appendChild(typeUnderline);
       card.appendChild(timeRow);
       card.appendChild(ul);
       card.appendChild(konro);
@@ -2631,11 +2762,16 @@
       if (!r) return;
       seat = String(seat || "").trim();
       if (!seat) {
-        // 該当カードの入力にフォーカスし、簡易エラー (色変え)
+        // 該当カードの入力にフォーカス。要注意はオレンジ(赤=警告専用を侵さない)＋
+        // 文言変更で色以外の手がかりも与える(WCAG 1.4.1)。
         var card = stockListEl.querySelector('.res-card[data-rid="' + rid + '"]');
         if (card) {
           var inp = card.querySelector(".res-seat");
-          if (inp) { inp.style.borderColor = "#c25050"; inp.focus(); }
+          if (inp) {
+            inp.style.borderColor = "#C25200";              // = --cta オレンジ
+            inp.setAttribute("placeholder", "卓番を入力");   // 色に依存しない手がかり
+            inp.focus();
+          }
         }
         return;
       }
