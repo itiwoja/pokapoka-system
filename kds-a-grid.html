@@ -704,7 +704,9 @@
      状態サイクル: スケルトン(未使用/透明) → 白(使用中) → 赤(タイマー管理中) → スケルトン
      ・カードidに紐付け (注文 KDS_ORDERS とは別管理)。LS + BroadcastChannel で2台同期。
      ・経過警告の赤(大きいバッジ)と区別するため、コンロは小さめ・番号ラベル付き。
-     ・他カードで同番号が赤でもグローバルロックしない (コンロ移動対応)。 */
+     ・同番号のコンロは物理的に1台 = 同時に1卓のみ。ある卓が使用中/タイマー管理中(白/赤)の間、
+       他カードの同番号ボタンはロック(押下不可・占有卓を表示)。使用中を解除(→未使用)で解錠され
+       別卓へ割当可能になる (#114 = コンロ移動は明示的な解除→再割当で実現)。 */
   /* 既定は使用中(white/red)のみの細帯 (40px)、「割当」で全1-10を展開 = 電卓の壁を解消。
      10ボタンは常にDOM保持し skeleton をCSSで隠すだけ → 同期(setAttribute data-state)契約は不変。 */
   .konro {
@@ -799,6 +801,33 @@
   }
   .konro-btn[data-state="white"]::after { background: var(--bg-raise); }
   .konro-btn[data-state="red"]::after   { background: #ffffff; }
+
+  /* data-locked: 他カードが同番号を占有中 (物理コンロは同時1卓) → 押下不可 + 占有卓バッジ (#114) */
+  .konro-btn[data-locked="true"] {
+    background: repeating-linear-gradient(-45deg, var(--bg-inset) 0 5px, var(--bg-raise) 5px 10px);
+    border-color: var(--border);
+    border-style: dashed;
+    color: var(--text-muted);
+    cursor: not-allowed;
+  }
+  .konro-btn[data-locked="true"]:hover  { border-color: var(--border); color: var(--text-muted); }
+  .konro-btn[data-locked="true"]:active { transform: none; }
+  /* 占有卓バッジ (data-owner に卓番)。ロック時は data-state=skeleton なので state ドットとは競合しない */
+  .konro-btn[data-locked="true"]::after {
+    content: attr(data-owner);
+    position: absolute;
+    top: -6px; right: -5px;
+    min-width: 13px; height: 15px;
+    padding: 0 3px;
+    border-radius: 8px;
+    background: var(--u-alert);
+    color: #fff;
+    font-family: var(--font-num);
+    font-size: 9px; font-weight: 900;
+    line-height: 15px;
+    text-align: center;
+    letter-spacing: .02em;
+  }
 
   /* ============================================================ カード並べ替え (長押し起動 / 誤操作防止) */
   /* 長押し中フィードバック */
@@ -1398,6 +1427,7 @@
       min:"分", emptyTitle:"オーダー待機中", emptyHint:"POS からの注文がここに表示されます",
       demo:"デモデータを投入",
       konro:"コンロ", konroSkeleton:"未使用", konroWhite:"使用中", konroRed:"タイマー管理中",
+      konroLocked:"他卓使用中",
       modeKitchen:"キッチン", modeHall:"ホール", autoPrint:"自動プレビュー",
       stockTitle:"予約ストック", stockEmpty:"本日の予約はありません",
       addReservation:"予約を追加", fldTime:"予約時間", fldAdults:"大人", fldKids:"0-2歳",
@@ -1717,6 +1747,20 @@
       return (s === "white" || s === "red") ? s : KONRO_DEFAULT;
     }
 
+    /* コンロ num を占有 (使用中/タイマー管理中 = white/red) している別カードid を返す。
+       exceptCardId は判定から除外 (＝自分)。占有カードが無ければ null。
+       物理コンロは同時に1卓のみ → 占有中は他カードの同番号ボタンをロックする根拠 (#114)。 */
+    function konroOwnerId(num, exceptCardId) {
+      var nk = String(num), ex = String(exceptCardId);
+      var ids = Object.keys(konroMap);
+      for (var i = 0; i < ids.length; i++) {
+        if (ids[i] === ex) continue;
+        var s = konroMap[ids[i]] && konroMap[ids[i]][nk];
+        if (s === "white" || s === "red") return ids[i];
+      }
+      return null;
+    }
+
     /* スケルトン(初期値)は保存しない = LS を肥大化させない。注文消去時の掃除も簡潔に */
     function setKonroState(cardId, num, state) {
       var key = String(cardId);
@@ -1794,7 +1838,7 @@
           } else if (msg.type === "konro") {
             setKonroState(msg.id, msg.num, msg.state);
             saveKonro();
-            applyKonroToCard(msg.id);   // 他カードの同番号には影響させない (グローバルロックなし)
+            refreshKonroNum(msg.num);   // 該当番号を全カードで再描画 (占有カード + 他カードのロック) (#114)
             updateKonroHud();
           } else if (msg.type === "stock") {
             // 予約ストック全体を受信側へ反映 (当日分・小規模なので全置換でシンプルに)
@@ -2047,9 +2091,9 @@
           kbtn.type = "button";
           kbtn.className = "konro-btn";
           kbtn.setAttribute("data-num", String(num));
-          kbtn.setAttribute("data-state", konroState(order.id, num));
           kbtn.textContent = String(num);
           kbtn.addEventListener("click", function () { onKonroTap(order.id, num); });
+          applyKonroBtn(kbtn, order.id, num);   // 初期状態 + 他カード占有によるロックを反映 (#114)
           kGrid.appendChild(kbtn);
         })(kn);
       }
@@ -2131,6 +2175,9 @@
       if (undoInfo) feedIds[undoInfo.id] = true;
       pruneDone(feedIds);
       pruneLocked(feedIds);
+
+      // コンロ掃除後に全カードのロックを再計算 (占有カードが消えた番号を解錠する) (#114)
+      refreshAllKonro();
 
       // 並び順の整合: 消えた id を除去し、新着を末尾に追加 (時系列。手動並べ替えは保持)
       reconcileOrderSeq(seen, added);
@@ -2350,20 +2397,37 @@
     /* ===================== 操作: コンロ番号タップ ===================== */
     function onKonroTap(id, num) {
       var cur = konroState(id, num);
+      // 他卓が物理コンロを占有中は割当不可 (自分がオーナー=white/red の時は解除操作なので許可)。
+      // ボタン自体も disabled にしているが、同期タイミングの隙間対策で二重にガードする (#114)。
+      if (cur !== "white" && cur !== "red" && konroOwnerId(num, id)) return;
       var next = KONRO_CYCLE[cur] || KONRO_DEFAULT;
       setKonroState(id, num, next);
       saveKonro();                                  // LS 即時保存 (正本)
-      broadcastKonro(id, num, next);                // 他タブへ同期 (同番号の他カードには影響しない)
-      // 該当カードの該当ボタンのみ更新 (他カードの同番号はロックしない = コンロ移動対応)
-      var entry = cards[id];
-      if (entry && entry.el) {
-        var btn = entry.el.querySelector('.konro-btn[data-num="' + num + '"]');
-        if (btn) {
-          btn.setAttribute("data-state", next);
-          setKonroBtnAria(btn, num, next);
-        }
-      }
+      broadcastKonro(id, num, next);                // 他タブへ同期
+      // この番号を全カードで再描画: 自カードの状態遷移 + 占有/解錠に伴う他カードのロック更新 (#114)
+      refreshKonroNum(num);
       updateKonroHud();
+    }
+
+    /* 1つのコンロボタンへ「自カードの状態」+「他カード占有によるロック」を反映する単一の描画経路 (#114) */
+    function applyKonroBtn(btn, cardId, num) {
+      var st = konroState(cardId, num);                       // このカード自身の状態
+      // 自分が使用中/管理中ならオーナー = ロックされない。skeleton の時だけ他カード占有を見る。
+      var ownerId = (st === "white" || st === "red") ? null : konroOwnerId(num, cardId);
+      btn.setAttribute("data-state", st);
+      if (ownerId) {
+        var tbl = ownerTable(ownerId);
+        btn.setAttribute("data-locked", "true");
+        btn.setAttribute("data-owner", tbl || "占");
+        btn.disabled = true;
+        btn.setAttribute("aria-label",
+          t("konro") + " " + num + " " + t("konroLocked") + (tbl ? "（卓" + tbl + "）" : ""));
+      } else {
+        if (btn.hasAttribute("data-locked")) btn.removeAttribute("data-locked");
+        if (btn.hasAttribute("data-owner"))  btn.removeAttribute("data-owner");
+        btn.disabled = false;
+        setKonroBtnAria(btn, num, st);
+      }
     }
 
     /* LS / BroadcastChannel から来た状態をカード全体へ反映 */
@@ -2372,11 +2436,23 @@
       if (!entry || !entry.el) return;
       var btns = entry.el.querySelectorAll(".konro-btn");
       for (var i = 0; i < btns.length; i++) {
-        var num = btns[i].getAttribute("data-num");
-        var st = konroState(id, num);
-        btns[i].setAttribute("data-state", st);
-        setKonroBtnAria(btns[i], num, st);
+        applyKonroBtn(btns[i], id, btns[i].getAttribute("data-num"));
       }
+    }
+
+    /* 指定番号のボタンを全カードで再描画 (占有/解錠の伝播用)。タップ・BC受信時に使う (#114) */
+    function refreshKonroNum(num) {
+      Object.keys(cards).forEach(function (cid) {
+        var e = cards[cid];
+        if (!e || !e.el) return;
+        var btn = e.el.querySelector('.konro-btn[data-num="' + num + '"]');
+        if (btn) applyKonroBtn(btn, cid, num);
+      });
+    }
+
+    /* 全カードのコンロボタンを再描画 (掃除でオーナーが消えた後の解錠反映など) (#114) */
+    function refreshAllKonro() {
+      Object.keys(cards).forEach(function (cid) { applyKonroToCard(cid); });
     }
 
     function setKonroBtnAria(btn, num, state) {
