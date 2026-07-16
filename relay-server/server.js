@@ -1,11 +1,12 @@
 /**
- * server.js — ぽかぽか店内 中継サーバー (依存ゼロ・Node 18+)
+ * server.js — ぽかぽか店内 中継サーバー (依存ほぼゼロ・Node 18+。printer.js の iconv-lite のみ例外 #144)
  *
  * 役割:
  *   1. リポジトリ直下の静的ファイルを配信
  *   2. Sync v1 を30秒間隔で取得し、予約変更を即時反映
  *   3. Booking v1 を起動時+15分間隔で全件取得し、当日storeを自己修復
  *   4. 初回全件取得が成功するまで /api/stock を503にしてKDSの誤削除を防止
+ *   5. POST /api/print でチビ伝を実機プリンターへ中継(ブラウザは生ソケットを開けないため #144)
  *
  * 設定:
  *   接続先は config/config.json (config.example.json をコピーして作る)。
@@ -24,6 +25,7 @@ var path = require("path");
 var seats = require("./seat-occupancy");
 var booking = require("./booking-resync");
 var loadConfig = require("./load-config");
+var printer = require("./printer");
 
 var MIME = {
   ".html": "text/html; charset=utf-8",
@@ -40,6 +42,7 @@ function createRelay(options) {
   var env = options.env || process.env;
   var config = createConfig(env, options);
   var mock = options.mockSource || require("./mock-tablecheck");
+  var printerModule = options.printer || printer;
   var log = options.log || defaultLog;
   var now = options.now || function () { return new Date(); };
   var fetchFn = options.fetch || globalThis.fetch;
@@ -98,6 +101,10 @@ function createRelay(options) {
         beforeMin: config.seatBeforeMin,
         afterMin: config.seatAfterMin,
       });
+    }
+
+    if (url.pathname === "/api/print" && req.method === "POST") {
+      return handlePrint(req, res, printerModule);
     }
 
     if (url.pathname.indexOf("/api/mock/") === 0) {
@@ -342,6 +349,25 @@ function afterMutation(res, payload, reservationSync) {
     var stock = reservationSync.stockResponse(Date.now());
     payload.stock = stock.code === 200 ? stock.body : [];
     json(res, payload);
+  });
+}
+
+/** POST /api/print — チビ伝を実機プリンターへ送る (#144)。IPは店内LANのプライベートアドレスのみ許可 */
+function handlePrint(req, res, printerModule) {
+  readJson(req, res, function (body) {
+    var ip = body && body.ip;
+    if (!printerModule.isPrivateIPv4(ip)) {
+      return json(res, { ok: false, error: "printer ip must be a private LAN IPv4 address" }, 400);
+    }
+    var job = printerModule.normalizeJob(body);
+    var buffer;
+    try { buffer = printerModule.buildEscPos(job); }
+    catch (err) { return json(res, { ok: false, error: "failed to build print job: " + err.message }, 500); }
+    printerModule.sendToPrinter(ip, buffer).then(function () {
+      json(res, { ok: true });
+    }).catch(function (err) {
+      json(res, { ok: false, error: String(err && err.message || err) }, 502);
+    });
   });
 }
 
