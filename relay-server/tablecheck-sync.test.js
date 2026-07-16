@@ -53,6 +53,22 @@ eq("canceled検知", s.normalizeStatus("Cancelled_by_user"), "canceled");
 eq("no_show検知", s.normalizeStatus("no-show"), "no_show");
 eq("既定はbooked", s.normalizeStatus("something"), "booked");
 
+console.log("normalizeStatus(確定enum 11値 → KDS挙動 / Issue #117)");
+// 載る (内部status=booked / ACTIVE_STATUSES)
+["accepted", "confirmed", "attended"].forEach(function (st) {
+  eq(st + " → booked(棚に載る)", s.normalizeStatus(st), "booked");
+});
+// 外す (キャンセル・拒否・ノーショー)
+eq("cancelled → canceled(外す)", s.normalizeStatus("cancelled"), "canceled");
+eq("rejected → canceled(外す) ★取りこぼし修正", s.normalizeStatus("rejected"), "canceled");
+eq("noshow → no_show(外す)", s.normalizeStatus("noshow"), "no_show");
+// 外す (確定前は暫定デフォルトで出さない)
+["tentative", "pending", "request", "iou_prepay", "iou_auth"].forEach(function (st) {
+  eq(st + " → unconfirmed(外す)", s.normalizeStatus(st), "unconfirmed");
+});
+// ACTIVE_STATUSES は booked のみ (normalizeStatus の出力値と整合)
+eq("ACTIVE_STATUSESはbookedのみ", s.ACTIVE_STATUSES, ["booked"]);
+
 console.log("parseMenuFromMemo");
 eq("x区切り", s.parseMenuFromMemo("土鍋御膳 x2"), [{ name: "土鍋御膳", qty: 2, options: null, allergies: null }]);
 eq("×と個", s.parseMenuFromMemo("御膳×3\n厚揚げ 1個"),
@@ -79,6 +95,22 @@ eq("席だけ予約はKDSに出ない", stock.length, 0);
 store.set("d", { rid: "d", startAt: iso(18, 0), adults: 1, kids: 2, name: "D", status: "booked", menu: [{ name: "御膳", qty: 2, options: null, allergies: "乳" }] });
 stock = s.toKdsStock(store, 456);
 eq("KDS stock形式", stock[0], { rid: "d", time: "18:00", adults: 1, kids: 2, name: "D", menu: [{ name: "御膳", qty: 2, options: null, allergies: "乳" }], seenAt: 456 });
+
+console.log("purge: 確定enum status で棚に載る/外す (Issue #117)");
+var store2 = new Map();
+function put(rid, rawStatus) {
+  store2.set(rid, { rid: rid, startAt: iso(18, 30), adults: 2, kids: 0, name: rid,
+    status: s.normalizeStatus(rawStatus), menu: [{ name: "御膳", qty: 1, options: null, allergies: null }] });
+}
+put("rej", "rejected");      // ★取りこぼし: 従来はbooked扱いで残っていた
+put("iou", "iou_prepay");    // 確定前: 暫定で外す
+put("cfm", "confirmed");     // 確定: 残る
+put("att", "attended");      // 来店済(暫定booked): 残る
+s.purge(store2, now);
+eq("rejectedはpurgeで除去", store2.has("rej"), false);
+eq("iou_prepayはpurgeで除去", store2.has("iou"), false);
+eq("confirmedは残る", store2.has("cfm"), true);
+eq("attendedは残る(暫定)", store2.has("att"), true);
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
