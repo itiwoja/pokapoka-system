@@ -701,8 +701,7 @@
      状態サイクル: スケルトン(未使用/透明) → 白(使用中) → 赤(タイマー管理中) → スケルトン
      ・カードidに紐付け (注文 KDS_ORDERS とは別管理)。LS + BroadcastChannel で2台同期。
      ・経過警告の赤(大きいバッジ)と区別するため、コンロは小さめ・番号ラベル付き。
-     ・他カードが白/赤で使用中の番号を未使用(スケルトン)から取ろうとすると競合警告(オレンジ)を出し、
-       2段階タップ確認で引き継ぎ(奪取)する (#114)。同一カードでの白→赤の自己遷移は競合対象外。 */
+     ・他カードで同番号が赤でもグローバルロックしない (コンロ移動対応)。 */
   /* 既定は使用中(white/red)のみの細帯 (40px)、「割当」で全1-10を展開 = 電卓の壁を解消。
      10ボタンは常にDOM保持し skeleton をCSSで隠すだけ → 同期(setAttribute data-state)契約は不変。 */
   .konro {
@@ -797,14 +796,6 @@
   }
   .konro-btn[data-state="white"]::after { background: var(--bg-raise); }
   .konro-btn[data-state="red"]::after   { background: #ffffff; }
-  /* 競合警告: 他カードが使用中の番号を取ろうとした1タップ目 (#114)。
-     赤=経過警告専用を侵さないため --cta オレンジ。もう一度タップで引き継ぎ確定。 */
-  .konro-btn.konro-conflict {
-    background: var(--cta);
-    border-color: var(--cta);
-    color: #fff;
-    font-size: 12px;
-  }
 
   /* ============================================================ カード並べ替え (長押し起動 / 誤操作防止) */
   /* 長押し中フィードバック */
@@ -1500,7 +1491,6 @@
     /* コンロ状態サイクル: スケルトン(未使用) → 白(使用中) → 赤(タイマー管理中) → スケルトン */
     var KONRO_CYCLE = { "skeleton": "white", "white": "red", "red": "skeleton" };
     var KONRO_DEFAULT = "skeleton";
-    var KONRO_CONFLICT_ARM_MS = 3000; // コンロ競合(奪取)2段階確認の猶予 (#114)
 
     /* ---- ラベル (日本語固定) ---- */
     var LABELS = {
@@ -1535,7 +1525,6 @@
     /* ---- 状態 ---- */
     var doneMap = {};              // { orderId: [bool, bool, ...] }  完了状態(LocalStorage正本)
     var konroMap = {};             // { cardId: { "1":"white", "3":"red", ... } } コンロ状態(LocalStorage正本)
-    var konroConflictTimers = {};  // { "cardId:num": timeoutId } 競合警告の2段階確認タイマー (揮発性・非LS #114)
     var cards = {};                // { orderId: { el, order, level } } DOM キャッシュ
     var orderSeq = [];             // 配膳カードの表示順 (orderId 文字列の配列。LS正本)
     var stock = [];                // 予約ストック (当日分。LS正本) [{rid,time,adults,kids,name,menu:[{name,qty}],seenAt}]
@@ -1917,7 +1906,7 @@
           } else if (msg.type === "konro") {
             setKonroState(msg.id, msg.num, msg.state);
             saveKonro();
-            applyKonroToCard(msg.id);   // このメッセージは msg.id 単体の状態同期。奪取時は解放/付与で2通発生する (#114)
+            applyKonroToCard(msg.id);   // 他カードの同番号には影響させない (グローバルロックなし)
             updateKonroHud();
           } else if (msg.type === "stock") {
             // 予約ストック全体を受信側へ反映 (当日分・小規模なので全置換でシンプルに)
@@ -2470,78 +2459,21 @@
       poll();                            // 配膳カードを復帰させる
     }
 
-    /* 番号 num を白/赤で使用中の他カードIDを返す (excludeId 自身は対象外。無ければ null) (#114) */
-    function findKonroOwner(num, excludeId) {
-      var numKey = String(num);
-      var exclude = String(excludeId);
-      for (var cid in konroMap) {
-        if (cid === exclude) continue;
-        var st = konroMap[cid] && konroMap[cid][numKey];
-        if (st === "white" || st === "red") return cid;
-      }
-      return null;
-    }
-
-    /* 競合警告の見た目/保留タイマーを解除し通常表示へ戻す (#114) */
-    function disarmKonroConflict(id, num) {
-      var key = String(id) + ":" + String(num);
-      if (konroConflictTimers[key]) { clearTimeout(konroConflictTimers[key]); delete konroConflictTimers[key]; }
-      var entry = cards[id];
-      var btn = entry && entry.el ? entry.el.querySelector('.konro-btn[data-num="' + num + '"]') : null;
-      if (btn && btn.classList.contains("konro-conflict")) {
-        btn.classList.remove("konro-conflict");
-        btn.textContent = String(num);
-        setKonroBtnAria(btn, num, konroState(id, num));
-      }
-    }
-
     /* ===================== 操作: コンロ番号タップ ===================== */
-    /* 未使用(スケルトン)の番号を他カードが白/赤で使用中の場合は競合警告(オレンジ)を出し、
-       同じボタンをもう一度タップ(KONRO_CONFLICT_ARM_MS 以内)することで引き継ぎ(奪取)を確定する。
-       確定時は現時点の使用元を再確認してから解放するため、警告表示中に別カードへ移った場合も安全 (#114)。
-       同一カード内の白→赤の自己遷移や誰も使っていない番号の取得は競合対象外で即時反映。 */
     function onKonroTap(id, num) {
-      var entry = cards[id];
-      var btn = entry && entry.el ? entry.el.querySelector('.konro-btn[data-num="' + num + '"]') : null;
       var cur = konroState(id, num);
       var next = KONRO_CYCLE[cur] || KONRO_DEFAULT;
-      var armed = !!(btn && btn.classList.contains("konro-conflict"));
-
-      if (cur === KONRO_DEFAULT && next !== KONRO_DEFAULT) {
-        var ownerId = findKonroOwner(num, id);
-        if (ownerId && !armed) {
-          // 1タップ目: 状態は変更せず競合警告のみ表示 (使用中の卓番を数字の代わりに提示)
-          if (btn) {
-            var ownerEntry = cards[ownerId];
-            var ownerTable = ownerEntry && ownerEntry.order && ownerEntry.order.table != null
-              ? String(ownerEntry.order.table) : "?";
-            btn.classList.add("konro-conflict");
-            btn.textContent = ownerTable;
-            btn.setAttribute("aria-label",
-              t("konro") + " " + num + " は卓" + ownerTable + "が使用中。もう一度タップで引き継ぎ");
-          }
-          var key = String(id) + ":" + String(num);
-          if (konroConflictTimers[key]) clearTimeout(konroConflictTimers[key]);
-          konroConflictTimers[key] = setTimeout(function () { disarmKonroConflict(id, num); }, KONRO_CONFLICT_ARM_MS);
-          return;
-        }
-        if (ownerId && armed) {
-          // 2タップ目: 引き継ぎ確定。使用元を解放してからこのカードへ付与
-          disarmKonroConflict(id, num);
-          setKonroState(ownerId, num, KONRO_DEFAULT);
-          saveKonro();
-          broadcastKonro(ownerId, num, KONRO_DEFAULT);
-          applyKonroToCard(ownerId);
-        }
-      }
-
-      disarmKonroConflict(id, num);                 // 警告表示中だった場合の後始末
       setKonroState(id, num, next);
       saveKonro();                                  // LS 即時保存 (正本)
-      broadcastKonro(id, num, next);                // 他タブへ同期
-      if (btn) {
-        btn.setAttribute("data-state", next);
-        setKonroBtnAria(btn, num, next);
+      broadcastKonro(id, num, next);                // 他タブへ同期 (同番号の他カードには影響しない)
+      // 該当カードの該当ボタンのみ更新 (他カードの同番号はロックしない = コンロ移動対応)
+      var entry = cards[id];
+      if (entry && entry.el) {
+        var btn = entry.el.querySelector('.konro-btn[data-num="' + num + '"]');
+        if (btn) {
+          btn.setAttribute("data-state", next);
+          setKonroBtnAria(btn, num, next);
+        }
       }
       updateKonroHud();
     }
@@ -2553,7 +2485,6 @@
       var btns = entry.el.querySelectorAll(".konro-btn");
       for (var i = 0; i < btns.length; i++) {
         var num = btns[i].getAttribute("data-num");
-        disarmKonroConflict(id, num);   // 状態変化を反映する前に残存する競合警告を解除 (#114)
         var st = konroState(id, num);
         btns[i].setAttribute("data-state", st);
         setKonroBtnAria(btns[i], num, st);
