@@ -90,6 +90,7 @@
     --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN",
                "Noto Sans CJK JP", "Noto Sans", "Yu Gothic", Meiryo, sans-serif;
     --font-num: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Consolas, monospace;
+    --font-brand: "Yuji Boku", var(--font-ui);   /* 店名ロゴ専用の筆文字 (下の@font-face) */
 
     /* ═══ 旧トークン互換エイリアス (既存CSSを新パレットへ自動追従) ═══ */
     --bg-base:         var(--bg-board);
@@ -103,6 +104,18 @@
     --on-alert: var(--on-u-alert);
     --sh:    var(--sh-card);
     --sh-sm: var(--sh-card);
+  }
+
+  /* ============================================================
+     店名ロゴ筆文字 — Yuji Boku (佑字 墨, SIL OFL 1.1)
+     「土鍋飯ぽか」の5字だけにサブセットしたwoff2 (約3.4KB) をbase64埋め込み。
+     外部参照ゼロ・完全オフラインの制約を保ったままロゴのみ筆文字化する。
+     ロゴ以外の文言には使わない (サブセット外の字はフォールバックに落ちるため)。 */
+  @font-face {
+    font-family: "Yuji Boku";
+    font-weight: 400;
+    font-style: normal;
+    src: url(data:font/woff2;base64,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) format("woff2");
   }
 
   * { box-sizing: border-box; }
@@ -145,9 +158,10 @@
     min-width: 0;
   }
   .brand .mark {
-    font-size: 20px;
-    font-weight: 900;
-    letter-spacing: 0.02em;
+    font-family: var(--font-brand);
+    font-size: 27px;                /* 筆文字はゴシックより字面が小さいため20px→27pxで存在感を維持 */
+    font-weight: 400;               /* 単一ウェイトの筆文字。合成ボールドは滲むので掛けない */
+    letter-spacing: 0.04em;
     white-space: nowrap;
     color: var(--on-chrome);
   }
@@ -1171,7 +1185,7 @@
     padding: 18px 16px;
     font-family: var(--font-ui);
   }
-  .slip .slip-store { font-size: 13px; font-weight: 700; text-align: center; letter-spacing: .1em; border-bottom: 1px dashed #999; padding-bottom: 6px; margin-bottom: 8px; }
+  .slip .slip-store { font-family: var(--font-brand); font-size: 18px; font-weight: 400; text-align: center; letter-spacing: .12em; border-bottom: 1px dashed #999; padding-bottom: 6px; margin-bottom: 8px; }   /* 店名はヘッダーと同じ筆文字ロゴ */
   .slip .slip-table { font-size: 38px; font-weight: 900; text-align: center; line-height: 1.1; }   /* 卓番が読めるサイズ */
   .slip .slip-meta { font-size: 13px; color: #444; text-align: center; margin: 4px 0 10px; font-variant-numeric: tabular-nums; }
   .slip ul { list-style: none; margin: 0; padding: 8px 0; border-top: 1px dashed #999; border-bottom: 1px dashed #999; }
