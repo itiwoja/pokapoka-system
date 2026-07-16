@@ -701,7 +701,8 @@
      状態サイクル: スケルトン(未使用/透明) → 白(使用中) → 赤(タイマー管理中) → スケルトン
      ・カードidに紐付け (注文 KDS_ORDERS とは別管理)。LS + BroadcastChannel で2台同期。
      ・経過警告の赤(大きいバッジ)と区別するため、コンロは小さめ・番号ラベル付き。
-     ・他カードで同番号が赤でもグローバルロックしない (コンロ移動対応)。 */
+     ・他カードが白/赤で使用中の番号を未使用(スケルトン)から取ろうとすると競合警告(オレンジ)を出し、
+       2段階タップ確認で引き継ぎ(奪取)する (#114)。同一カードでの白→赤の自己遷移は競合対象外。 */
   /* 既定は使用中(white/red)のみの細帯 (40px)、「割当」で全1-10を展開 = 電卓の壁を解消。
      10ボタンは常にDOM保持し skeleton をCSSで隠すだけ → 同期(setAttribute data-state)契約は不変。 */
   .konro {
@@ -796,6 +797,14 @@
   }
   .konro-btn[data-state="white"]::after { background: var(--bg-raise); }
   .konro-btn[data-state="red"]::after   { background: #ffffff; }
+  /* 競合警告: 他カードが使用中の番号を取ろうとした1タップ目 (#114)。
+     赤=経過警告専用を侵さないため --cta オレンジ。もう一度タップで引き継ぎ確定。 */
+  .konro-btn.konro-conflict {
+    background: var(--cta);
+    border-color: var(--cta);
+    color: #fff;
+    font-size: 12px;
+  }
 
   /* ============================================================ カード並べ替え (長押し起動 / 誤操作防止) */
   /* 長押し中フィードバック */
@@ -1013,6 +1022,7 @@
   @keyframes soonPulse { 0%,100%{ transform: scale(1); } 50%{ transform: scale(1.08); } }
 
   .res-actions { display: flex; gap: 8px; margin-top: 10px; align-items: stretch; }
+  /* 卓番はフリーテキストではなくダイヤルモーダルで選択するボタン (誤入力防止 #118) */
   .res-seat {
     flex: 1 1 auto; min-width: 0;
     min-height: 48px;
@@ -1023,8 +1033,12 @@
     color: var(--text-primary);
     font-family: var(--font-num);
     font-size: 18px; font-weight: 800;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .12s ease;
   }
-  .res-seat::placeholder { color: var(--text-secondary); font-weight: 600; font-family: var(--font-ui); }
+  .res-seat:hover { border-color: var(--type-new); background: var(--type-new-soft); }
+  .res-seat.placeholder { color: var(--text-secondary); font-weight: 600; font-family: var(--font-ui); }
   .res-go {
     flex: 0 0 auto;
     min-height: 48px;
@@ -1160,6 +1174,72 @@
     padding: 0; margin: -1px; overflow: hidden;
     clip: rect(0,0,0,0); white-space: nowrap; border: 0;
   }
+
+  /* ============================================================ 卓番ダイヤル (誤入力防止 #118) */
+  .seat-backdrop {
+    position: fixed; inset: 0; z-index: 120;
+    background: rgba(26,22,18,0.55);
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  body.seat-dial-open .seat-backdrop { display: flex; }
+  .seat-dial {
+    width: min(340px, 100%);
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: var(--r-card);
+    box-shadow: var(--sh-pop);
+    padding: 20px;
+  }
+  .seat-dial-display {
+    min-height: 56px;
+    margin-bottom: 14px;
+    border: 2px solid var(--type-new);
+    border-radius: var(--r-chip);
+    background: var(--bg-raise);
+    color: var(--text-primary);
+    font-family: var(--font-num);
+    font-size: 28px; font-weight: 900;
+    display: flex; align-items: center; justify-content: center;
+    letter-spacing: .04em;
+  }
+  .seat-dial-display.placeholder {
+    color: var(--text-secondary); font-size: 16px;
+    font-family: var(--font-ui); font-weight: 700;
+  }
+  /* ゾーン選択 (卓番号「A1」形式の英字部分) */
+  .seat-dial-zones {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .seat-dial-zone.active {
+    background: var(--type-new);
+    border-color: var(--type-new);
+    color: #fff;
+  }
+  .seat-dial-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .seat-dial-btn {
+    min-height: 56px;
+    border-radius: var(--r-chip);
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text-primary);
+    font-family: var(--font-num);
+    font-size: 22px; font-weight: 900;
+    cursor: pointer;
+    transition: background-color .1s ease, transform .1s ease;
+  }
+  .seat-dial-btn:hover { background: var(--bg-raise); }
+  .seat-dial-btn:active { transform: translateY(1px); }
+  .seat-dial-btn.seat-dial-clear,
+  .seat-dial-btn.seat-dial-back { font-size: 16px; color: var(--text-secondary); }
 
   /* ホールモード: 読取専用 (品目/コンロ/並べ替え/印刷を無効化。予約入力は許可) */
   body.mode-hall .item,
@@ -1341,6 +1421,38 @@
     </div>
   </div>
 
+  <!-- 卓番ダイヤル (フリーテキスト入力による誤入力を防ぐ #118)
+       卓番号は要件定義書の「A1」形式(ゾーン英字+番号)。ゾーンボタン(下記 .seat-dial-zone)は
+       デモデータ準拠のA/B/Cのみ。実店舗のフロア図確定後にボタンを増減して調整する想定。 -->
+  <div class="seat-backdrop" id="seatBackdrop">
+    <div class="seat-dial" id="seatDial" role="dialog" aria-modal="true" aria-label="卓番を選択">
+      <div class="seat-dial-display placeholder" id="seatDialDisplay" aria-live="polite">卓番</div>
+      <div class="seat-dial-zones" id="seatDialZones">
+        <button type="button" class="seat-dial-btn seat-dial-zone" data-zone="A">A</button>
+        <button type="button" class="seat-dial-btn seat-dial-zone" data-zone="B">B</button>
+        <button type="button" class="seat-dial-btn seat-dial-zone" data-zone="C">C</button>
+      </div>
+      <div class="seat-dial-grid" id="seatDialGrid">
+        <button type="button" class="seat-dial-btn" data-digit="1">1</button>
+        <button type="button" class="seat-dial-btn" data-digit="2">2</button>
+        <button type="button" class="seat-dial-btn" data-digit="3">3</button>
+        <button type="button" class="seat-dial-btn" data-digit="4">4</button>
+        <button type="button" class="seat-dial-btn" data-digit="5">5</button>
+        <button type="button" class="seat-dial-btn" data-digit="6">6</button>
+        <button type="button" class="seat-dial-btn" data-digit="7">7</button>
+        <button type="button" class="seat-dial-btn" data-digit="8">8</button>
+        <button type="button" class="seat-dial-btn" data-digit="9">9</button>
+        <button type="button" class="seat-dial-btn seat-dial-clear" id="seatDialClear" aria-label="全て消去">全消</button>
+        <button type="button" class="seat-dial-btn" data-digit="0">0</button>
+        <button type="button" class="seat-dial-btn seat-dial-back" id="seatDialBack" aria-label="1文字削除">⌫</button>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" id="seatDialCancel">キャンセル</button>
+        <button type="button" class="btn-save" id="seatDialOk">決定</button>
+      </div>
+    </div>
+  </div>
+
   <script>
   "use strict";
   (function () {
@@ -1388,6 +1500,7 @@
     /* コンロ状態サイクル: スケルトン(未使用) → 白(使用中) → 赤(タイマー管理中) → スケルトン */
     var KONRO_CYCLE = { "skeleton": "white", "white": "red", "red": "skeleton" };
     var KONRO_DEFAULT = "skeleton";
+    var KONRO_CONFLICT_ARM_MS = 3000; // コンロ競合(奪取)2段階確認の猶予 (#114)
 
     /* ---- ラベル (日本語固定) ---- */
     var LABELS = {
@@ -1422,9 +1535,14 @@
     /* ---- 状態 ---- */
     var doneMap = {};              // { orderId: [bool, bool, ...] }  完了状態(LocalStorage正本)
     var konroMap = {};             // { cardId: { "1":"white", "3":"red", ... } } コンロ状態(LocalStorage正本)
+    var konroConflictTimers = {};  // { "cardId:num": timeoutId } 競合警告の2段階確認タイマー (揮発性・非LS #114)
     var cards = {};                // { orderId: { el, order, level } } DOM キャッシュ
     var orderSeq = [];             // 配膳カードの表示順 (orderId 文字列の配列。LS正本)
     var stock = [];                // 予約ストック (当日分。LS正本) [{rid,time,adults,kids,name,menu:[{name,qty}],seenAt}]
+    var seatDrafts = {};            // { rid: "A3" } 卓番ダイヤルの下書き (再描画をまたいで保持・非LS・タブ限定 #118)
+    var seatDialRid = null;         // 卓番ダイヤルモーダルが編集中の予約rid (null=非表示)
+    var seatDialBuf = "";           // 卓番ダイヤルで入力中の値 (「A1」形式 = ゾーン英字+番号)
+    var SEAT_MAX_LEN = 6;           // 旧 res-seat の maxLength を踏襲
     var mode = "kitchen";          // 権限モード
     var autoPrint = false;         // 自動印刷トグル
     var view = "grid";             // #13 表示モード (grid / lane)
@@ -1472,6 +1590,14 @@
     var slipItemsEl = document.getElementById("slipItems");
     var slipPrintBtn = document.getElementById("slipPrint");
     var slipCloseBtn = document.getElementById("slipClose");
+    var seatBackdrop = document.getElementById("seatBackdrop");
+    var seatDialDisplayEl = document.getElementById("seatDialDisplay");
+    var seatDialDigitBtns = Array.prototype.slice.call(document.querySelectorAll(".seat-dial-btn[data-digit]"));
+    var seatDialZoneBtns = Array.prototype.slice.call(document.querySelectorAll(".seat-dial-zone[data-zone]"));
+    var seatDialClearBtn = document.getElementById("seatDialClear");
+    var seatDialBackBtn = document.getElementById("seatDialBack");
+    var seatDialOkBtn = document.getElementById("seatDialOk");
+    var seatDialCancelBtn = document.getElementById("seatDialCancel");
     var reorderBarEl = document.getElementById("reorderBar");
     var reorderBarMsg = reorderBarEl ? reorderBarEl.querySelector(".msg") : null;
     var reorderUndoBtn = document.getElementById("reorderUndo");
@@ -1791,7 +1917,7 @@
           } else if (msg.type === "konro") {
             setKonroState(msg.id, msg.num, msg.state);
             saveKonro();
-            applyKonroToCard(msg.id);   // 他カードの同番号には影響させない (グローバルロックなし)
+            applyKonroToCard(msg.id);   // このメッセージは msg.id 単体の状態同期。奪取時は解放/付与で2通発生する (#114)
             updateKonroHud();
           } else if (msg.type === "stock") {
             // 予約ストック全体を受信側へ反映 (当日分・小規模なので全置換でシンプルに)
@@ -2344,21 +2470,78 @@
       poll();                            // 配膳カードを復帰させる
     }
 
+    /* 番号 num を白/赤で使用中の他カードIDを返す (excludeId 自身は対象外。無ければ null) (#114) */
+    function findKonroOwner(num, excludeId) {
+      var numKey = String(num);
+      var exclude = String(excludeId);
+      for (var cid in konroMap) {
+        if (cid === exclude) continue;
+        var st = konroMap[cid] && konroMap[cid][numKey];
+        if (st === "white" || st === "red") return cid;
+      }
+      return null;
+    }
+
+    /* 競合警告の見た目/保留タイマーを解除し通常表示へ戻す (#114) */
+    function disarmKonroConflict(id, num) {
+      var key = String(id) + ":" + String(num);
+      if (konroConflictTimers[key]) { clearTimeout(konroConflictTimers[key]); delete konroConflictTimers[key]; }
+      var entry = cards[id];
+      var btn = entry && entry.el ? entry.el.querySelector('.konro-btn[data-num="' + num + '"]') : null;
+      if (btn && btn.classList.contains("konro-conflict")) {
+        btn.classList.remove("konro-conflict");
+        btn.textContent = String(num);
+        setKonroBtnAria(btn, num, konroState(id, num));
+      }
+    }
+
     /* ===================== 操作: コンロ番号タップ ===================== */
+    /* 未使用(スケルトン)の番号を他カードが白/赤で使用中の場合は競合警告(オレンジ)を出し、
+       同じボタンをもう一度タップ(KONRO_CONFLICT_ARM_MS 以内)することで引き継ぎ(奪取)を確定する。
+       確定時は現時点の使用元を再確認してから解放するため、警告表示中に別カードへ移った場合も安全 (#114)。
+       同一カード内の白→赤の自己遷移や誰も使っていない番号の取得は競合対象外で即時反映。 */
     function onKonroTap(id, num) {
+      var entry = cards[id];
+      var btn = entry && entry.el ? entry.el.querySelector('.konro-btn[data-num="' + num + '"]') : null;
       var cur = konroState(id, num);
       var next = KONRO_CYCLE[cur] || KONRO_DEFAULT;
+      var armed = !!(btn && btn.classList.contains("konro-conflict"));
+
+      if (cur === KONRO_DEFAULT && next !== KONRO_DEFAULT) {
+        var ownerId = findKonroOwner(num, id);
+        if (ownerId && !armed) {
+          // 1タップ目: 状態は変更せず競合警告のみ表示 (使用中の卓番を数字の代わりに提示)
+          if (btn) {
+            var ownerEntry = cards[ownerId];
+            var ownerTable = ownerEntry && ownerEntry.order && ownerEntry.order.table != null
+              ? String(ownerEntry.order.table) : "?";
+            btn.classList.add("konro-conflict");
+            btn.textContent = ownerTable;
+            btn.setAttribute("aria-label",
+              t("konro") + " " + num + " は卓" + ownerTable + "が使用中。もう一度タップで引き継ぎ");
+          }
+          var key = String(id) + ":" + String(num);
+          if (konroConflictTimers[key]) clearTimeout(konroConflictTimers[key]);
+          konroConflictTimers[key] = setTimeout(function () { disarmKonroConflict(id, num); }, KONRO_CONFLICT_ARM_MS);
+          return;
+        }
+        if (ownerId && armed) {
+          // 2タップ目: 引き継ぎ確定。使用元を解放してからこのカードへ付与
+          disarmKonroConflict(id, num);
+          setKonroState(ownerId, num, KONRO_DEFAULT);
+          saveKonro();
+          broadcastKonro(ownerId, num, KONRO_DEFAULT);
+          applyKonroToCard(ownerId);
+        }
+      }
+
+      disarmKonroConflict(id, num);                 // 警告表示中だった場合の後始末
       setKonroState(id, num, next);
       saveKonro();                                  // LS 即時保存 (正本)
-      broadcastKonro(id, num, next);                // 他タブへ同期 (同番号の他カードには影響しない)
-      // 該当カードの該当ボタンのみ更新 (他カードの同番号はロックしない = コンロ移動対応)
-      var entry = cards[id];
-      if (entry && entry.el) {
-        var btn = entry.el.querySelector('.konro-btn[data-num="' + num + '"]');
-        if (btn) {
-          btn.setAttribute("data-state", next);
-          setKonroBtnAria(btn, num, next);
-        }
+      broadcastKonro(id, num, next);                // 他タブへ同期
+      if (btn) {
+        btn.setAttribute("data-state", next);
+        setKonroBtnAria(btn, num, next);
       }
       updateKonroHud();
     }
@@ -2370,6 +2553,7 @@
       var btns = entry.el.querySelectorAll(".konro-btn");
       for (var i = 0; i < btns.length; i++) {
         var num = btns[i].getAttribute("data-num");
+        disarmKonroConflict(id, num);   // 状態変化を反映する前に残存する競合警告を解除 (#114)
         var st = konroState(id, num);
         btns[i].setAttribute("data-state", st);
         setKonroBtnAria(btns[i], num, st);
@@ -2546,21 +2730,7 @@
 
     function renderStock() {
       sortStock();
-      // 全再描画で卓番入力中のテキスト・フォーカスが失われないよう退避する (#66)
-      // (他端末の予約更新が BroadcastChannel で届くと入力途中でも再描画されるため)
-      var pendingSeats = {};
-      var focusRid = null, selStart = 0, selEnd = 0;
-      var oldCards = stockListEl.querySelectorAll(".res-card");
-      for (var i = 0; i < oldCards.length; i++) {
-        var orid = oldCards[i].getAttribute("data-rid");
-        var oinp = oldCards[i].querySelector(".res-seat");
-        if (!oinp) continue;
-        if (oinp.value) pendingSeats[orid] = oinp.value;
-        if (document.activeElement === oinp) {
-          focusRid = orid;
-          selStart = oinp.selectionStart; selEnd = oinp.selectionEnd;
-        }
-      }
+      // 卓番の下書きは seatDrafts (非DOM) が正本なので、全再描画してもボタン表示に自動で反映される (#118)
       stockCountEl.textContent = String(stock.length);
       stockListEl.innerHTML = "";
       if (!stock.length) {
@@ -2574,18 +2744,6 @@
       stock.forEach(function (r) {
         stockListEl.appendChild(buildResCard(r));
       });
-      // 退避した入力値・フォーカスを復元 (消えた予約カードの分は自然に破棄される)
-      var newCards = stockListEl.querySelectorAll(".res-card");
-      for (var j = 0; j < newCards.length; j++) {
-        var nrid = newCards[j].getAttribute("data-rid");
-        var ninp = newCards[j].querySelector(".res-seat");
-        if (!ninp) continue;
-        if (pendingSeats[nrid]) ninp.value = pendingSeats[nrid];
-        if (focusRid === nrid) {
-          ninp.focus();
-          try { ninp.setSelectionRange(selStart, selEnd); } catch (e) {}
-        }
-      }
       updateStockSoon();
     }
 
@@ -2628,17 +2786,20 @@
 
       var actions = document.createElement("div");
       actions.className = "res-actions";
-      var seat = document.createElement("input");
-      seat.type = "text";
+      // 卓番はフリーテキスト入力ではなくダイヤルモーダルで選択 (誤入力防止 #118)
+      var seat = document.createElement("button");
+      seat.type = "button";
       seat.className = "res-seat";
-      seat.setAttribute("placeholder", t("seatPh"));
+      var seatDraft = seatDrafts[String(r.rid)];
+      if (seatDraft) { seat.textContent = seatDraft; }
+      else { seat.textContent = t("seatPh"); seat.classList.add("placeholder"); }
       seat.setAttribute("aria-label", t("seatPh"));
-      seat.maxLength = 6;
+      seat.addEventListener("click", function () { openSeatDial(r.rid); });
       var go = document.createElement("button");
       go.type = "button";
       go.className = "res-go";
       go.textContent = t("go");
-      go.addEventListener("click", function () { moveResToMain(r.rid, seat.value); });
+      go.addEventListener("click", function () { moveResToMain(r.rid, seatDrafts[String(r.rid)]); });
       var del = document.createElement("button");
       del.type = "button";
       del.className = "res-del";
@@ -2684,6 +2845,7 @@
     function deleteRes(rid) {
       rid = String(rid);
       stock = stock.filter(function (r) { return String(r.rid) !== rid; });
+      delete seatDrafts[rid];
       saveStock();
       broadcastStock();
       renderStock();
@@ -2695,17 +2857,8 @@
       if (!r) return;
       seat = String(seat || "").trim();
       if (!seat) {
-        // 該当カードの入力にフォーカス。要注意はオレンジ(赤=警告専用を侵さない)＋
-        // 文言変更で色以外の手がかりも与える(WCAG 1.4.1)。
-        var card = stockListEl.querySelector('.res-card[data-rid="' + rid + '"]');
-        if (card) {
-          var inp = card.querySelector(".res-seat");
-          if (inp) {
-            inp.style.borderColor = "#C25200";              // = --cta オレンジ
-            inp.setAttribute("placeholder", "卓番を入力");   // 色に依存しない手がかり
-            inp.focus();
-          }
-        }
+        // 卓番未入力ならダイヤルモーダルを開いて入力を促す (#118)
+        openSeatDial(rid);
         return;
       }
       // 予約 → 進行中オーダー (type:"reserved" として配膳カード化)
@@ -2730,6 +2883,7 @@
       ensureOrderInBus(order);
       // ストックから除去
       stock = stock.filter(function (x) { return String(x.rid) !== String(rid); });
+      delete seatDrafts[String(rid)];
       saveStock();
       renderStock();
       broadcastMoveToMain(order);
@@ -2791,10 +2945,11 @@
     function closeModal() { document.body.classList.remove("modal-open"); }
 
     /* フォーカストラップ (#69): aria-modal はマークアップだけではフォーカスを閉じ込めないため、
-       Tab/Shift+Tab をダイアログ内で循環させる。予約追加モーダルとチビ伝プレビューに適用 */
+       Tab/Shift+Tab をダイアログ内で循環させる。予約追加モーダル・チビ伝プレビュー・卓番ダイヤルに適用 */
     function trapModalFocus(e) {
       if (e.key !== "Tab") return;
       var container = document.body.classList.contains("slip-open") ? slipBackdrop
+                    : document.body.classList.contains("seat-dial-open") ? seatBackdrop
                     : document.body.classList.contains("modal-open") ? modalBackdrop
                     : null;
       if (!container) return;
@@ -2863,6 +3018,68 @@
       document.body.classList.add("slip-open");
     }
     function closeSlip() { document.body.classList.remove("slip-open"); }
+
+    /* ===================== 卓番ダイヤル (フリーテキスト入力の誤入力防止 #118) ===================== */
+    /* 卓番号は要件定義書の「A1」形式(ゾーン英字+番号)。ゾーンタップで新規入力を開始し、
+       以降の番号タップは末尾に追記する。 */
+    function renderSeatDialDisplay() {
+      if (seatDialBuf) {
+        seatDialDisplayEl.textContent = seatDialBuf;
+        seatDialDisplayEl.classList.remove("placeholder");
+      } else {
+        seatDialDisplayEl.textContent = t("seatPh");
+        seatDialDisplayEl.classList.add("placeholder");
+      }
+      var zone = seatDialBuf.charAt(0).toUpperCase();
+      seatDialZoneBtns.forEach(function (b) {
+        b.classList.toggle("active", b.getAttribute("data-zone") === zone);
+      });
+    }
+
+    function openSeatDial(rid) {
+      seatDialRid = String(rid);
+      seatDialBuf = seatDrafts[seatDialRid] || "";
+      renderSeatDialDisplay();
+      document.body.classList.add("seat-dial-open");
+    }
+
+    function closeSeatDial() {
+      document.body.classList.remove("seat-dial-open");
+      seatDialRid = null;
+      seatDialBuf = "";
+    }
+
+    /* 卓番ボタンの表示をダイヤルの下書きへ同期 (カードが再描画されず残っている場合のみ) */
+    function refreshSeatButton(rid) {
+      var card = stockListEl.querySelector('.res-card[data-rid="' + rid + '"]');
+      var btn = card ? card.querySelector(".res-seat") : null;
+      if (!btn) return;
+      var draft = seatDrafts[String(rid)];
+      if (draft) { btn.textContent = draft; btn.classList.remove("placeholder"); }
+      else { btn.textContent = t("seatPh"); btn.classList.add("placeholder"); }
+    }
+
+    function commitSeatDial() {
+      if (!seatDialRid) { closeSeatDial(); return; }
+      var rid = seatDialRid;
+      var val = seatDialBuf.trim();
+      if (val) seatDrafts[rid] = val; else delete seatDrafts[rid];
+      closeSeatDial();
+      refreshSeatButton(rid);
+    }
+
+    /* ゾーンタップ = 新規入力開始 (「A1」の英字部分をセットし、番号部分はリセット) */
+    function onSeatZoneTap(zone) {
+      seatDialBuf = zone;
+      renderSeatDialDisplay();
+    }
+    function onSeatDigitTap(digit) {
+      if (seatDialBuf.length >= SEAT_MAX_LEN) return;
+      seatDialBuf += digit;
+      renderSeatDialDisplay();
+    }
+    function onSeatBackspace() { seatDialBuf = seatDialBuf.slice(0, -1); renderSeatDialDisplay(); }
+    function onSeatClear() { seatDialBuf = ""; renderSeatDialDisplay(); }
 
     function maybeAutoPrint(order) {
       if (!autoPrint) return;
@@ -3295,6 +3512,19 @@
       if (slipCloseBtn) slipCloseBtn.addEventListener("click", closeSlip);
       if (slipBackdrop) slipBackdrop.addEventListener("click", function (e) { if (e.target === slipBackdrop) closeSlip(); });
 
+      // 卓番ダイヤル (#118)
+      seatDialZoneBtns.forEach(function (b) {
+        b.addEventListener("click", function () { onSeatZoneTap(b.getAttribute("data-zone")); });
+      });
+      seatDialDigitBtns.forEach(function (b) {
+        b.addEventListener("click", function () { onSeatDigitTap(b.getAttribute("data-digit")); });
+      });
+      if (seatDialClearBtn) seatDialClearBtn.addEventListener("click", onSeatClear);
+      if (seatDialBackBtn) seatDialBackBtn.addEventListener("click", onSeatBackspace);
+      if (seatDialOkBtn) seatDialOkBtn.addEventListener("click", commitSeatDial);
+      if (seatDialCancelBtn) seatDialCancelBtn.addEventListener("click", closeSeatDial);
+      if (seatBackdrop) seatBackdrop.addEventListener("click", function (e) { if (e.target === seatBackdrop) closeSeatDial(); });
+
       // 並べ替え取消/確定 (取消ボタンは掴み中=取消 / 確定直後=戻す の2役 #62)
       if (reorderUndoBtn) reorderUndoBtn.addEventListener("click", function () {
         if (grab) cancelReorder();
@@ -3302,10 +3532,11 @@
       });
       if (reorderDoneBtn) reorderDoneBtn.addEventListener("click", commitReorder);
 
-      // ESC でモーダル/伝票を閉じる / 並べ替え取消
+      // ESC でモーダル/伝票/卓番ダイヤルを閉じる / 並べ替え取消
       document.addEventListener("keydown", function (e) {
         if (e.key !== "Escape") return;
         if (document.body.classList.contains("slip-open")) closeSlip();
+        else if (document.body.classList.contains("seat-dial-open")) closeSeatDial();
         else if (document.body.classList.contains("modal-open")) closeModal();
         else if (isReordering) cancelReorder();
         else if (reorderUndoSnapshot) hideReorderUndoBar();
