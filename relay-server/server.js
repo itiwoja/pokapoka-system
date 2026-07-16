@@ -31,11 +31,15 @@ var sync = require("./tablecheck-sync");
 var mock = require("./mock-tablecheck");
 
 var PORT = Number(process.env.PORT) || 8000;
-var POLL_MS = Math.max(Number(process.env.POLL_MS) || 30000, 30000); // 30秒未満は不可 (Sync v1 仕様)
 var API_KEY = process.env.TABLECHECK_API_KEY || "";
 var SHOP_ID = process.env.SHOP_ID || "";
 var BASE = process.env.TABLECHECK_BASE || "https://api.tablecheck.com";
 var IS_MOCK = process.env.MOCK === "1" || !API_KEY;
+// ポーリング間隔: LIVE は 30秒未満不可(Sync v1 仕様の下限)。MOCK はローカル完結なので
+// デモの手応えを良くするため下限を撤廃し、既定を短く(3秒)する。
+var POLL_MS = IS_MOCK
+  ? (Number(process.env.POLL_MS) || 3000)
+  : Math.max(Number(process.env.POLL_MS) || 30000, 30000);
 
 var ROOT = path.resolve(__dirname, "..");   // リポジトリ直下を配信ルートに
 var store = new Map();                       // rid -> 正規化済みレコード
@@ -107,26 +111,118 @@ var server = http.createServer(function (req, res) {
     return json(res, { mode: IS_MOCK ? "mock" : "live", pollMs: POLL_MS, store: store.size, lastPoll: lastPoll });
   }
 
+  // デモGUI (SaaS 操作コンソール) からの予約注入。MOCK モード限定 (LIVE では拒否)
+  if (url.pathname.indexOf("/api/mock/") === 0) {
+    if (!IS_MOCK) { res.writeHead(403); return res.end("mock endpoints are disabled in LIVE mode"); }
+    return handleMock(req, res, url);
+  }
+  if (url.pathname === "/demo") {               // 操作コンソールへのショートカット
+    return serveFile(res, path.join(__dirname, "tablecheck-demo.html"));
+  }
+
   // 静的配信 (リポジトリ直下)。"/" は KDS 本体へ
   var rel = url.pathname === "/" ? "/kds-a-grid.html" : decodeURIComponent(url.pathname);
   var file = path.normalize(path.join(ROOT, rel));
   if (!file.startsWith(ROOT)) { res.writeHead(403); return res.end("forbidden"); }
   fs.readFile(file, function (err, data) {
     if (err) { res.writeHead(404); return res.end("not found"); }
+    // KDS 本体は無改修のまま、配信時にだけ取込ブリッジを1行注入する。
+    // (ブリッジは KDS と別の BroadcastChannel オブジェクトを持つので、同一タブ内でも
+    //  KDS の受信ハンドラへ配信され、単一タブで自己完結して反映される)
+    if (path.basename(file) === "kds-a-grid.html") {
+      var html = data.toString("utf8");
+      if (html.indexOf("kds-bridge.js") < 0 && html.indexOf("</body>") >= 0) {
+        // 中継サーバー配信時は「外部がデータ源」なので KDS 内蔵の自動デモを抑止し、
+        // 予約中継ブリッジを注入する (どちらも </body> 直前。KDS 本体ファイルは無改修)。
+        html = html.replace("</body>",
+          '  <script>window.__KDS_SUPPRESS_DEMO__=true;</script>\n' +
+          '  <script src="/relay-server/kds-bridge.js"></script>\n</body>');
+        data = Buffer.from(html, "utf8");
+      }
+    }
     res.writeHead(200, { "Content-Type": MIME[path.extname(file)] || "application/octet-stream" });
     res.end(data);
   });
 });
 
-function json(res, obj) {
-  res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+function json(res, obj, code) {
+  res.writeHead(code || 200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   res.end(JSON.stringify(obj));
+}
+function serveFile(res, file) {
+  fs.readFile(file, function (err, data) {
+    if (err) { res.writeHead(404); return res.end("not found"); }
+    res.writeHead(200, { "Content-Type": MIME[path.extname(file)] || "application/octet-stream" });
+    res.end(data);
+  });
 }
 function log(msg) { console.log("[relay " + new Date().toLocaleTimeString("ja-JP") + "] " + msg); }
 
+/* ===================== デモGUI 予約注入 (MOCK 限定) ===================== */
+
+/** /api/mock/reservations[/{id}] を GET(一覧)/POST(作成)/PATCH(変更)/DELETE(キャンセル) で捌く */
+function handleMock(req, res, url) {
+  var parts = url.pathname.replace(/^\/api\/mock\//, "").split("/");
+  if (parts[0] !== "reservations") { res.writeHead(404); return res.end("not found"); }
+  var id = parts[1] ? decodeURIComponent(parts[1]) : null;
+
+  if (req.method === "GET" && !id) {                 // 上流(TableCheck相当)の生予約一覧
+    return json(res, mock.listReservations());
+  }
+  if (req.method === "POST" && !id) {                // 予約作成
+    return readJson(req, res, function (body) {
+      afterMutation(res, { ok: true, reservation: mock.createReservation(body || {}) });
+    });
+  }
+  if (req.method === "PATCH" && id) {                // 予約変更 (人数・メニュー等)
+    return readJson(req, res, function (body) {
+      var rec = mock.updateReservation(id, body || {});
+      if (!rec) return json(res, { ok: false, error: "no such reservation" }, 404);
+      afterMutation(res, { ok: true, reservation: rec });
+    });
+  }
+  if (req.method === "DELETE" && id) {               // 予約キャンセル
+    var rec = mock.cancelReservation(id);
+    if (!rec) return json(res, { ok: false, error: "no such reservation" }, 404);
+    return afterMutation(res, { ok: true, reservation: rec });
+  }
+  json(res, { ok: false, error: "method not allowed" }, 405);
+}
+
+/** 変更を即 KDS へ届けるため、応答前に1回ポーリングを回して store を最新化する */
+function afterMutation(res, payload) {
+  pollOnce().then(function () {
+    payload.stock = sync.toKdsStock(store, Date.now());
+    json(res, payload);
+  });
+}
+
+/** リクエストボディを JSON として読む (1MB 上限)。空ボディは {} を返す */
+function readJson(req, res, cb) {
+  var chunks = [], size = 0;
+  req.on("data", function (c) {
+    size += c.length;
+    if (size > 1e6) { req.destroy(); json(res, { ok: false, error: "payload too large" }, 413); }
+    else chunks.push(c);
+  });
+  req.on("end", function () {
+    var raw = Buffer.concat(chunks).toString("utf8").trim();
+    if (!raw) return cb({});
+    try { cb(JSON.parse(raw)); }
+    catch (e) { json(res, { ok: false, error: "invalid JSON" }, 400); }
+  });
+  req.on("error", function () { json(res, { ok: false, error: "read error" }, 400); });
+}
+
 server.listen(PORT, function () {
   log("起動: http://127.0.0.1:" + PORT + "  (モード: " + (IS_MOCK ? "MOCK — デモ予約を配信" : "LIVE — TableCheck へ " + POLL_MS / 1000 + "秒間隔で pull") + ")");
-  log("KDS: http://127.0.0.1:" + PORT + "/kds-a-grid.html  / 予約: /api/stock / 状態: /api/health");
+  if (IS_MOCK) {
+    // 既定はシードなし = デシャップは空の状態から始まり、コンソールで作った予約だけが出る。
+    // 開いてすぐ1件見せたいときは SEED=1 で起動する。
+    if (process.env.SEED === "1") { mock.seed(); log("SEED=1: デモ予約を1件シード"); }
+    log("デモ操作コンソール: http://127.0.0.1:" + PORT + "/demo  (ここで予約を作成→デシャップへ流れる)");
+  }
+  log("KDS(デシャップ): http://127.0.0.1:" + PORT + "/  / 予約: /api/stock / 状態: /api/health");
   pollOnce();
   setInterval(pollOnce, POLL_MS);
 });

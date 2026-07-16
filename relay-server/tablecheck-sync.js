@@ -24,11 +24,17 @@ function normalizeReservation(r) {
   var startAt = r.start_at || r.startAt || null;
   if (!startAt) return null;
 
-  // 人数: 内訳フィールドの有無が未確定。候補キーを順に探し、無ければ pax 合計を adults に寄せる
-  var adults = firstNum(r.adults, r.pax_adults, r.adult_pax);
-  var kids = firstNum(r.kids, r.pax_kids, r.child_pax, r.children);
+  // 人数: 確定スキーマ(2026-07-16)は pax_adult / pax_child。旧推測キーもフォールバックで残す。
+  // 無ければ pax 合計を adults に寄せる。シニア/乳児(pax_senior/pax_baby)は当面 KDS に出さない。
+  var adults = firstNum(r.adults, r.pax_adult, r.pax_adults, r.adult_pax);
+  var kids = firstNum(r.kids, r.pax_child, r.pax_kids, r.child_pax, r.children);
   var pax = firstNum(r.pax, r.party_size);
   if (adults == null && pax != null) { adults = pax - (kids || 0); }
+
+  // 予約者名: 確定スキーマは first_name / last_name (姓+名)。旧単一フィールドもフォールバック。
+  var fullName = [r.last_name, r.first_name]
+    .filter(function (s) { return typeof s === "string" && s.trim(); })
+    .join(" ").trim();
 
   return {
     rid: String(r.id),
@@ -36,10 +42,11 @@ function normalizeReservation(r) {
     adults: adults != null ? adults : 0,
     kids: kids != null ? kids : 0,
     name: firstStr(r.customer_name, r.guest_name, r.name,
-      r.customer && (r.customer.last_name || r.customer.name)) || "(名前なし)",
+      r.customer && (r.customer.last_name || r.customer.name), fullName) || "(名前なし)",
     status: normalizeStatus(r.status),
     menu: normalizeMenu(r),
-    memo: firstStr(r.memo, r.notes) || null,            // メニューが memo 経由の場合に備え保持
+    // メニューが memo/自由記述経由の場合に備え保持。確定スキーマの special_request も含める
+    memo: firstStr(r.memo, r.notes, r.special_request) || null,
     updatedAt: r.updated_at || r.updatedAt || null,
   };
 }
@@ -56,15 +63,19 @@ function normalizeStatus(s) {
 
 /**
  * メニュー明細の正規化。
- * 構造化フィールド (courses / menu_items 等 — 名称は要確認) があれば優先。
- * 無ければ memo の自由テキストから「品名 x数量」形式を試験的にパースする。
+ * 確定スキーマ(2026-07-16)では事前メニューは `orders[]` (ReservationOrder) で返り、
+ * 品名は多言語オブジェクト `menu_item_name_translations`({ja,en})、数量は `qty`。
+ * 旧推測フィールド(courses / menu_items 等)もフォールバックで受ける。
+ * どちらも無ければ memo の自由テキストから「品名 x数量」形式を試験的にパースする。
+ * ※ orders[] にはオプション/アレルギー専用フィールドが無い(special_request/questions 経由)ため
+ *   options/allergies は構造化フィールドがある旧形のときだけ拾う。
  */
 function normalizeMenu(r) {
-  var src = r.courses || r.menu_items || r.dining_experiences || r.items || null;
+  var src = r.orders || r.courses || r.menu_items || r.dining_experiences || r.items || null;
   if (Array.isArray(src) && src.length) {
     return src.map(function (m) {
       return {
-        name: firstStr(m.name, m.title, m.item_name) || "(不明)",
+        name: firstStr(m.name, m.title, m.item_name, transName(m.menu_item_name_translations)) || "(不明)",
         qty: firstNum(m.qty, m.quantity, m.count) || 1,
         options: firstStr(m.options, m.options_text, m.option) || null,
         allergies: firstStr(m.allergies, m.allergy, m.allergyInfo, m.allergies_text) || null,
@@ -72,6 +83,12 @@ function normalizeMenu(r) {
     });
   }
   return parseMenuFromMemo(firstStr(r.memo, r.notes) || "");
+}
+
+/** menu_item_name_translations({ja,en,...}) から表示名を選ぶ (日本語優先→英語→先頭の値) */
+function transName(t) {
+  if (!t || typeof t !== "object") return null;
+  return firstStr(t.ja, t.en) || firstStr.apply(null, Object.keys(t).map(function (k) { return t[k]; }));
 }
 
 /**
