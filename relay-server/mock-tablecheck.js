@@ -1,66 +1,189 @@
 /**
- * mock-tablecheck.js — TableCheck API のふるまいを模したデモデータ供給源
+ * mock-tablecheck.js — TableCheck API のふるまいを模した「可変」デモ供給源
  *
- * API 契約・スキーマ確定前に中継サーバー〜KDS の疎通を確認するためのモック。
- * server.js が MOCK=1 (または API キー未設定) のとき使う。
+ * API 契約・本番接続の前に、SaaS デモGUI (tablecheck-demo.html) から予約を
+ * 作成・変更・キャンセルし、中継サーバー〜KDS(デシャップ) までの疎通を
+ * 実際に手で操作して検証するためのモック。server.js が MOCK モードのとき使う。
  *
- * シナリオ: 起動から数回のポーリングで
- *   1回目: 予約2件 created (メニュー予約 + 席だけ予約 ※後者は KDS に出ない)
- *   2回目: 予約1件 created (memo 自由テキストでメニュー記載 → パーサ経由)
- *   3回目: 最初の予約が updated (人数変更) / 以降: 変化なし
- *   5回目: 2件目相当の予約が canceled → KDS から消える
+ * 供給する予約オブジェクトは、2026-07-16 の APIコンソール実機確認で確定した
+ * 「本物の TableCheck Reservation スキーマ」に合わせてある:
+ *   first_name / last_name, pax / pax_adult / pax_child,
+ *   orders[].menu_item_name_translations({ja,en}) / qty / price,
+ *   status(enum: confirmed / cancelled ...), special_request, start_at(ISO8601+TZ)
+ * → こうしておくと本番切替時は server.js の供給源を tcFetch 実データに
+ *    差し替えるだけで、正規化以降の経路は一切変えずに済む。
+ *   (出典: knowledge/2026-07-15_テーブルチェックAPI連携_データ定義・裏どり結果.md §6)
+ *
+ * Sync v1 の "deliver=true" ポーリングを模して、listSyncEvents() は
+ * 「前回取得以降に発生した未配信イベント」だけをドレイン方式で返す。
  */
 "use strict";
 
-var tick = 0;
+var DB = {};          // id -> Reservation (本物スキーマ)
+var queue = [];       // 未配信 SyncEvent の待ち行列 (deliver=true でドレインされる)
+var ridSeq = 0;       // mock 予約IDの連番 (kds-bridge が "mock-" を server 由来と判定する)
+var evSeq = 0;        // SyncEvent ID の連番
 
+/** ISO8601 (ローカルTZオフセット付き) — TableCheck の start_at 形式に合わせる */
+function isoLocal(d) {
+  var off = -d.getTimezoneOffset();
+  var sign = off >= 0 ? "+" : "-";
+  var p = function (n) { return (Math.abs(n) < 10 ? "0" : "") + Math.abs(n); };
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) +
+    "T" + p(d.getHours()) + ":" + p(d.getMinutes()) + ":00" +
+    sign + p(Math.floor(off / 60)) + p(off % 60);
+}
+
+/** 当日 h:m の start_at 文字列 */
 function today(h, m) {
   var d = new Date();
   d.setHours(h, m, 0, 0);
-  // ISO8601 (ローカルTZオフセット付き) — TableCheck の start_at 形式に合わせる
-  var off = -d.getTimezoneOffset();
-  var sign = off >= 0 ? "+" : "-";
-  var pad = function (n) { return (Math.abs(n) < 10 ? "0" : "") + Math.abs(n); };
-  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
-    "T" + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":00" +
-    sign + pad(Math.floor(off / 60)) + pad(off % 60);
+  return isoLocal(d);
 }
 
-var DB = {
-  "mock-r1": {
-    id: "mock-r1", status: "booked", start_at: today(18, 30),
-    customer_name: "山田", adults: 2, kids: 1,
-    courses: [
-      { name: "山城牛の焼きすき土鍋御膳", qty: 2, options: "ご飯大盛り", allergies: null },
-      { name: "うなぎの土鍋御膳", qty: 1, options: null, allergies: "えび" },
-    ],
-  },
-  "mock-r2": { // 席だけ予約 (メニュー無し) → KDS 予約ストックには出ないのが正
-    id: "mock-r2", status: "booked", start_at: today(19, 0),
-    customer_name: "比嘉", pax: 4, memo: null, courses: [],
-  },
-  "mock-r3": { // 事前メニューが memo 自由テキストの場合 (構造化フィールド無し)
-    id: "mock-r3", status: "booked", start_at: today(19, 30),
-    customer_name: "金城", pax: 3,
-    memo: "山城牛の焼きすき土鍋御膳 x2\n島豆腐の厚揚げ 1個",
-  },
-};
+function nextRid() { return "mock-r" + (++ridSeq); }
 
+function pushEvent(type, id) {
+  queue.push({
+    id: "ev-" + (++evSeq) + "-" + id,
+    event_type: type,                 // "created" | "updated"
+    syncable_type: "reservation",
+    syncable_id: id,
+    created_at: new Date().toISOString(),
+  });
+}
+
+/** pax の内訳から合計を補完 (未指定なら大人+子供+シニア+乳児) */
+function totalPax(r) {
+  var n = num(r.pax_adult) + num(r.pax_child) + num(r.pax_senior) + num(r.pax_baby);
+  return n > 0 ? n : num(r.pax);
+}
+function num(v) { return v == null || v === "" || isNaN(Number(v)) ? 0 : Number(v); }
+
+/**
+ * 予約を作成する。GUI からは本物スキーマ相当の部分オブジェクトが渡ってくる想定。
+ * @param {Object} input - { first_name,last_name,start_at,pax_adult,pax_child,orders[],special_request,status? }
+ * @returns {Object} 作成された Reservation
+ */
+function createReservation(input) {
+  input = input || {};
+  var id = input.id ? String(input.id) : nextRid();
+  var rec = {
+    id: id,
+    status: input.status || "confirmed",
+    start_at: input.start_at || today(19, 0),
+    first_name: input.first_name != null ? String(input.first_name) : "",
+    last_name: input.last_name != null ? String(input.last_name) : "",
+    pax_adult: num(input.pax_adult),
+    pax_child: num(input.pax_child),
+    pax_senior: num(input.pax_senior),
+    pax_baby: num(input.pax_baby),
+    orders: normalizeOrders(input.orders),
+    special_request: input.special_request != null ? String(input.special_request) : null,
+    updated_at: new Date().toISOString(),
+  };
+  rec.pax = totalPax(rec);
+  DB[id] = rec;
+  pushEvent("created", id);
+  return copy(rec);
+}
+
+/** orders 配列を本物の ReservationOrder 形へ整える (GUI からは {name,qty} で来ることも許容) */
+function normalizeOrders(orders) {
+  if (!Array.isArray(orders)) return [];
+  return orders.map(function (o, i) {
+    o = o || {};
+    var tr = o.menu_item_name_translations;
+    if (!tr && o.name) tr = { ja: String(o.name) };   // GUI 簡易入力(name) → 本物形へ
+    return {
+      id: o.id || ("ord-" + (i + 1)),
+      menu_item_name_translations: tr || { ja: "(無名)" },
+      qty: num(o.qty) || 1,
+      price: o.price != null ? num(o.price) : null,
+    };
+  }).filter(function (o) {
+    // 品名が空の行は落とす (席だけ予約 = orders 空 を意図せず作らないため空文字も除外)
+    var ja = o.menu_item_name_translations && o.menu_item_name_translations.ja;
+    return ja && String(ja).trim() && String(ja).trim() !== "(無名)";
+  });
+}
+
+/**
+ * 予約を更新する (人数変更・メニュー変更など)。存在しなければ null。
+ * @param {string} id
+ * @param {Object} patch - 上書きしたいフィールドのみ
+ */
+function updateReservation(id, patch) {
+  id = String(id);
+  if (!DB[id]) return null;
+  patch = patch || {};
+  var rec = DB[id];
+  ["first_name", "last_name", "start_at", "special_request", "status"].forEach(function (k) {
+    if (patch[k] !== undefined) rec[k] = patch[k];
+  });
+  ["pax_adult", "pax_child", "pax_senior", "pax_baby"].forEach(function (k) {
+    if (patch[k] !== undefined) rec[k] = num(patch[k]);
+  });
+  if (patch.orders !== undefined) rec.orders = normalizeOrders(patch.orders);
+  rec.pax = totalPax(rec);
+  rec.updated_at = new Date().toISOString();
+  pushEvent("updated", id);
+  return copy(rec);
+}
+
+/**
+ * 予約をキャンセルする (status=cancelled)。中継サーバーの purge で
+ * ストックから除去され、デシャップから消える。存在しなければ null。
+ */
+function cancelReservation(id) {
+  id = String(id);
+  if (!DB[id]) return null;
+  DB[id].status = "cancelled";
+  DB[id].updated_at = new Date().toISOString();
+  pushEvent("updated", id);
+  return copy(DB[id]);
+}
+
+/** Sync v1: 未配信イベントをドレインして返す (deliver=true 相当) */
 function listSyncEvents() {
-  tick++;
-  if (tick === 1) return [ev("created", "mock-r1"), ev("created", "mock-r2")];
-  if (tick === 2) return [ev("created", "mock-r3")];
-  if (tick === 3) { DB["mock-r1"].adults = 3; return [ev("updated", "mock-r1")]; }
-  if (tick === 5) { DB["mock-r3"].status = "canceled"; return [ev("updated", "mock-r3")]; }
-  return [];
+  var out = queue;
+  queue = [];
+  return out;
 }
 
+/** Booking v1: 予約1件の実データ取得。404 相当は null */
 function getReservation(id) {
-  return DB[id] ? JSON.parse(JSON.stringify(DB[id])) : null; // 404 相当は null
+  return DB[String(id)] ? copy(DB[String(id)]) : null;
 }
 
-function ev(type, id) {
-  return { id: "ev-" + tick + "-" + id, event_type: type, syncable_type: "reservation", syncable_id: id, created_at: new Date().toISOString() };
+/** 現在保持している全予約 (デモGUI の一覧表示用。API には無いが操作確認に便利) */
+function listReservations() {
+  return Object.keys(DB).map(function (k) { return copy(DB[k]); });
 }
 
-module.exports = { listSyncEvents: listSyncEvents, getReservation: getReservation };
+/** 起動時のシード。開いてすぐパイプラインが動いているのが見えるよう1件だけ入れる */
+function seed() {
+  if (Object.keys(DB).length) return;
+  createReservation({
+    last_name: "山田", first_name: "太郎",
+    start_at: today(18, 30),
+    pax_adult: 2, pax_child: 1,
+    orders: [
+      { name: "山城牛の焼きすき土鍋御膳", qty: 2 },
+      { name: "うなぎの土鍋御膳", qty: 1 },
+    ],
+    special_request: "アレルギー: えび (1名)",
+  });
+}
+
+function copy(o) { return JSON.parse(JSON.stringify(o)); }
+
+module.exports = {
+  createReservation: createReservation,
+  updateReservation: updateReservation,
+  cancelReservation: cancelReservation,
+  listSyncEvents: listSyncEvents,
+  getReservation: getReservation,
+  listReservations: listReservations,
+  seed: seed,
+};

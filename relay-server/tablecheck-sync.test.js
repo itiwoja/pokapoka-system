@@ -25,6 +25,29 @@ eq("内訳なし→paxをadultsへ", [recPax.adults, recPax.kids], [4, 0]);
 
 eq("start_at無しはnull", s.normalizeReservation({ id: "r3" }), null);
 
+// --- 確定スキーマ(2026-07-16 実機確認)での正規化 ---
+var recReal = s.normalizeReservation({
+  id: "tc-100", status: "confirmed", start_at: "2026-07-15T18:30:00+0900",
+  last_name: "金城", first_name: "花子",
+  pax: 3, pax_adult: 2, pax_child: 1,
+  orders: [
+    { id: "o1", menu_item_name_translations: { en: "Nabe Gozen", ja: "土鍋御膳" }, qty: 2, price: 3800 },
+    { id: "o2", menu_item_name_translations: { en: "Agedashi" }, qty: 1 },
+  ],
+  special_request: "アレルギー: えび",
+});
+eq("pax_adult/pax_child", [recReal.adults, recReal.kids], [2, 1]);
+eq("first+last→name", recReal.name, "金城 花子");
+eq("orders→menu(ja優先/en fallback)", recReal.menu,
+  [{ name: "土鍋御膳", qty: 2, options: null, allergies: null },
+   { name: "Agedashi", qty: 1, options: null, allergies: null }]);
+eq("special_request→memo", recReal.memo, "アレルギー: えび");
+eq("confirmedはアクティブ扱い(booked)", recReal.status, "booked");
+
+console.log("normalizeStatus(確定enum)");
+eq("cancelled(英綴り)検知", s.normalizeStatus("cancelled"), "canceled");
+eq("noshow検知", s.normalizeStatus("noshow"), "no_show");
+
 console.log("normalizeStatus");
 eq("canceled検知", s.normalizeStatus("Cancelled_by_user"), "canceled");
 eq("no_show検知", s.normalizeStatus("no-show"), "no_show");

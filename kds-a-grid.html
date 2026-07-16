@@ -1399,7 +1399,7 @@
       stockTitle:"予約ストック", stockEmpty:"本日の予約はありません",
       addReservation:"予約を追加", fldTime:"予約時間", fldAdults:"大人", fldKids:"0-2歳",
       fldName:"名前", fldMenu:"メニュー（個数）", cancel:"キャンセル", save:"登録",
-      print:"印刷", close:"閉じる", soon:"まもなく", seatPh:"卓番", go:"配膳へ", del:"削除",
+      print:"印刷", close:"閉じる", soon:"まもなく", seatPh:"卓番", go:"調理開始", del:"削除",
       reorderMsg:"並べ替え中（離して確定 / 取消で戻す）", undo:"取消", reorderDone:"確定",
       reorderCommitted:"並べ替えを確定しました", restore:"戻す",
       errTime:"予約時間を入力してください", errMenu:"メニューを1つ以上選択してください",
@@ -3319,7 +3319,10 @@
       poll();
 
       // 起動時 POS 未接続 (空) ならデモを自動シード (本番で POS が入れば上書きされ邪魔しない)
-      if (getOrders().length === 0) {
+      // ただし中継サーバー配信時 (window.__KDS_SUPPRESS_DEMO__) や ?nodemo=1 のときは
+      // 外部(予約中継/POS)がデータ源なので自動デモを抑止し、空の状態から始める。
+      var suppressDemo = window.__KDS_SUPPRESS_DEMO__ === true || /[?&]nodemo=1(\b|&|$)/.test(location.search);
+      if (getOrders().length === 0 && !suppressDemo) {
         injectDemo();
       }
 
