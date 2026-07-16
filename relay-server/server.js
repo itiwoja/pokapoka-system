@@ -7,8 +7,13 @@
  *   3. Booking v1 を起動時+15分間隔で全件取得し、当日storeを自己修復
  *   4. 初回全件取得が成功するまで /api/stock を503にしてKDSの誤削除を防止
  *
+ * 設定:
+ *   接続先は config/config.json (config.example.json をコピーして作る)。
+ *   優先順位は「既定値 < config/config.json < 環境変数」。
+ *   APIキーだけは設定ファイルに置かず TABLECHECK_API_KEY で渡す。
+ *
  * 起動:
- *   本番:   HOST=<店内LAN固定IP> TABLECHECK_API_KEY=xxx SHOP_ID=xxx node relay-server/server.js
+ *   本番:   TABLECHECK_API_KEY=xxx node relay-server/server.js   (host/shopId は config.json)
  *   モック: MOCK=1 node relay-server/server.js
  */
 "use strict";
@@ -18,6 +23,7 @@ var fs = require("fs");
 var path = require("path");
 var seats = require("./seat-occupancy");
 var booking = require("./booking-resync");
+var loadConfig = require("./load-config");
 
 var MIME = {
   ".html": "text/html; charset=utf-8",
@@ -199,26 +205,29 @@ function createRelay(options) {
 }
 
 function createConfig(env, options) {
-  var apiKey = env.TABLECHECK_API_KEY || "";
-  var isMock = env.MOCK === "1" || !apiKey;
-  var shopId = env.SHOP_ID || "";
-  var base = env.TABLECHECK_BASE || "https://api.tablecheck.com";
+  // 既定値 < config/config.json < 環境変数。ファイル由来の値も env と同じ経路を通るので、
+  // 下限クランプや HTTPS 検証はどちらから来た値にも等しく効く。
+  var src = loadConfig.mergeEnv(options.configFile || {}, env);
+  var apiKey = src.TABLECHECK_API_KEY || "";
+  var isMock = src.MOCK === "1" || !apiKey;
+  var shopId = src.SHOP_ID || "";
+  var base = src.TABLECHECK_BASE || "https://api.tablecheck.com";
   if (!isMock && !shopId) throw new Error("SHOP_ID is required in LIVE mode");
-  if (!isMock) validateTableCheckBase(base, env.TABLECHECK_ALLOW_CUSTOM_BASE === "1");
-  var pollMs = normalizeInterval(env.POLL_MS, isMock ? 3000 : 30000, isMock ? 100 : 30000);
-  var resyncMs = normalizeInterval(env.RESYNC_MS, 900000, isMock ? 1000 : 60000);
+  if (!isMock) validateTableCheckBase(base, src.TABLECHECK_ALLOW_CUSTOM_BASE === "1");
+  var pollMs = normalizeInterval(src.POLL_MS, isMock ? 3000 : 30000, isMock ? 100 : 30000);
+  var resyncMs = normalizeInterval(src.RESYNC_MS, 900000, isMock ? 1000 : 60000);
   return {
-    port: options.port !== undefined ? options.port : (Number(env.PORT) || 8000),
-    host: env.HOST || "127.0.0.1",
+    port: options.port !== undefined ? options.port : (Number(src.PORT) || 8000),
+    host: src.HOST || "127.0.0.1",
     apiKey: apiKey,
     shopId: shopId,
     base: base,
     isMock: isMock,
     pollMs: pollMs,
     resyncMs: resyncMs,
-    requestTimeoutMs: normalizeInterval(env.TABLECHECK_TIMEOUT_MS, 15000, 1000, 120000),
-    seatBeforeMin: Math.max(Number(env.SEAT_BEFORE_MIN) || 30, 0),
-    seatAfterMin: Math.max(Number(env.SEAT_AFTER_MIN) || 120, 0),
+    requestTimeoutMs: normalizeInterval(src.TABLECHECK_TIMEOUT_MS, 15000, 1000, 120000),
+    seatBeforeMin: Math.max(Number(src.SEAT_BEFORE_MIN) || 30, 0),
+    seatAfterMin: Math.max(Number(src.SEAT_AFTER_MIN) || 120, 0),
   };
 }
 
@@ -414,7 +423,19 @@ function defaultLog(message) {
   console.log("[relay " + new Date().toLocaleTimeString("ja-JP") + "] " + message);
 }
 
-if (require.main === module) createRelay().start();
+// 設定ファイルの読込は起動時のここだけ。createRelay() は値を注入で受け取るので、
+// テストは各自の config/config.json に影響されない。
+// 設定ミスは店舗やチーム間で起きる想定なので、スタックトレースではなく直す場所を示して止める。
+if (require.main === module) {
+  var configFile;
+  try { configFile = loadConfig.load(); }
+  catch (err) {
+    console.error("[relay] 設定エラー: " + err.message);
+    console.error("[relay] 雛形: config/config.example.json");
+    process.exit(1);
+  }
+  createRelay({ configFile: configFile }).start();
+}
 
 module.exports = {
   createRelay: createRelay,
