@@ -326,38 +326,6 @@
     color: var(--chrome);
     background: #fff;
   }
-  /* ヘッダー右側トグル (通知音) */
-  .head-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    min-height: 44px;
-    padding: 0 14px;
-    border: 1px solid var(--chrome-line);
-    border-radius: var(--r-pill);
-    background: var(--chrome-2);
-    color: var(--on-chrome-dim);
-    font-size: 13px;
-    font-weight: 800;
-    cursor: pointer;
-    flex: 0 0 auto;
-    transition: color .12s ease, background-color .12s ease, border-color .12s ease;
-  }
-  .head-toggle:hover { color: var(--on-chrome); background: #3A3F45; }
-  .head-toggle:active { transform: translateY(1px); }
-  .head-toggle .dot {
-    width: 10px; height: 10px; border-radius: 50%;
-    border: 2px solid var(--on-chrome-dim);
-    background: transparent;
-    transition: background-color .12s ease, border-color .12s ease;
-  }
-  .head-toggle[aria-pressed="true"] {
-    color: #fff;
-    background: var(--type-new);
-    border-color: var(--type-new);
-  }
-  .head-toggle[aria-pressed="true"] .dot { background: #fff; border-color: #fff; }
-
   :focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
 
   /* ============================================================ HUD (ヘッダー下サマリー帯)
@@ -1330,15 +1298,6 @@
       <button type="button" class="mode-btn" id="viewLane" data-view="lane" aria-pressed="false">レーン</button>
     </div>
 
-    <button type="button" class="head-toggle" id="newOrderSoundToggle" aria-pressed="false" aria-label="新着通知音のオン/オフ">
-      <span class="dot" aria-hidden="true"></span>
-      <span>新着音</span>
-    </button>
-    <button type="button" class="head-toggle" id="soundToggle" aria-pressed="true" aria-label="遅延アラート音のオン/オフ">
-      <span class="dot" aria-hidden="true"></span>
-      <span>アラート音</span>
-    </button>
-
   </header>
 
   <!-- HUD: 状況サマリー + コンロ全体ビュー -->
@@ -1507,9 +1466,7 @@
     var LS_MODE  = "kds_mode_v1";  // 権限モード (kitchen / hall)
     var LS_LOCKED = "kds_locked_v1"; // タイマーロック状態
     var LS_SERVE  = "kds_serve_log_v1"; // #29 提供時間ログ (KPIベースライン)
-    var LS_SOUND  = "kds_alert_sound_v1"; // #12 遅延アラート音トグル
     var LS_VIEW   = "kds_view_v1"; // #13 表示モード (grid / lane)
-    var LS_NEWORDER_SOUND = "kds_neworder_sound_v1"; // 新着通知音トグル
     var LS_DAY = "kds_day_v1";     // 最終利用日 (YYYY-MM-DD)。日付が変わったら当日データを破棄 (#63)
     var LS_DELETED = "kds_deleted_v1"; // 削除済み注文ID (POS再送で復活させないトゥームストーン #67)
     var BC_NAME = "kds_sync";      // BroadcastChannel 名
@@ -1517,13 +1474,8 @@
     var FEATURE_TIMER_LOCK   = false; // タイマーロック (停/再) ボタン
     var FEATURE_DELETE_ORDER = false; // 注文削除 (×) ボタン
     var WARN_MIN = 5, ALERT_MIN = 10;
-    var ALERT_REPEAT_MS = 60000;   // #12 10分超が続く間の再アラート間隔
     var SOON_MIN = 30;             // 予約30分前通知
 
-    // #12 遅延アラート状態
-    var alertSoundOn = true;       // 遅延アラート音のオン/オフ (LocalStorage 正本)
-    var lastAnyAlertBeepAt = 0;    // 直近に鳴らした時刻 (再アラート間隔の判定用)
-    var audioCtx = null;           // WebAudio コンテキスト (遅延ビープ / 新着チャイム共用)
     var LONGPRESS_MS = 800;        // 並べ替え長押し (0.8〜2秒の下限)
     var UNDO_TOAST_MS = 6000;      // 全完了カードの取り消し猶予
     var DELETE_ARM_MS = 3000;      // 削除ボタン2段階確認の猶予 (#68)
@@ -1578,9 +1530,6 @@
     var lockedTimers = {};         // タイマーロック状態 { orderId: true }
     var deletedIds = {};           // 削除済み注文ID { orderId: true } (LS正本 #67)
     var bc = null;
-    var newOrderSoundOn = false;   // 新着通知音トグル (#12 の遅延アラート音とは別トグル)
-    var newOrderSoundArmed = false; // 初期シード分は鳴らさない (起動1.5秒後に解禁)
-    var suppressChimeOnce = false; // 完了取り消しでカードが復帰した時に新着音を鳴らさない
     var undoInfo = null;           // { id, index } 全完了直後の取り消し対象
     var undoTimer = null;
     var khCells = [];              // HUD のコンロセル DOM
@@ -1591,7 +1540,6 @@
     var clockEl = document.getElementById("clock");
     var demoBtn = document.getElementById("demoBtn");
     var modeBtns = Array.prototype.slice.call(document.querySelectorAll(".mode-btn"));
-    var soundToggleEl = document.getElementById("soundToggle");
     var viewBtns = Array.prototype.slice.call(document.querySelectorAll("[data-view]"));
     var laneBodies = {
       rice:  document.getElementById("lane-rice"),
@@ -1629,7 +1577,6 @@
     var reorderBarMsg = reorderBarEl ? reorderBarEl.querySelector(".msg") : null;
     var reorderUndoBtn = document.getElementById("reorderUndo");
     var reorderDoneBtn = document.getElementById("reorderDone");
-    var newOrderSoundToggleEl = document.getElementById("newOrderSoundToggle");
     var hudActiveEl = document.getElementById("hudActive");
     var hudAlertEl = document.getElementById("hudAlert");
     var hudAlertWrap = document.getElementById("hudAlertWrap");
@@ -1851,13 +1798,12 @@
       try { localStorage.setItem(LS_STOCK, JSON.stringify(stock)); } catch (e) {}
     }
 
-    /* ----- 権限モード / 新着通知音 ----- */
+    /* ----- 権限モード ----- */
     function loadPrefs() {
       try {
         var m = localStorage.getItem(LS_MODE);
         mode = (m === "hall") ? "hall" : "kitchen";
-        newOrderSoundOn = localStorage.getItem(LS_NEWORDER_SOUND) === "1";
-      } catch (e) { mode = "kitchen"; newOrderSoundOn = false; }
+      } catch (e) { mode = "kitchen"; }
     }
 
     function konroState(cardId, num) {
@@ -2305,10 +2251,6 @@
       reflectEmpty();
       updateKonroHud();
       if (view === "lane") renderLanes();   // #13 レーン表示も同期
-
-      // 新着チャイム (初期シード分と完了取り消しの復帰では鳴らさない)
-      if (added.length && newOrderSoundArmed && !suppressChimeOnce) chimeNew();
-      suppressChimeOnce = false;
     }
 
     /* orderSeq を生存注文に同期。新着は末尾へ。並べ替え中は触らない */
@@ -2508,7 +2450,6 @@
       doneMap[id][idx] = false;          // 最後にタップした品目を未完了へ戻す
       saveDone();
       broadcastToggle(id, idx, false);
-      suppressChimeOnce = true;
       poll();                            // 配膳カードを復帰させる
     }
 
@@ -3176,64 +3117,10 @@
       if (mode === "hall" && grab) cancelReorder();
       applyMode();
     }
-    /* ===================== #12 遅延アラート音 (10分超) =====================
-       WebAudio でビープを生成（外部ファイル不要 = 単一HTML/オフライン要件）。
-       ブラウザは初回ユーザー操作までAudioContextを鳴らさないため、
-       操作解禁まで音は出ない（点滅は常に表示される）。 */
-    function loadSoundPref() {
-      try {
-        var v = localStorage.getItem(LS_SOUND);
-        alertSoundOn = (v === null) ? true : (v === "1");
-      } catch (e) { alertSoundOn = true; }
-    }
-    function applySoundToggle() {
-      if (soundToggleEl) soundToggleEl.setAttribute("aria-pressed", alertSoundOn ? "true" : "false");
-    }
-    function setAlertSound(on) {
-      alertSoundOn = !!on;
-      try { localStorage.setItem(LS_SOUND, alertSoundOn ? "1" : "0"); } catch (e) {}
-      applySoundToggle();
-      if (alertSoundOn) { ensureAudio(); playAlertBeep(); } // ON時にテスト音を鳴らす
-    }
-    function ensureAudio() {
-      try {
-        if (!audioCtx) {
-          var AC = window.AudioContext || window.webkitAudioContext;
-          if (!AC) return null;
-          audioCtx = new AC();
-        }
-        if (audioCtx.state === "suspended") audioCtx.resume();
-      } catch (e) { audioCtx = null; }
-      return audioCtx;
-    }
-    /* 遅延アラート音: 2音のビープ (ピポ)。ジェスチャ前は無音 */
-    function playAlertBeep() {
-      if (!alertSoundOn) return;
-      var ctx = ensureAudio();
-      if (!ctx || ctx.state !== "running") return;
-      var now = ctx.currentTime;
-      [[0, 880], [0.18, 1175]].forEach(function (pair) {
-        var offset = pair[0], freq = pair[1];
-        var osc = ctx.createOscillator();
-        var gain = ctx.createGain();
-        osc.type = "square";
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.0001, now + offset);
-        gain.gain.exponentialRampToValueAtTime(0.18, now + offset + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.14);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(now + offset);
-        osc.stop(now + offset + 0.16);
-      });
-    }
-
     /* ===================== タイマー (経過時間 / 時計) ===================== */
     function updateTimers() {
-      var newAlert = false;  // このtickで新たに10分超へ遷移したカードがあるか
-      var anyAlert = false;  // 現在10分超のカードが1枚でもあるか
       Object.keys(cards).forEach(function (id) {
-        if (lockedTimers[id]) return;   // タイマーロック中は更新しない (＝確認済み扱いで再アラートしない)
+        if (lockedTimers[id]) return;   // タイマーロック中は更新しない (＝確認済み扱い)
         var entry = cards[id];
         if (!entry || !entry.el) return;
         var min = elapsedMin(entry.order.start);
@@ -3247,18 +3134,9 @@
           else if (lvl === "alert") badge.classList.add("alert");
           entry.el.classList.remove("lvl-ok", "lvl-warn", "lvl-alert");
           entry.el.classList.add("lvl-" + lvl);
-          if (lvl === "alert") newAlert = true;   // #12 10分超へ遷移
           entry.level = lvl;
         }
-        if (lvl === "alert") anyAlert = true;
       });
-      // #12 音声アラート: 新たな超過で即・以降は継続中も一定間隔で再アラート
-      if (alertSoundOn) {
-        if (newAlert || (anyAlert && Date.now() - lastAnyAlertBeepAt >= ALERT_REPEAT_MS)) {
-          playAlertBeep();
-          lastAnyAlertBeepAt = Date.now();
-        }
-      }
       updateHud();
     }
 
@@ -3314,39 +3192,6 @@
     function ownerTable(cardId) {
       var e = cards[cardId];
       return (e && e.order && e.order.table != null) ? String(e.order.table) : "";
-    }
-
-    /* ===================== 新着通知音 (#12 の遅延アラート音とは別トグル。ensureAudio は共用) ===================== */
-    function playTone(ctx, freq, when, dur, vol) {
-      var osc = ctx.createOscillator();
-      var g = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      g.gain.setValueAtTime(0.0001, when);
-      g.gain.linearRampToValueAtTime(vol, when + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
-      osc.connect(g);
-      g.connect(ctx.destination);
-      osc.start(when);
-      osc.stop(when + dur + 0.05);
-    }
-    /* 新着 = 上昇2音 (10分超過のアラート音とは音の形でも聞き分けられるように) */
-    function chimeNew() {
-      if (!newOrderSoundOn) return;
-      var ctx = ensureAudio();
-      if (!ctx) return;
-      var t0 = ctx.currentTime;
-      playTone(ctx, 880, t0, 0.15, 0.2);
-      playTone(ctx, 1318.5, t0 + 0.12, 0.2, 0.2);
-    }
-    function applyNewOrderSound() {
-      newOrderSoundToggleEl.setAttribute("aria-pressed", newOrderSoundOn ? "true" : "false");
-    }
-    function setNewOrderSound(on) {
-      newOrderSoundOn = !!on;
-      try { localStorage.setItem(LS_NEWORDER_SOUND, newOrderSoundOn ? "1" : "0"); } catch (e) {}
-      applyNewOrderSound();
-      if (newOrderSoundOn) chimeNew();   // 動作確認を兼ねた短い音 (クリック直後なので確実に再生できる)
     }
 
     function updateClock() {
@@ -3471,25 +3316,18 @@
       loadLocked();
       loadStock();
       loadPrefs();
-      loadSoundPref();
       loadView();
       applyMode();
-      applySoundToggle();
       applyView();
-      applyNewOrderSound();
       buildKonroHud();
       initSync();
 
       modeBtns.forEach(function (b) {
         b.addEventListener("click", function () { setMode(b.getAttribute("data-mode")); });
       });
-      if (soundToggleEl) soundToggleEl.addEventListener("click", function () { setAlertSound(!alertSoundOn); });
-      if (newOrderSoundToggleEl) newOrderSoundToggleEl.addEventListener("click", function () { setNewOrderSound(!newOrderSoundOn); });
       viewBtns.forEach(function (b) {
         b.addEventListener("click", function () { setView(b.getAttribute("data-view")); });
       });
-      // 初回ユーザー操作でオーディオを解禁 (ブラウザの自動再生制限に対応)
-      document.addEventListener("pointerdown", ensureAudio, { once: true });
       if (undoToastBtn) undoToastBtn.addEventListener("click", undoComplete);
       if (demoBtn) demoBtn.addEventListener("click", injectDemo);
 
@@ -3548,9 +3386,6 @@
       if (getOrders().length === 0 && !suppressDemo) {
         injectDemo();
       }
-
-      // 初期シード分は通知音を抑止。以降の新着のみ対象にする
-      setTimeout(function () { newOrderSoundArmed = true; }, 1500);
 
       setInterval(poll, POLL_MS);
       setInterval(function () { updateTimers(); updateClock(); }, TICK_MS);
