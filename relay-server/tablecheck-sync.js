@@ -11,8 +11,33 @@
  */
 "use strict";
 
-/** 予約ステータスのうち、KDS 予約ストックに載せてよいもの */
-var ACTIVE_STATUSES = ["booked", "confirmed", "reserved", "pending"];
+/**
+ * TableCheck 確定 status enum (2026-07-16, Issue #74 で確定 / #117 で実装) → 内部 status。
+ * KDS 仕込み棚に載るのは内部 status が "booked" のものだけ (ACTIVE_STATUSES)。
+ *
+ *   accepted / confirmed          -> booked      (確定予約: 載る)
+ *   attended                      -> booked      (来店済: 暫定で載る。#74打合せで着席扱いに倒す場合は "seated" へ)
+ *   cancelled / rejected          -> canceled    (キャンセル・店側拒否: 外す ★rejected 取りこぼし修正)
+ *   noshow                        -> no_show     (ノーショー: 外す)
+ *   tentative/pending/request/    -> unconfirmed (確定前: 暫定デフォルトで外す。#74打合せで方針確定)
+ *     iou_prepay/iou_auth
+ */
+var STATUS_MAP = {
+  accepted: "booked",
+  confirmed: "booked",
+  attended: "booked",
+  cancelled: "canceled",
+  rejected: "canceled",
+  noshow: "no_show",
+  tentative: "unconfirmed",
+  pending: "unconfirmed",
+  request: "unconfirmed",
+  iou_prepay: "unconfirmed",
+  iou_auth: "unconfirmed",
+};
+
+/** 予約ステータスのうち、KDS 予約ストックに載せてよい内部 status (normalizeStatus の出力値ベース) */
+var ACTIVE_STATUSES = ["booked"];
 
 /**
  * TableCheck の予約オブジェクト → 中継サーバー内部レコードへ正規化。
@@ -51,10 +76,15 @@ function normalizeReservation(r) {
   };
 }
 
-/** TableCheck 側 status → 内部 status */
+/**
+ * TableCheck 側 status → 内部 status。
+ * 確定enum (STATUS_MAP) は完全一致で最優先。未知値 (旧データ・表記ゆれ) は
+ * 従来の正規表現フォールバックで拾い、既定は booked。
+ */
 function normalizeStatus(s) {
-  s = String(s || "").toLowerCase();
-  if (/cancel/.test(s)) return "canceled";
+  s = String(s || "").toLowerCase().trim();
+  if (Object.prototype.hasOwnProperty.call(STATUS_MAP, s)) return STATUS_MAP[s];
+  if (/cancel|reject/.test(s)) return "canceled";
   if (/no[_ -]?show/.test(s)) return "no_show";
   if (/seat|arriv/.test(s)) return "seated";
   if (/done|complete|finish/.test(s)) return "done";
@@ -188,4 +218,5 @@ module.exports = {
   purge: purge,
   toKdsStock: toKdsStock,
   ACTIVE_STATUSES: ACTIVE_STATUSES,
+  STATUS_MAP: STATUS_MAP,
 };
