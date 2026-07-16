@@ -175,49 +175,6 @@
   }
   .clock .sec { color: var(--on-chrome-dim); font-size: 20px; }
 
-  /* #29 提供時間ログ ボタン */
-  .serve-log-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    min-height: 44px;
-    padding: 0 14px;
-    border: 1px solid var(--chrome-line);
-    border-radius: var(--r-pill);
-    background: var(--chrome-2);
-    color: var(--on-chrome-dim);
-    font-size: 13px;
-    font-weight: 800;
-    cursor: pointer;
-    flex: 0 0 auto;
-    white-space: nowrap;
-    transition: color .12s ease, background-color .12s ease;
-  }
-  .serve-log-btn:hover { color: var(--on-chrome); background: #3A3F45; }
-  .serve-log-btn:active { transform: translateY(1px); }
-
-  /* #29 提供時間ログ トースト */
-  .serve-toast {
-    position: fixed;
-    left: 50%;
-    bottom: 28px;
-    transform: translate(-50%, 16px);
-    max-width: min(92vw, 560px);
-    padding: 12px 20px;
-    background: var(--text-primary);
-    color: var(--bg-base);
-    font-size: 15px;
-    font-weight: 700;
-    border: 1px solid var(--chrome-line);
-    border-radius: var(--r-card);
-    box-shadow: var(--sh-pop);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity .16s ease, transform .16s ease;
-    z-index: 60;
-  }
-  .serve-toast.show { opacity: 1; transform: translate(-50%, 0); }
-
   /* ===================== #13 レーン表示（カテゴリ別） ===================== */
   .lanes {
     display: none;   /* 既定はグリッド表示。body.view-lane で表示 */
@@ -1243,7 +1200,6 @@
   <header>
     <div class="brand">
       <span class="mark">土鍋飯<span class="accent">ぽかぽか</span></span>
-      <span class="sub" aria-hidden="true">Kitchen Display</span>
     </div>
     <time class="clock" id="clock" aria-label="現在時刻">--:--<span class="sec">:--</span></time>
 
@@ -1269,11 +1225,6 @@
     <button type="button" class="head-toggle" id="soundToggle" aria-pressed="true" aria-label="遅延アラート音のオン/オフ">
       <span class="dot" aria-hidden="true"></span>
       <span>アラート音</span>
-    </button>
-
-    <button type="button" class="serve-log-btn" id="serveLogBtn" aria-label="提供時間ログを表示しCSV出力">
-      <span aria-hidden="true">📊</span>
-      <span>提供時間ログ</span>
     </button>
 
   </header>
@@ -1324,9 +1275,6 @@
       <div class="stock-list" id="stockList" aria-live="polite"></div>
     </aside>
   </div>
-
-  <!-- #29 提供時間ログ トースト -->
-  <div class="serve-toast" id="serveToast" role="status" aria-live="polite"></div>
 
   <!-- カード並べ替えの取消バー -->
   <div class="reorder-bar" id="reorderBar" role="status">
@@ -2297,21 +2245,6 @@
       saveServeLog(log);
     }
 
-    /* 提供時間ログのトースト */
-    var serveToastTimer = 0;
-    function showServeToast(msg) {
-      var el = document.getElementById("serveToast");
-      if (!el) return;
-      el.textContent = msg;
-      el.classList.add("show");
-      clearTimeout(serveToastTimer);
-      serveToastTimer = setTimeout(function () { el.classList.remove("show"); }, 3600);
-    }
-    function serveLogSummaryText() {
-      var s = computeServeStats(loadServeLog());
-      if (!s.count) return "\u{1F4CA} 計測データはまだありません";
-      return "\u{1F4CA} 提供時間 " + s.count + "件 / 平均 " + formatServeDuration(s.avgServeMs) + "（CSV出力しました）";
-    }
     function downloadServeCSV() {
       var csv = "﻿" + serveToCSV(loadServeLog());
       var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -3350,13 +3283,6 @@
       document.addEventListener("pointerdown", ensureAudio, { once: true });
       if (undoToastBtn) undoToastBtn.addEventListener("click", undoComplete);
       if (demoBtn) demoBtn.addEventListener("click", injectDemo);
-
-      // #29 提供時間ログ: 件数・平均をトースト表示し CSV をエクスポート
-      var serveLogBtn = document.getElementById("serveLogBtn");
-      if (serveLogBtn) serveLogBtn.addEventListener("click", function () {
-        showServeToast(serveLogSummaryText());
-        if (loadServeLog().length > 0) downloadServeCSV();
-      });
 
       // 予約ストック操作
       if (stockAddBtn) stockAddBtn.addEventListener("click", openModal);
