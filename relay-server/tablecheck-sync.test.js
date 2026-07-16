@@ -42,6 +42,10 @@ eq("orders→menu(ja優先/en fallback)", recReal.menu,
   [{ name: "土鍋御膳", qty: 2, options: null, allergies: null },
    { name: "Agedashi", qty: 1, options: null, allergies: null }]);
 eq("special_request→memo", recReal.memo, "アレルギー: えび");
+eq("seat_types既定値", recReal.seatTypes, []);
+var recSeat = s.normalizeReservation({ id: "tc-seat", status: "confirmed", start_at: "2026-07-15T18:30:00+0900", table_number: " 5 ", seat_types: ["table", "counter"] });
+eq("確定卓番候補を保持", recSeat.table, "5");
+eq("seat_typesを保持", recSeat.seatTypes, ["table", "counter"]);
 eq("confirmedはアクティブ扱い(booked)", recReal.status, "booked");
 
 console.log("normalizeStatus(確定enum)");

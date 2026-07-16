@@ -69,6 +69,9 @@ function normalizeReservation(r) {
     name: firstStr(r.customer_name, r.guest_name, r.name,
       r.customer && (r.customer.last_name || r.customer.name), fullName) || "(名前なし)",
     status: normalizeStatus(r.status),
+    // 確定卓番のフィールド名はAPIコンソール確認待ち。seat_typesは希望席種であり卓番には使わない。
+    table: firstStr(r.table_number, r.table_no, r.table_name, r.table && (r.table.number || r.table.name)) || null,
+    seatTypes: normalizeSeatTypes(r.seat_types),
     menu: normalizeMenu(r),
     // メニューが memo/自由記述経由の場合に備え保持。確定スキーマの special_request も含める
     memo: firstStr(r.memo, r.notes, r.special_request) || null,
@@ -100,6 +103,12 @@ function normalizeStatus(s) {
  * ※ orders[] にはオプション/アレルギー専用フィールドが無い(special_request/questions 経由)ため
  *   options/allergies は構造化フィールドがある旧形のときだけ拾う。
  */
+function normalizeSeatTypes(value) {
+  if (Array.isArray(value)) return value.filter(function (v) { return typeof v === "string" && v.trim(); }).map(function (v) { return v.trim(); });
+  if (typeof value === "string") return value.split(",").map(function (v) { return v.trim(); }).filter(Boolean);
+  return [];
+}
+
 function normalizeMenu(r) {
   var src = r.orders || r.courses || r.menu_items || r.dining_experiences || r.items || null;
   if (Array.isArray(src) && src.length) {

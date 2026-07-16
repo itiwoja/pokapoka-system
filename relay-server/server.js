@@ -28,6 +28,7 @@ var http = require("http");
 var fs = require("fs");
 var path = require("path");
 var sync = require("./tablecheck-sync");
+var seats = require("./seat-occupancy");
 var mock = require("./mock-tablecheck");
 
 var PORT = Number(process.env.PORT) || 8000;
@@ -43,6 +44,9 @@ var POLL_MS = IS_MOCK
 
 var ROOT = path.resolve(__dirname, "..");   // リポジトリ直下を配信ルートに
 var store = new Map();                       // rid -> 正規化済みレコード
+var walkins = new Map();                     // table -> 当日walk-in占有 (メモリのみ)
+var SEAT_BEFORE_MIN = Math.max(Number(process.env.SEAT_BEFORE_MIN) || 30, 0);
+var SEAT_AFTER_MIN = Math.max(Number(process.env.SEAT_AFTER_MIN) || 120, 0);
 var lastPoll = { at: null, ok: null, events: 0, error: null };
 
 /* ===================== TableCheck ポーラー ===================== */
@@ -104,6 +108,9 @@ var MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; chars
 var server = http.createServer(function (req, res) {
   var url = new URL(req.url, "http://localhost");
 
+  if (url.pathname === "/api/seats" || url.pathname.indexOf("/api/seats/") === 0) {
+    return handleSeats(req, res, url);
+  }
   if (url.pathname === "/api/stock") {          // KDS 予約ストック形式で返す
     return json(res, sync.toKdsStock(store, Date.now()));
   }
@@ -144,6 +151,30 @@ var server = http.createServer(function (req, res) {
     res.end(data);
   });
 });
+
+function handleSeats(req, res, url) {
+  if (url.pathname === "/api/seats" && req.method === "GET") {
+    return json(res, seats.toOccupiedSeats(store, walkins, Date.now(), SEAT_BEFORE_MIN, SEAT_AFTER_MIN));
+  }
+  if (url.pathname === "/api/seats" && req.method === "POST") {
+    return readJson(req, res, function (body) {
+      var occupancy = seats.registerWalkin(walkins, body && body.table, Date.now());
+      if (!occupancy) return json(res, { ok: false, error: "table must be a non-empty string of at most 6 characters" }, 400);
+      json(res, occupancy, 201);
+    });
+  }
+  if (url.pathname.indexOf("/api/seats/") === 0 && req.method === "DELETE") {
+    var rawTable = url.pathname.slice("/api/seats/".length);
+    var table;
+    try { table = decodeURIComponent(rawTable); }
+    catch (e) { return json(res, { ok: false, error: "invalid table" }, 400); }
+    if (!seats.validateTable(table)) return json(res, { ok: false, error: "invalid table" }, 400);
+    if (!seats.releaseWalkin(walkins, table)) return json(res, { ok: false, error: "seat not found" }, 404);
+    res.writeHead(204, { "Cache-Control": "no-store" });
+    return res.end();
+  }
+  return json(res, { ok: false, error: "method not allowed" }, 405);
+}
 
 function json(res, obj, code) {
   res.writeHead(code || 200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
