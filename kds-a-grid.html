@@ -326,7 +326,7 @@
     color: var(--chrome);
     background: #fff;
   }
-  /* ヘッダー右側トグル (自動印刷 / 通知音) */
+  /* ヘッダー右側トグル (通知音) */
   .head-toggle {
     display: inline-flex;
     align-items: center;
@@ -1334,11 +1334,6 @@
       <span class="dot" aria-hidden="true"></span>
       <span>新着音</span>
     </button>
-    <button type="button" class="head-toggle" id="printToggle" aria-pressed="false" aria-label="新着注文で伝票プレビューを自動表示（印刷は手動）">
-      <span class="dot" aria-hidden="true"></span>
-      <span>自動プレビュー</span>
-    </button>
-
     <button type="button" class="head-toggle" id="soundToggle" aria-pressed="true" aria-label="遅延アラート音のオン/オフ">
       <span class="dot" aria-hidden="true"></span>
       <span>アラート音</span>
@@ -1510,7 +1505,6 @@
     var LS_ORDER = "kds_order_v1"; // 配膳カードの並び順 (orderId 配列)
     var LS_STOCK = "kds_stock_v1"; // 予約ストック (当日分のみ。永続DB無し)
     var LS_MODE  = "kds_mode_v1";  // 権限モード (kitchen / hall)
-    var LS_AUTOP = "kds_autoprint_v1"; // 自動印刷トグル
     var LS_LOCKED = "kds_locked_v1"; // タイマーロック状態
     var LS_SERVE  = "kds_serve_log_v1"; // #29 提供時間ログ (KPIベースライン)
     var LS_SOUND  = "kds_alert_sound_v1"; // #12 遅延アラート音トグル
@@ -1545,7 +1539,7 @@
       demo:"デモデータを投入",
       konro:"コンロ", konroSkeleton:"未使用", konroWhite:"使用中", konroRed:"タイマー管理中",
       konroLocked:"他卓使用中",
-      modeKitchen:"キッチン", modeHall:"ホール", autoPrint:"自動プレビュー",
+      modeKitchen:"キッチン", modeHall:"ホール",
       stockTitle:"予約ストック", stockEmpty:"本日の予約はありません",
       addReservation:"予約を追加", fldTime:"予約時間", fldAdults:"大人", fldKids:"0-2歳",
       fldName:"名前", fldMenu:"メニュー（個数）", cancel:"キャンセル", save:"登録",
@@ -1580,14 +1574,12 @@
     var seatDialBuf = "";           // 卓番ダイヤルで入力中の値 (「A1」形式 = ゾーン英字+番号)
     var SEAT_MAX_LEN = 6;           // 旧 res-seat の maxLength を踏襲
     var mode = "kitchen";          // 権限モード
-    var autoPrint = false;         // 自動印刷トグル
     var view = "grid";             // #13 表示モード (grid / lane)
     var lockedTimers = {};         // タイマーロック状態 { orderId: true }
     var deletedIds = {};           // 削除済み注文ID { orderId: true } (LS正本 #67)
     var bc = null;
-    var seededIds = {};            // 自動印刷の二重発火防止 (このタブで既にプレビュー済みの orderId)
     var newOrderSoundOn = false;   // 新着通知音トグル (#12 の遅延アラート音とは別トグル)
-    var newOrderSoundArmed = false; // 初期シード分は鳴らさない (autoPrintArmed と同じタイミングで解禁)
+    var newOrderSoundArmed = false; // 初期シード分は鳴らさない (起動1.5秒後に解禁)
     var suppressChimeOnce = false; // 完了取り消しでカードが復帰した時に新着音を鳴らさない
     var undoInfo = null;           // { id, index } 全完了直後の取り消し対象
     var undoTimer = null;
@@ -1599,7 +1591,6 @@
     var clockEl = document.getElementById("clock");
     var demoBtn = document.getElementById("demoBtn");
     var modeBtns = Array.prototype.slice.call(document.querySelectorAll(".mode-btn"));
-    var printToggleEl = document.getElementById("printToggle");
     var soundToggleEl = document.getElementById("soundToggle");
     var viewBtns = Array.prototype.slice.call(document.querySelectorAll("[data-view]"));
     var laneBodies = {
@@ -1860,14 +1851,13 @@
       try { localStorage.setItem(LS_STOCK, JSON.stringify(stock)); } catch (e) {}
     }
 
-    /* ----- 権限モード / 自動印刷 / 新着通知音 ----- */
+    /* ----- 権限モード / 新着通知音 ----- */
     function loadPrefs() {
       try {
         var m = localStorage.getItem(LS_MODE);
         mode = (m === "hall") ? "hall" : "kitchen";
-        autoPrint = localStorage.getItem(LS_AUTOP) === "1";
         newOrderSoundOn = localStorage.getItem(LS_NEWORDER_SOUND) === "1";
-      } catch (e) { mode = "kitchen"; autoPrint = false; newOrderSoundOn = false; }
+      } catch (e) { mode = "kitchen"; newOrderSoundOn = false; }
     }
 
     function konroState(cardId, num) {
@@ -2266,7 +2256,6 @@
           entry = cards[order.id] = { el: el, order: order, level: null, items: order.items,
             itemsSig: itemsSignature(order.items) };
           added.push(String(order.id));
-          maybeAutoPrint(order);     // 新着注文 -> 自動印刷 (トグルON時のみ)
         } else {
           entry.order = order;
           entry.items = order.items;
@@ -3105,16 +3094,6 @@
     function onSeatBackspace() { seatDialBuf = seatDialBuf.slice(0, -1); renderSeatDialDisplay(); }
     function onSeatClear() { seatDialBuf = ""; renderSeatDialDisplay(); }
 
-    function maybeAutoPrint(order) {
-      if (!autoPrint) return;
-      if (mode === "hall") return;
-      if (seededIds[order.id]) return;       // このタブで既出
-      seededIds[order.id] = true;
-      // 初回ロードの大量シードでプレビューが連発しないよう、1件だけ自動表示
-      if (autoPrintArmed) { openSlip(order); }
-    }
-    var autoPrintArmed = false;   // 初期シード後に解禁 (起動時の15件で連発させない)
-
     /* ===================== 注文削除 ===================== */
     /* 確認は削除ボタン側の2段階タップで済ませている (#68)。ここでは即実行する */
     function deleteOrder(id) {
@@ -3184,7 +3163,7 @@
       }
     }
 
-    /* ===================== 権限モード / 自動印刷トグル ===================== */
+    /* ===================== 権限モード ===================== */
     function applyMode() {
       document.body.classList.toggle("mode-hall", mode === "hall");
       modeBtns.forEach(function (b) {
@@ -3197,15 +3176,6 @@
       if (mode === "hall" && grab) cancelReorder();
       applyMode();
     }
-    function applyAutoPrint() {
-      printToggleEl.setAttribute("aria-pressed", autoPrint ? "true" : "false");
-    }
-    function setAutoPrint(on) {
-      autoPrint = !!on;
-      try { localStorage.setItem(LS_AUTOP, autoPrint ? "1" : "0"); } catch (e) {}
-      applyAutoPrint();
-    }
-
     /* ===================== #12 遅延アラート音 (10分超) =====================
        WebAudio でビープを生成（外部ファイル不要 = 単一HTML/オフライン要件）。
        ブラウザは初回ユーザー操作までAudioContextを鳴らさないため、
@@ -3504,7 +3474,6 @@
       loadSoundPref();
       loadView();
       applyMode();
-      applyAutoPrint();
       applySoundToggle();
       applyView();
       applyNewOrderSound();
@@ -3514,7 +3483,6 @@
       modeBtns.forEach(function (b) {
         b.addEventListener("click", function () { setMode(b.getAttribute("data-mode")); });
       });
-      if (printToggleEl) printToggleEl.addEventListener("click", function () { setAutoPrint(!autoPrint); });
       if (soundToggleEl) soundToggleEl.addEventListener("click", function () { setAlertSound(!alertSoundOn); });
       if (newOrderSoundToggleEl) newOrderSoundToggleEl.addEventListener("click", function () { setNewOrderSound(!newOrderSoundOn); });
       viewBtns.forEach(function (b) {
@@ -3581,8 +3549,8 @@
         injectDemo();
       }
 
-      // 初期シード分は自動印刷・通知音を抑止。以降の新着のみ対象にする
-      setTimeout(function () { autoPrintArmed = true; newOrderSoundArmed = true; }, 1500);
+      // 初期シード分は通知音を抑止。以降の新着のみ対象にする
+      setTimeout(function () { newOrderSoundArmed = true; }, 1500);
 
       setInterval(poll, POLL_MS);
       setInterval(function () { updateTimers(); updateClock(); }, TICK_MS);
