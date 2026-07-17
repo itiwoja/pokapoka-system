@@ -17,3 +17,6 @@ mockup/_screenshot*.png
 
 # 接続設定の実体(環境ごとに値が違う)。雛形の config.example.json だけ管理する
 config/config.json
+
+# 印刷スタイルのサーバー保存(環境ごとに違うためgit管理しない #144追補)
+config/slip-style.json

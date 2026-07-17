@@ -281,7 +281,7 @@
       </div>
       <div class="notice" id="notice" role="status" aria-live="polite"></div>
       <p class="hint">
-        設定はこの端末のブラウザに自動保存されます(localStorage)。他の端末と共有する場合はJSON書き出し→読み込みを使ってください。<br>
+        設定は自動保存され、サーバー経由で開いていれば**全端末のKDS印刷に反映**されます(どの端末で設定してもOK)。JSON書き出し/読み込みはバックアップ・別店舗への持ち出し用です。<br>
         「テスト印刷」は<code>window.print()</code>によるブラウザ印刷のプレビューです。実機プリンター(ESC/POS)は文字サイズが段階的(等倍/2倍)にしか変えられないため、実際の印字はここでの見た目と多少異なります。
       </p>
     </div>
@@ -384,6 +384,29 @@
   }
   function saveState() {
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
+    // サーバーにも保存(/api/slip-style)。KDSを開いている全端末(PC/iPad)に反映される。
+    // relay-server経由でなく file:// で開いているときは失敗するが、localStorageで動き続ける
+    if (typeof fetch === "function") {
+      fetch("/api/slip-style", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(state),
+      }).catch(function () {});
+    }
+  }
+
+  /* 起動時にサーバー保存のスタイルを取得。あればそちらを正として画面へ反映する */
+  function pullServerState() {
+    if (typeof fetch !== "function") return;
+    fetch("/api/slip-style").then(function (res) {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    }).then(function (st) {
+      if (!st || typeof st !== "object" || Object.keys(st).length === 0) return;
+      state = normalizeState(st);
+      try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
+      syncControls(); render();
+    }).catch(function () {});
   }
   function defaultSample() { return JSON.parse(JSON.stringify(SAMPLE_DEFAULT)); }
   function loadSample() {
@@ -638,6 +661,7 @@
   syncControls();
   renderItemRows();
   render();
+  pullServerState();
 })();
 </script>
 </body>

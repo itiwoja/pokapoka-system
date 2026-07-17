@@ -2981,6 +2981,24 @@
       } catch (e) { return null; }
     }
 
+    /* スタイルはサーバー保存(/api/slip-style)が正。どの端末で設定してもKDS全端末に反映される。
+       取得できたら localStorage キャッシュを更新し、伝票を開いていれば即座に再適用する */
+    function refreshSlipStyleFromServer() {
+      if (typeof fetch !== "function") return;
+      fetch("/api/slip-style").then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      }).then(function (st) {
+        if (!st || typeof st !== "object" || Object.keys(st).length === 0) return;
+        var next = JSON.stringify(st);
+        var prev = null;
+        try { prev = localStorage.getItem(LS_SLIP_STYLE); } catch (e) {}
+        if (next === prev) return;   // 変化なし (openSlip→refresh の再帰もここで止まる)
+        try { localStorage.setItem(LS_SLIP_STYLE, next); } catch (e) {}
+        if (document.body.classList.contains("slip-open") && currentSlipOrder) openSlip(currentSlipOrder);
+      }).catch(function () { /* サーバー未経由(file://等)ではlocalStorageのまま動く */ });
+    }
+
     /* 数量表記 (設定ツールの qtyFormat に対応。未設定は従来の「×N」) */
     function slipQtyText(st, qty) {
       if (!st) return "×" + qty;
@@ -3016,6 +3034,7 @@
 
     function openSlip(order) {
       currentSlipOrder = order;
+      refreshSlipStyleFromServer();   // 最新のサーバー保存スタイルを取得(到着したら開いたまま再適用)
       var st = loadSlipStyle();
       applySlipStyle(st);
       slipTableEl.textContent = order.table != null ? String(order.table) : "--";
@@ -3437,6 +3456,7 @@
       loadStock();
       loadPrefs();
       loadPrinterIp();
+      refreshSlipStyleFromServer();   // 印刷スタイルをサーバーから取得しておく (#144追補)
       loadView();
       applyMode();
       applyView();
