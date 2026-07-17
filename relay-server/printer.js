@@ -150,42 +150,6 @@ function buildEscPos(job) {
   return Buffer.concat(parts);
 }
 
-/* ===== ラスター(画像)印刷 (#144追補) =====
- * フォント・配置を自由にするため、ブラウザ側で伝票を1bitビットマップに描画して送る方式。
- * GS v 0 (ラスタービットイメージ) で印字する。テキスト方式(buildEscPos)は互換のため残す。 */
-var MAX_RASTER_WIDTH = 576;    // 80mm・203dpi の印字幅ドット数 (58mm は 384)
-var MAX_RASTER_HEIGHT = 2400;  // 約30cm。暴走ジョブでロール紙を使い切らないよう上限を切る
-
-/** body.raster {width,height,data(base64)} を検証。不正なら null (テキスト方式へフォールバック) */
-function normalizeRaster(body) {
-  var r = body && body.raster;
-  if (!r || typeof r !== "object") return null;
-  var width = Math.round(Number(r.width));
-  var height = Math.round(Number(r.height));
-  if (!width || !height || width < 8 || height < 1) return null;
-  if (width > MAX_RASTER_WIDTH || height > MAX_RASTER_HEIGHT) return null;
-  var bits;
-  try { bits = Buffer.from(String(r.data || ""), "base64"); } catch (e) { return null; }
-  var widthBytes = Math.ceil(width / 8);
-  if (bits.length !== widthBytes * height) return null;   // 寸法とデータ長の不一致は拒否
-  return { widthBytes: widthBytes, height: height, bits: bits };
-}
-
-/** ラスター1枚分のESC/POSバイト列 (GS v 0 + 紙送り + カット) */
-function buildRasterEscPos(raster, feedLines) {
-  var f = Math.min(8, Math.max(0, Math.round(Number(feedLines))));
-  if (isNaN(f)) f = 5;
-  var parts = [];
-  parts.push(ctl(ESC + "@"));
-  parts.push(ctl(GS + "\x76\x30\x00" +
-    String.fromCharCode(raster.widthBytes & 0xff) + String.fromCharCode((raster.widthBytes >> 8) & 0xff) +
-    String.fromCharCode(raster.height & 0xff) + String.fromCharCode((raster.height >> 8) & 0xff)));
-  parts.push(raster.bits);
-  if (f > 0) parts.push(ctl(ESC + "\x64" + String.fromCharCode(f)));
-  parts.push(ctl(ESC + "\x64\x02" + ESC + "\x6d"));      // カット
-  return Buffer.concat(parts);
-}
-
 /** 店内LAN想定のプライベートIPv4のみ許可する (印刷経由での外部/任意ホストへの送信を防ぐ) */
 function isPrivateIPv4(value) {
   var m = IPV4_RE.exec(String(value == null ? "" : value).trim());
@@ -228,9 +192,7 @@ function sendToPrinter(ip, buffer, options) {
 module.exports = {
   normalizeJob: normalizeJob,
   normalizeStyle: normalizeStyle,
-  normalizeRaster: normalizeRaster,
   buildEscPos: buildEscPos,
-  buildRasterEscPos: buildRasterEscPos,
   isPrivateIPv4: isPrivateIPv4,
   sendToPrinter: sendToPrinter,
   PRINT_PORT: PRINT_PORT,

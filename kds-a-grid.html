@@ -1418,8 +1418,6 @@
       <div class="slip-table" id="slipTable">--</div>
       <div class="slip-meta" id="slipMeta"></div>
       <ul id="slipItems"></ul>
-      <!-- ブロック型テンプレート(スタイル設定ツールv2)のときは印字画像そのものを表示 (#144追補) -->
-      <canvas id="slipCanvas" style="display:none; width:100%; height:auto;"></canvas>
       <div class="slip-actions">
         <button type="button" class="slip-print" id="slipPrint">印刷</button>
         <button type="button" class="slip-close" id="slipClose">閉じる</button>
@@ -1585,7 +1583,6 @@
     var slipMetaEl = document.getElementById("slipMeta");
     var slipItemsEl = document.getElementById("slipItems");
     var slipStoreEl = document.getElementById("slipStore");
-    var slipCanvasEl = document.getElementById("slipCanvas");
     var slipPageStyleEl = document.createElement("style");   // 用紙幅に応じた @page 上書き (スタイル設定 #144追補)
     document.head.appendChild(slipPageStyleEl);
     var slipPrintBtn = document.getElementById("slipPrint");
@@ -3035,127 +3032,9 @@
         "@media print { .slip { width: " + w + "mm !important; } }";
     }
 
-    /* ===== ブロック型テンプレートの描画 (#144追補) =====
-       slip-style-designer.html の drawSlip と同一ロジック(変更時は両方直すこと)。
-       伝票を画像として描き、プレビューにも実機印字(ラスター)にも同じ絵を使う */
-    var SLIP_FONTS = {
-      gothic: "'Yu Gothic','Hiragino Kaku Gothic ProN','Meiryo',sans-serif",
-      mincho: "'Yu Mincho','Hiragino Mincho ProN','MS Mincho',serif",
-      maru: "'HG丸ｺﾞｼｯｸM-PRO','Hiragino Maru Gothic ProN','Yu Gothic',sans-serif",
-      pop: "'HGP創英角ﾎﾟｯﾌﾟ体','Hiragino Maru Gothic ProN','Yu Gothic',sans-serif",
-      gyosho: "'HG行書体','Hiragino Mincho ProN','Yu Mincho',serif",
-      mono: "'MS Gothic','Osaka-Mono',monospace"
-    };
-    var SLIP_PAD = 12;
-
-    function slipTemplate() {
-      var st = loadSlipStyle();
-      return (st && Array.isArray(st.blocks) && st.blocks.length) ? st : null;
-    }
-    function slipQty(format, qty) {
-      if (format === "times") return "× " + qty;
-      if (format === "kosuu") return qty + " 個";
-      return "x " + qty;
-    }
-    function slipWrap(ctx, text, maxW) {
-      var lines = [], cur = "";
-      for (var i = 0; i < text.length; i++) {
-        var next = cur + text[i];
-        if (cur && ctx.measureText(next).width > maxW) { lines.push(cur); cur = text[i]; }
-        else cur = next;
-      }
-      if (cur || lines.length === 0) lines.push(cur);
-      return lines;
-    }
-    function slipDrawText(ctx, dots, block, text, y, measureOnly) {
-      ctx.font = (block.bold ? "700 " : "400 ") + block.size + "px " + (SLIP_FONTS[block.font] || SLIP_FONTS.gothic);
-      ctx.textAlign = block.align === "center" || block.align === "right" ? block.align : "left";
-      var x = block.align === "center" ? dots / 2 : (block.align === "right" ? dots - SLIP_PAD : SLIP_PAD);
-      var lineH = Math.round(block.size * 1.3);
-      slipWrap(ctx, text, dots - SLIP_PAD * 2).forEach(function (line) {
-        y += lineH;
-        if (!measureOnly) ctx.fillText(line, x, y - Math.round(block.size * 0.15));
-      });
-      return y;
-    }
-    function slipDraw(ctx, dots, tpl, order, measureOnly) {
-      var y = 8;
-      ctx.fillStyle = "#000";
-      ctx.textBaseline = "alphabetic";
-      tpl.blocks.forEach(function (block) {
-        if (block.type === "sep") {
-          y += 14;
-          if (!measureOnly) {
-            ctx.save();
-            ctx.lineWidth = 2;
-            if (block.style === "dashed") ctx.setLineDash([10, 7]);
-            ctx.beginPath(); ctx.moveTo(SLIP_PAD, y); ctx.lineTo(dots - SLIP_PAD, y); ctx.stroke();
-            if (block.style === "double") {
-              ctx.beginPath(); ctx.moveTo(SLIP_PAD, y + 5); ctx.lineTo(dots - SLIP_PAD, y + 5); ctx.stroke();
-              y += 5;
-            }
-            ctx.restore();
-          } else if (block.style === "double") y += 5;
-          y += 8;
-          return;
-        }
-        if (block.type === "store" || block.type === "text") {
-          if (block.text) y = slipDrawText(ctx, dots, block, block.text, y, measureOnly);
-          return;
-        }
-        if (block.type === "table") { y = slipDrawText(ctx, dots, block, "卓 " + (order.table || "--"), y, measureOnly); return; }
-        if (block.type === "meta") { y = slipDrawText(ctx, dots, block, "受付 " + (order.meta || ""), y, measureOnly); return; }
-        if (block.type === "items") {
-          var sub = { font: block.font, size: Math.max(14, Math.round(block.size * 0.7)), bold: false, align: block.align };
-          (order.items || []).forEach(function (it, idx) {
-            if (idx > 0) y += (block.gap || 0);
-            y = slipDrawText(ctx, dots, block, String(it.name || ""), y, measureOnly);
-            y = slipDrawText(ctx, dots, sub, "  " + slipQty(block.qtyFormat, Number(it.qty) || 1), y, measureOnly);
-            if (block.noteShow !== false && it.note) y = slipDrawText(ctx, dots, sub, "  ※ " + it.note, y, measureOnly);
-          });
-          return;
-        }
-      });
-      return y + 10;
-    }
-    /* テンプレート+注文を canvas に実寸で描く */
-    function slipRenderCanvas(cv, tpl, order) {
-      var dots = tpl.paperWidth === 58 ? 384 : 576;
-      var ctx = cv.getContext("2d");
-      cv.width = dots;
-      cv.height = 400;
-      var h = Math.min(2400, Math.ceil(slipDraw(ctx, dots, tpl, order, true)));
-      cv.height = h;
-      ctx = cv.getContext("2d");
-      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, dots, h);
-      slipDraw(ctx, dots, tpl, order, false);
-      return { dots: dots, height: h };
-    }
-    function slipOrderData(order) {
-      return {
-        table: order.table != null ? String(order.table) : "--",
-        meta: hhmm(order.start),
-        items: (order.items || []).map(function (it) {
-          return { name: it.name, qty: Number(it.qty) || 1, note: itemNotesText(it) };
-        }),
-      };
-    }
-
     function openSlip(order) {
       currentSlipOrder = order;
       refreshSlipStyleFromServer();   // 最新のサーバー保存スタイルを取得(到着したら開いたまま再適用)
-      var tpl = slipTemplate();
-      if (tpl) {
-        // ブロック型テンプレート: 印字画像そのものをプレビューに出す
-        slipStoreEl.style.display = slipTableEl.style.display = slipMetaEl.style.display = slipItemsEl.style.display = "none";
-        slipCanvasEl.style.display = "";
-        slipRenderCanvas(slipCanvasEl, tpl, slipOrderData(order));
-        slipPageStyleEl.textContent = "@page { size: " + (tpl.paperWidth === 58 ? 58 : 80) + "mm auto; margin: 0; }";
-        document.body.classList.add("slip-open");
-        return;
-      }
-      slipCanvasEl.style.display = "none";
-      slipStoreEl.style.display = slipTableEl.style.display = slipMetaEl.style.display = slipItemsEl.style.display = "";
       var st = loadSlipStyle();
       applySlipStyle(st);
       slipTableEl.textContent = order.table != null ? String(order.table) : "--";
@@ -3221,54 +3100,21 @@
       savePrinterIp();
     }
 
-    /* canvas → 1bit(MSB先頭)パック → base64 (設定ツールと同一ロジック) */
-    function slipCanvasToRaster(cv) {
-      var dots = cv.width, h = cv.height;
-      var img = cv.getContext("2d").getImageData(0, 0, dots, h).data;
-      var widthBytes = Math.ceil(dots / 8);
-      var out = new Uint8Array(widthBytes * h);
-      for (var y = 0; y < h; y++) {
-        for (var x = 0; x < dots; x++) {
-          var i = (y * dots + x) * 4;
-          var lum = img[i] * 0.299 + img[i + 1] * 0.587 + img[i + 2] * 0.114;
-          if (img[i + 3] > 64 && lum < 160) out[y * widthBytes + (x >> 3)] |= (0x80 >> (x & 7));
-        }
-      }
-      var bin = "";
-      for (var j = 0; j < out.length; j += 8192) {
-        bin += String.fromCharCode.apply(null, out.subarray(j, Math.min(j + 8192, out.length)));
-      }
-      return { width: dots, height: h, data: btoa(bin) };
-    }
-
     /** 印刷ボタン押下時の実処理。この端末がIPを知らなくてもサーバー保存IPで印字を試み、
         実機に送れない場合のみブラウザ印刷にフォールバックする */
     function printSlip() {
       var order = currentSlipOrder;
       if (!order) { window.print(); return; }
-      var job;
-      var tpl = slipTemplate();
-      if (tpl) {
-        // ブロック型テンプレート: プレビューと同じ絵をラスターで送る(フォント・配置そのまま印字 #144追補)
-        var cv = document.createElement("canvas");
-        slipRenderCanvas(cv, tpl, slipOrderData(order));
-        job = {
-          ip: printerIp || undefined,   // 未設定ならサーバー保存のIPに委ねる
-          raster: slipCanvasToRaster(cv),
-          feedLines: tpl.feedLines,
-        };
-      } else {
-        job = {
-          ip: printerIp || undefined,
-          table: slipTableEl.textContent,
-          meta: slipMetaEl.textContent,
-          store: slipStoreEl.textContent,
-          style: loadSlipStyle() || undefined,   // 旧テキスト型スタイル (relay側で許容値へ丸める)
-          items: (order.items || []).map(function (it) {
-            return { name: it.name, qty: Number(it.qty) || 1, note: itemNotesText(it) };
-          }),
-        };
-      }
+      var job = {
+        ip: printerIp || undefined,   // 未設定ならサーバー保存のIPに委ねる
+        table: slipTableEl.textContent,
+        meta: slipMetaEl.textContent,
+        store: slipStoreEl.textContent,
+        style: loadSlipStyle() || undefined,   // 設定ツールのスタイルを実機印字にも反映 (relay側で許容値へ丸める)
+        items: (order.items || []).map(function (it) {
+          return { name: it.name, qty: Number(it.qty) || 1, note: itemNotesText(it) };
+        }),
+      };
       fetch("/api/print", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

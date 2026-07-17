@@ -133,21 +133,20 @@ WiFi越しに初めて繋ぐときは、設定以外の次の点も確認する(
 | `POST /api/mock/reservations` | (MOCK限定) 予約作成。body は TableCheck Reservation 形 |
 | `PATCH /api/mock/reservations/{id}` | (MOCK限定) 予約変更(人数・メニュー等) |
 | `DELETE /api/mock/reservations/{id}` | (MOCK限定) 予約キャンセル(status=cancelled) |
-| `POST /api/print` | チビ伝を実機プリンターへ印字(#144)。`raster:{width,height,data(base64 1bit)}` があれば画像(GS v 0)で印字(フォント・配置自由のWYSIWYG経路)。無ければ従来のテキスト方式 `{table, meta, store?, style?, items:[...]}`。`ip` 未指定はサーバー保存IP、`style` 未指定はサーバー保存スタイルを使う。`ip` は店内LAN想定のプライベートIPv4のみ許可 |
+| `POST /api/print` | チビ伝を実機プリンターへ印字(#144)。body は `{ip, table, meta, store?, style?, items:[{name,qty,note}]}`。`style` 未指定時はサーバー保存のスタイル(下記)を使う。`ip` は店内LAN想定のプライベートIPv4のみ許可(10/8・172.16-31/12・192.168/16)。ポート9100固定のESC/POS RAWへ生ソケットで送信 |
 | `GET /api/slip-style` | サーバー保存の印刷スタイルを返す(未設定は `{}`) |
-| `POST /api/slip-style` | 印刷スタイルを保存し `config/slip-style.json` に永続化(git管理外)。ブロック型テンプレート(`blocks[]`)はそのまま、旧テキスト型は許容値へ丸める。どの端末で設定しても全端末のKDS印刷に反映される |
+| `POST /api/slip-style` | 印刷スタイルを保存。不正値は許容値へ丸め、`config/slip-style.json` に永続化(git管理外)。どの端末で設定しても全端末のKDS印刷に反映される |
 | `GET /qr` | iPad等からKDS/スタイル設定を開くための接続QRを表示するページ。エンコードするURLは待ち受け中のLAN IPから自動生成 |
 
 ### チビ伝の印刷スタイル設定(slip-style-designer.html)
 
-`http://<サーバー>:<port>/slip-style-designer.html` で伝票のレイアウトをブロック単位で設計できる
-(店名・卓番・受付時刻・品目・罫線・自由テキストをドラッグで並べ替え、フォント6種・px単位のサイズ・
-太字・左右中央寄せを指定)。**伝票はブラウザで画像に描画してラスター(GS v 0)で印字する**ため、
-プレビュー=印字結果がそのまま一致し、感熱プリンター内蔵フォントの制約(等倍/2倍)を受けない。
+`http://<サーバー>:<port>/slip-style-designer.html` で伝票の見た目(用紙幅・文字サイズ・太字・
+数量表記・罫線・店名/備考の表示など)をプレビューを見ながら設定できる。
 設定は **サーバーに保存**(`POST /api/slip-style` → `config/slip-style.json`)され、
 **どの端末で設定しても、KDSを開いている全端末(PC/iPad)の伝票プレビューと実機印刷に反映される**。
 各端末の localStorage はオフライン用キャッシュで、KDS起動時と伝票を開くたびにサーバーから更新される。
-注意: 描画は印刷する端末のブラウザで行うため、端末に無いフォントは近い書体で代替される。
+ESC/POS は文字サイズが段階的(等倍/2倍)のため、実機印字は近似になる:
+卓番は 40px 以上で2倍角、品名は 22px 以上で横2倍、それ未満は等倍。
 
 ### チビ伝の実機印刷(#144)
 

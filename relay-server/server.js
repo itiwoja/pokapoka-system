@@ -473,19 +473,7 @@ function createSlipStyleStore(filePath, printerModule, log) {
   return {
     get: function () { return current || {}; },
     set: function (body) {
-      // ブロック型テンプレート(フォーマッター v2 のレイアウトJSON)はそのまま保存する。
-      // 描画はブラウザ側なのでサーバーは形だけ検査(配列・サイズ上限)し、旧テキスト型は従来どおり丸める
-      if (body && Array.isArray(body.blocks)) {
-        var raw = JSON.stringify(body);
-        if (raw.length <= 50000) {
-          current = JSON.parse(raw);
-        } else {
-          log("slip-style: テンプレートが大きすぎるため保存しません (" + raw.length + " bytes)");
-          return current || {};
-        }
-      } else {
-        current = printerModule.normalizeStyle(body);
-      }
+      current = printerModule.normalizeStyle(body);
       try { fs.writeFileSync(filePath, JSON.stringify(current, null, 2) + "\n", "utf8"); }
       catch (err) { log("slip-style の保存に失敗(メモリ上は反映済み): " + err.message); }
       return current;
@@ -518,19 +506,12 @@ function handlePrint(req, res, printerModule, slipStyle, printerIp) {
     if (!printerModule.isPrivateIPv4(ip)) {
       return json(res, { ok: false, error: "printer ip must be a private LAN IPv4 address" }, 400);
     }
+    // style未指定はサーバー保存のスタイル(/api/slip-style)を使う。どの端末から印刷しても同じ見た目になる
+    if (body && body.style == null && slipStyle) body.style = slipStyle.get();
+    var job = printerModule.normalizeJob(body);
     var buffer;
-    // ラスター(画像)が付いていればそれを印字。フォント・配置自由のWYSIWYG経路 (#144追補)
-    var raster = printerModule.normalizeRaster && printerModule.normalizeRaster(body);
-    if (raster) {
-      try { buffer = printerModule.buildRasterEscPos(raster, body.feedLines); }
-      catch (err) { return json(res, { ok: false, error: "failed to build raster job: " + err.message }, 500); }
-    } else {
-      // 従来のテキスト方式。style未指定はサーバー保存のスタイル(/api/slip-style)を使う
-      if (body && body.style == null && slipStyle) body.style = slipStyle.get();
-      var job = printerModule.normalizeJob(body);
-      try { buffer = printerModule.buildEscPos(job); }
-      catch (err) { return json(res, { ok: false, error: "failed to build print job: " + err.message }, 500); }
-    }
+    try { buffer = printerModule.buildEscPos(job); }
+    catch (err) { return json(res, { ok: false, error: "failed to build print job: " + err.message }, 500); }
     printerModule.sendToPrinter(ip, buffer).then(function () {
       json(res, { ok: true });
     }).catch(function (err) {
