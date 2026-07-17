@@ -96,22 +96,20 @@
     background: repeating-linear-gradient(45deg, #e9e4da, #e9e4da 8px, #e2ddd2 8px, #e2ddd2 16px);
     border-radius: 8px; padding: 20px 0; display: flex; justify-content: center;
   }
+  /* プレビューは実機(ESC/POS感熱)の印字を再現する:
+     等幅フォント・「卓 12」表記・数量は品名の下の行・罫線は実機と同じ文字数。
+     ここで見えるものがそのまま紙に出る(等倍/2倍の2段階しかないのも実機仕様) */
   #slip {
     background: #fff; color: #111;
     box-shadow: 0 2px 10px rgba(0,0,0,.18);
-    padding: 14px 12px 22px;
+    padding: 14px 10px;
+    font-family: "MS Gothic", "Osaka-Mono", "Courier New", monospace;
+    font-size: 14px; line-height: 1.4;
+    white-space: pre-wrap; overflow: hidden;
   }
-  #slip .s-store { text-align: center; border-bottom: 1px dashed #999; padding-bottom: 6px; margin-bottom: 8px; }
-  #slip .s-table { text-align: center; line-height: 1.15; font-weight: 900; }
-  #slip .s-meta { text-align: center; color: #444; margin: 4px 0 10px; }
-  #slip .s-sep-top, #slip .s-sep-bottom { border-top: 1px dashed #999; }
-  #slip .s-sep-top.solid, #slip .s-sep-bottom.solid { border-top-style: solid; }
-  #slip .s-sep-top.none, #slip .s-sep-bottom.none { border-top: none; }
-  #slip ul { list-style: none; margin: 0; padding: 6px 0; }
-  #slip li { padding: 4px 0; }
-  #slip li .i-name { font-weight: 700; }
-  #slip li .i-qty { color: #333; }
-  #slip li .i-note { color: #555; }
+  #slip .r-center { text-align: center; }
+  #slip .r-sep { white-space: nowrap; overflow: hidden; }
+  #slip .r-item-name { display: inline-block; transform-origin: left center; }
   .hint { font-size: 11px; color: var(--sub); margin-top: 10px; line-height: 1.6; }
 
   @media print {
@@ -131,7 +129,7 @@
 <div class="layout">
   <div class="controls">
     <h1>チビ伝 印刷スタイル設定</h1>
-    <p class="lead">右側のプレビューを見ながら、伝票の見た目を直感的に調整できます。設定はブラウザに自動保存され、JSONとして書き出し・読み込みもできます。</p>
+    <p class="lead">右側のプレビューは<strong>実機プリンターの印字そのまま</strong>です。設定は自動でサーバーに保存され、全端末のKDS印刷に反映されます。</p>
 
     <div class="panel">
       <h2>用紙</h2>
@@ -150,32 +148,22 @@
     </div>
 
     <div class="panel">
-      <h2>店名</h2>
+      <h2>店名・受付時刻</h2>
       <div class="row">
-        <label class="toggle"><input type="checkbox" data-key="storeShow"> 表示する</label>
+        <label class="toggle"><input type="checkbox" data-key="storeShow"> 店名を印字する</label>
       </div>
       <div class="row">
-        <label class="name">文字サイズ</label>
-        <div class="seg" data-group="storeSize">
-          <button data-val="14">小</button>
-          <button data-val="18">中</button>
-          <button data-val="24">大</button>
-        </div>
-      </div>
-      <div class="row">
-        <label class="toggle"><input type="checkbox" data-key="storeWide"> 文字間隔を広げる</label>
+        <label class="toggle"><input type="checkbox" data-key="metaShow"> 受付時刻を印字する</label>
       </div>
     </div>
 
     <div class="panel">
       <h2>卓番</h2>
       <div class="row">
-        <label class="name">文字サイズ</label>
+        <label class="name">文字の大きさ</label>
         <div class="seg" data-group="tableSize">
-          <button data-val="24">S</button>
-          <button data-val="32">M</button>
-          <button data-val="40">L</button>
-          <button data-val="52">XL</button>
+          <button data-val="32">等倍</button>
+          <button data-val="40">2倍角</button>
         </div>
       </div>
       <div class="row">
@@ -184,26 +172,12 @@
     </div>
 
     <div class="panel">
-      <h2>受付時刻・備考</h2>
-      <div class="row">
-        <label class="toggle"><input type="checkbox" data-key="metaShow"> 表示する</label>
-      </div>
-      <div class="row">
-        <label class="name">文字サイズ</label>
-        <input type="range" min="10" max="20" step="1" data-key="metaSize" aria-label="受付時刻・備考の文字サイズ">
-        <span class="range-val" data-valfor="metaSize"></span>
-      </div>
-    </div>
-
-    <div class="panel">
       <h2>品目</h2>
       <div class="row">
-        <label class="name">品名の文字サイズ</label>
+        <label class="name">品名の大きさ</label>
         <div class="seg" data-group="itemSize">
-          <button data-val="14">S</button>
-          <button data-val="18">M</button>
-          <button data-val="22">L</button>
-          <button data-val="28">XL</button>
+          <button data-val="18">等倍</button>
+          <button data-val="22">横2倍</button>
         </div>
       </div>
       <div class="row">
@@ -218,15 +192,7 @@
         </div>
       </div>
       <div class="row">
-        <label class="toggle"><input type="checkbox" data-key="noteShow"> 備考(※)を表示する</label>
-      </div>
-      <div class="row">
-        <label class="name">品目どうしの余白</label>
-        <div class="seg" data-group="itemGap">
-          <button data-val="2">狭い</button>
-          <button data-val="6">普通</button>
-          <button data-val="14">広い</button>
-        </div>
+        <label class="toggle"><input type="checkbox" data-key="noteShow"> 備考(※)を印字する</label>
       </div>
     </div>
 
@@ -287,7 +253,7 @@
       <div class="notice" id="notice" role="status" aria-live="polite"></div>
       <p class="hint">
         設定は自動保存され、サーバー経由で開いていれば**全端末のKDS印刷に反映**されます(どの端末で設定してもOK)。JSON書き出し/読み込みはバックアップ・別店舗への持ち出し用です。<br>
-        「テスト印刷」は<code>window.print()</code>によるブラウザ印刷のプレビューです。実機プリンター(ESC/POS)は文字サイズが段階的(等倍/2倍)にしか変えられないため、実際の印字はここでの見た目と多少異なります。
+        右のプレビューは実機プリンターの印字を再現しています(文字の並び・大きさ・罫線とも同じ)。「実機にテスト印刷」でそのまま紙で確認できます。
       </p>
     </div>
   </div>
@@ -295,12 +261,12 @@
   <div class="preview-col">
     <div class="paper-wrap">
       <div id="slip">
-        <div class="s-store" id="pStore">土鍋飯ぽかぽか</div>
-        <div class="s-table" id="pTable">12</div>
-        <div class="s-meta" id="pMeta">受付 12:34</div>
-        <div class="s-sep-top" id="pSepTop"></div>
-        <ul id="pItems"></ul>
-        <div class="s-sep-bottom" id="pSepBottom"></div>
+        <div class="r-center" id="pStore">土鍋飯ぽかぽか</div>
+        <div class="r-center" id="pTable">卓  12</div>
+        <div id="pMeta">受付 12:34</div>
+        <div class="r-sep" id="pSepTop"></div>
+        <div id="pItems"></div>
+        <div class="r-sep" id="pSepBottom"></div>
       </div>
     </div>
   </div>
@@ -314,19 +280,15 @@
     paperWidth: 80,
     feedLines: 5,
     storeShow: true,
-    storeSize: 18,
-    storeWide: true,
-    tableSize: 40,
+    tableSize: 40,     // 40=2倍角 / 32=等倍 (relay-server printer.js の閾値と対応)
     tableBold: true,
     metaShow: true,
-    metaSize: 13,
-    itemSize: 18,
+    itemSize: 18,      // 22=横2倍 / 18=等倍 (同上)
     itemBold: true,
     qtyFormat: "x",
     noteShow: true,
-    itemGap: 6,
     sepTop: "dashed",
-    sepBottom: "dashed"
+    sepBottom: "none"
   };
   /* 各キーの許容値。JSON読み込みやlocalStorage改変で不正値が入っても
      printer.js の normalizeJob と同じ発想で既定値へ丸める */
@@ -334,17 +296,13 @@
     paperWidth: [58, 80],
     feedLines: { min: 0, max: 8 },
     storeShow: "bool",
-    storeSize: [14, 18, 24],
-    storeWide: "bool",
-    tableSize: [24, 32, 40, 52],
+    tableSize: [32, 40],
     tableBold: "bool",
     metaShow: "bool",
-    metaSize: { min: 10, max: 20 },
-    itemSize: [14, 18, 22, 28],
+    itemSize: [18, 22],
     itemBold: "bool",
     qtyFormat: ["x", "times", "kosuu"],
     noteShow: "bool",
-    itemGap: [2, 6, 14],
     sepTop: ["dashed", "solid", "none"],
     sepBottom: ["dashed", "solid", "none"]
   };
@@ -545,66 +503,75 @@
   var pItems = document.getElementById("pItems");
 
   function mmToPx(mm) { return Math.round(mm * 96 / 25.4); }   /* 96dpi の実寸換算 */
+
+  /* 実機(relay-server/printer.js qtyText)と同一の数量表記 */
   function fmtQty(n) {
-    if (state.qtyFormat === "times") return "× " + n;
-    if (state.qtyFormat === "kosuu") return n + " 個";
-    return "x " + n;
+    if (state.qtyFormat === "times") return "  × " + n;
+    if (state.qtyFormat === "kosuu") return "  " + n + " 個";
+    return "  x " + n;
+  }
+  /* 実機(printer.js sepLine)と同一の区切り線: 58mm=24桁 / 80mm=32桁 */
+  function sepText(kind) {
+    if (kind === "none") return "";
+    var cols = state.paperWidth === 58 ? 24 : 32;
+    return new Array(cols + 1).join(kind === "solid" ? "=" : "-");
   }
 
   /* 用紙幅に応じた @page サイズ(印刷プレビュー用)。render() から毎回更新する */
   var pageStyleTag = document.createElement("style");
   document.head.appendChild(pageStyleTag);
 
+  var BASE_PX = 14;   // 実機フォント等倍のプレビュー上のサイズ
+
   function render() {
     pageStyleTag.textContent = "@page { size: " + state.paperWidth + "mm auto; margin: 0; }";
     slipEl.style.width = mmToPx(state.paperWidth) + "px";
-    slipEl.style.fontFamily = "-apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic', sans-serif";
 
     pStore.style.display = state.storeShow ? "" : "none";
-    pStore.style.fontSize = state.storeSize + "px";
-    pStore.style.letterSpacing = state.storeWide ? ".12em" : "normal";
 
-    pTable.textContent = sample.table || "--";
-    pTable.style.fontSize = state.tableSize + "px";
-    pTable.style.fontWeight = state.tableBold ? "900" : "400";
+    // 実機は「卓  12」を中央寄せで印字。2倍角=縦横2倍
+    pTable.textContent = "卓  " + (sample.table || "--");
+    pTable.style.fontSize = (state.tableSize >= 40 ? BASE_PX * 2 : BASE_PX) + "px";
+    pTable.style.fontWeight = state.tableBold ? "700" : "400";
 
+    // 実機は受付時刻を左寄せ・等倍で印字
     pMeta.style.display = state.metaShow ? "" : "none";
     pMeta.textContent = "受付 " + (sample.meta || "");
-    pMeta.style.fontSize = state.metaSize + "px";
 
-    pSepTop.className = "s-sep-top " + state.sepTop;
-    pSepBottom.className = "s-sep-bottom " + state.sepBottom;
+    pSepTop.textContent = sepText(state.sepTop);
+    pSepTop.style.display = state.sepTop === "none" ? "none" : "";
+    pSepBottom.textContent = sepText(state.sepBottom);
+    pSepBottom.style.display = state.sepBottom === "none" ? "none" : "";
 
+    // 実機の印字順を再現: 品名 → 数量行 → 備考行 → 空行
     pItems.innerHTML = "";
     sample.items.forEach(function (it) {
-      var li = document.createElement("li");
-      li.style.marginBottom = state.itemGap + "px";
+      var block = document.createElement("div");
+      block.style.marginBottom = "1.4em";   // 実機の品目間の空行1行ぶん
 
-      var nameRow = document.createElement("div");
-      nameRow.style.display = "flex"; nameRow.style.justifyContent = "space-between"; nameRow.style.gap = "8px";
+      var nameDiv = document.createElement("div");
       var nameSpan = document.createElement("span");
-      nameSpan.className = "i-name";
+      nameSpan.className = "r-item-name";
       nameSpan.textContent = it.name;
-      nameSpan.style.fontSize = state.itemSize + "px";
       nameSpan.style.fontWeight = state.itemBold ? "700" : "400";
-      var qtySpan = document.createElement("span");
-      qtySpan.className = "i-qty";
-      qtySpan.textContent = fmtQty(it.qty);
-      qtySpan.style.fontSize = Math.max(11, state.itemSize - 4) + "px";
-      nameRow.appendChild(nameSpan); nameRow.appendChild(qtySpan);
-      li.appendChild(nameRow);
+      nameSpan.style.transform = state.itemSize >= 22 ? "scaleX(2)" : "";   // 横2倍
+      nameDiv.appendChild(nameSpan);
+      block.appendChild(nameDiv);
+
+      var qtyDiv = document.createElement("div");
+      qtyDiv.textContent = fmtQty(it.qty);
+      block.appendChild(qtyDiv);
 
       if (state.noteShow && it.note) {
         var noteDiv = document.createElement("div");
-        noteDiv.className = "i-note";
-        noteDiv.textContent = "※ " + it.note;
-        noteDiv.style.fontSize = Math.max(10, state.itemSize - 6) + "px";
-        li.appendChild(noteDiv);
+        noteDiv.textContent = "  ※ " + it.note;
+        block.appendChild(noteDiv);
       }
-      pItems.appendChild(li);
+      pItems.appendChild(block);
     });
 
-    slipEl.style.paddingBottom = (22 + state.feedLines * 8) + "px";
+    // 実機のカット前の紙送り行数ぶんの余白
+    slipEl.style.paddingBottom = (14 + state.feedLines * BASE_PX * 1.4) + "px";
   }
 
   /* ---- テスト印刷・保存・書き出し・読み込み・リセット ---- */
