@@ -1169,19 +1169,28 @@
   .slip .slip-table { font-size: 38px; font-weight: 900; text-align: center; line-height: 1.1; }   /* 卓番が読めるサイズ */
   .slip .slip-meta { font-size: 13px; color: #444; text-align: center; margin: 4px 0 10px; font-variant-numeric: tabular-nums; }
   .slip ul { list-style: none; margin: 0; padding: 8px 0; border-top: 1px dashed #999; border-bottom: 1px dashed #999; }
-  .slip li { display: flex; justify-content: space-between; gap: 8px; font-size: 18px; font-weight: 700; padding: 3px 0; }   /* 品名が読めるサイズ */
-  .slip li .o { font-size: 12px; font-weight: 500; color: #555; }
+  .slip li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; font-size: 22px; line-height: 1.3; font-weight: 700; padding: 5px 0; }   /* 品名22px+ (#11 のAA基準に合わせる) */
+  .slip li .o { flex-basis: 100%; font-size: 13px; font-weight: 500; color: #333; }
   .slip li .q { font-family: var(--font-num); }
   .slip-actions { display: flex; gap: 10px; margin-top: 14px; }
   .slip-actions button { flex: 1 1 0; min-height: 48px; border-radius: 0; font-size: 15px; font-weight: 900; cursor: pointer; }
   .slip-print { border: 2px solid #1A1612; background: #1A1612; color: #fff; }
   .slip-close { border: 2px solid #1A1612; background: #fff; color: #1A1612; }
 
-  /* 印刷時はチビ伝だけを出す */
+  /* 印刷時はチビ伝だけを出す (80mm感熱ロール紙想定) */
+  @page { size: 80mm auto; margin: 0; }
   @media print {
     body * { visibility: hidden !important; }
     .slip, .slip * { visibility: visible !important; }
-    .slip { position: fixed; left: 0; top: 0; box-shadow: none; width: 80mm; }
+    .slip {
+      position: fixed; left: 0; top: 0;
+      box-shadow: none; border: none; border-radius: 0;
+      width: 80mm; padding: 4mm 4mm;
+    }
+    /* 感熱紙は薄いグレーが飛びやすいので区切り線・備考を黒に寄せる */
+    .slip .slip-store, .slip ul { border-color: #000; }
+    .slip .slip-meta { color: #000; }
+    .slip li .o { color: #000; }
     .slip-actions { display: none !important; }
     .slip-backdrop { background: #fff; }
   }
@@ -1310,6 +1319,10 @@
       <button type="button" class="mode-btn" id="viewLane" data-view="lane" aria-pressed="false">レーン</button>
     </div>
 
+    <button type="button" class="head-toggle" id="printerSettingsBtn" aria-label="レシートプリンターのIPアドレス設定">
+      <span>プリンター設定</span>
+    </button>
+
   </header>
 
   <!-- HUD: 状況サマリー + コンロ全体ビュー -->
@@ -1413,7 +1426,7 @@
   <!-- チビ伝印刷プレビュー -->
   <div class="slip-backdrop" id="slipBackdrop">
     <div class="slip" id="slip" role="dialog" aria-modal="true" aria-label="伝票プレビュー">
-      <div class="slip-store">土鍋飯ぽかぽか</div>
+      <div class="slip-store" id="slipStore">土鍋飯ぽかぽか</div>
       <div class="slip-table" id="slipTable">--</div>
       <div class="slip-meta" id="slipMeta"></div>
       <ul id="slipItems"></ul>
@@ -1482,7 +1495,10 @@
     var LS_VIEW   = "kds_view_v1"; // #13 表示モード (grid / lane)
     var LS_DAY = "kds_day_v1";     // 最終利用日 (YYYY-MM-DD)。日付が変わったら当日データを破棄 (#63)
     var LS_DELETED = "kds_deleted_v1"; // 削除済み注文ID (POS再送で復活させないトゥームストーン #67)
+    var LS_PRINTER_IP = "kds_printer_ip_v1"; // チビ伝 実機プリンターIP (店舗LAN依存のため固定埋め込み不可 #144)
+    var LS_SLIP_STYLE = "slip_style_designer_v1"; // チビ伝 印刷スタイル (slip-style-designer.html が書く。同一オリジン配信で共有)
     var BC_NAME = "kds_sync";      // BroadcastChannel 名
+    var PRINTER_IP_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
     // #59 仕様未決定の先行実装は既定OFF (フィーチャーフラグ)。会議決定が出たら true にして仕様追記。
     var FEATURE_TIMER_LOCK   = false; // タイマーロック (停/再) ボタン
     var FEATURE_DELETE_ORDER = false; // 注文削除 (×) ボタン
@@ -1546,6 +1562,8 @@
     var undoInfo = null;           // { id, index } 全完了直後の取り消し対象
     var undoTimer = null;
     var khCells = [];              // HUD のコンロセル DOM
+    var printerIp = "";            // チビ伝 実機プリンターIP (未設定ならブラウザ印刷のまま #144)
+    var currentSlipOrder = null;   // チビ伝プレビュー表示中の注文 (印刷ボタン押下時に参照)
 
     /* ---- DOM ---- */
     var boardEl = document.getElementById("board");
@@ -1553,6 +1571,7 @@
     var clockEl = document.getElementById("clock");
     var demoBtn = document.getElementById("demoBtn");
     var modeBtns = Array.prototype.slice.call(document.querySelectorAll(".mode-btn"));
+    var printerSettingsBtn = document.getElementById("printerSettingsBtn");
     var viewBtns = Array.prototype.slice.call(document.querySelectorAll("[data-view]"));
     var laneBodies = {
       rice:  document.getElementById("lane-rice"),
@@ -1576,6 +1595,9 @@
     var slipTableEl = document.getElementById("slipTable");
     var slipMetaEl = document.getElementById("slipMeta");
     var slipItemsEl = document.getElementById("slipItems");
+    var slipStoreEl = document.getElementById("slipStore");
+    var slipPageStyleEl = document.createElement("style");   // 用紙幅に応じた @page 上書き (スタイル設定 #144追補)
+    document.head.appendChild(slipPageStyleEl);
     var slipPrintBtn = document.getElementById("slipPrint");
     var slipCloseBtn = document.getElementById("slipClose");
     var seatBackdrop = document.getElementById("seatBackdrop");
@@ -3061,8 +3083,75 @@
       closeModal();
     }
 
-    /* ===================== チビ伝印刷 (簡易プレビュー + window.print) ===================== */
+    /* ===================== チビ伝印刷 (簡易プレビュー + 実機印刷/window.printフォールバック #144) ===================== */
+
+    /* 印刷スタイル (slip-style-designer.html で設定した JSON) を読む。
+       設定が無い・壊れている場合は null を返し、従来の見た目のまま表示する */
+    function loadSlipStyle() {
+      try {
+        var raw = localStorage.getItem(LS_SLIP_STYLE);
+        if (!raw) return null;
+        var st = JSON.parse(raw);
+        return (st && typeof st === "object") ? st : null;
+      } catch (e) { return null; }
+    }
+
+    /* スタイルはサーバー保存(/api/slip-style)が正。どの端末で設定してもKDS全端末に反映される。
+       取得できたら localStorage キャッシュを更新し、伝票を開いていれば即座に再適用する */
+    function refreshSlipStyleFromServer() {
+      if (typeof fetch !== "function") return;
+      fetch("/api/slip-style").then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      }).then(function (st) {
+        if (!st || typeof st !== "object" || Object.keys(st).length === 0) return;
+        var next = JSON.stringify(st);
+        var prev = null;
+        try { prev = localStorage.getItem(LS_SLIP_STYLE); } catch (e) {}
+        if (next === prev) return;   // 変化なし (openSlip→refresh の再帰もここで止まる)
+        try { localStorage.setItem(LS_SLIP_STYLE, next); } catch (e) {}
+        if (document.body.classList.contains("slip-open") && currentSlipOrder) openSlip(currentSlipOrder);
+      }).catch(function () { /* サーバー未経由(file://等)ではlocalStorageのまま動く */ });
+    }
+
+    /* 数量表記 (設定ツールの qtyFormat に対応。未設定は従来の「×N」) */
+    function slipQtyText(st, qty) {
+      if (!st) return "×" + qty;
+      if (st.qtyFormat === "kosuu") return qty + " 個";
+      if (st.qtyFormat === "x") return "x " + qty;
+      return "× " + qty;
+    }
+
+    /* 設定JSONをプレビューDOM/印刷CSSへ反映する (実機ESC/POSと違いブラウザ側はpx指定をそのまま使える) */
+    function applySlipStyle(st) {
+      slipStoreEl.style.display = (!st || st.storeShow !== false) ? "" : "none";
+      slipMetaEl.style.display = (!st || st.metaShow !== false) ? "" : "none";
+      if (!st) {
+        slipStoreEl.style.fontSize = slipStoreEl.style.letterSpacing = "";
+        slipTableEl.style.fontSize = slipTableEl.style.fontWeight = "";
+        slipMetaEl.style.fontSize = "";
+        slipItemsEl.style.borderTopStyle = slipItemsEl.style.borderBottomStyle = "";
+        slipPageStyleEl.textContent = "";
+        return;
+      }
+      if (st.storeSize) slipStoreEl.style.fontSize = st.storeSize + "px";
+      slipStoreEl.style.letterSpacing = st.storeWide === false ? "normal" : "";
+      if (st.tableSize) slipTableEl.style.fontSize = st.tableSize + "px";
+      slipTableEl.style.fontWeight = st.tableBold === false ? "400" : "900";
+      if (st.metaSize) slipMetaEl.style.fontSize = st.metaSize + "px";
+      slipItemsEl.style.borderTopStyle = st.sepTop === "none" ? "hidden" : (st.sepTop || "dashed");
+      slipItemsEl.style.borderBottomStyle = st.sepBottom === "none" ? "hidden" : (st.sepBottom || "dashed");
+      var w = st.paperWidth === 58 ? 58 : 80;
+      slipPageStyleEl.textContent =
+        "@page { size: " + w + "mm auto; margin: 0; }\n" +
+        "@media print { .slip { width: " + w + "mm !important; } }";
+    }
+
     function openSlip(order) {
+      currentSlipOrder = order;
+      refreshSlipStyleFromServer();   // 最新のサーバー保存スタイルを取得(到着したら開いたまま再適用)
+      var st = loadSlipStyle();
+      applySlipStyle(st);
       slipTableEl.textContent = order.table != null ? String(order.table) : "--";
       slipMetaEl.textContent = t("slipMeta") + " " + hhmm(order.start);
       slipItemsEl.innerHTML = "";
@@ -3071,7 +3160,9 @@
         var nm = document.createElement("span");
         var slipNotes = itemNotesText(it);
         nm.textContent = it.name;
-        if (slipNotes) {
+        if (st && st.itemSize) nm.style.fontSize = st.itemSize + "px";
+        if (st) nm.style.fontWeight = st.itemBold === false ? "400" : "700";
+        if (slipNotes && (!st || st.noteShow !== false)) {
           var o = document.createElement("span");
           o.className = "o";
           o.textContent = " (" + slipNotes + ")";
@@ -3079,14 +3170,80 @@
         }
         var q = document.createElement("span");
         q.className = "q";
-        q.textContent = "×" + (Number(it.qty) || 1);
+        q.textContent = slipQtyText(st, Number(it.qty) || 1);
         li.appendChild(nm);
         li.appendChild(q);
+        if (st && st.itemGap != null) li.style.paddingTop = li.style.paddingBottom = (st.itemGap / 2) + "px";
         slipItemsEl.appendChild(li);
       });
       document.body.classList.add("slip-open");
     }
     function closeSlip() { document.body.classList.remove("slip-open"); }
+
+    function loadPrinterIp() {
+      try { printerIp = localStorage.getItem(LS_PRINTER_IP) || ""; }
+      catch (e) { printerIp = ""; }
+      // サーバー保存のIPが正 (#144追補)。どの端末で登録しても全端末から実機印刷できる
+      if (typeof fetch === "function") {
+        fetch("/api/printer").then(function (res) {
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          return res.json();
+        }).then(function (data) {
+          if (data && data.ip) { printerIp = data.ip; savePrinterIp(); }
+        }).catch(function () { /* サーバー未経由ではlocalStorageのまま */ });
+      }
+    }
+    function savePrinterIp() {
+      try { localStorage.setItem(LS_PRINTER_IP, printerIp); } catch (e) {}
+      // サーバーにも保存して他端末(iPad等)と共有する
+      if (typeof fetch === "function") {
+        fetch("/api/printer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ip: printerIp }),
+        }).catch(function () {});
+      }
+    }
+    /* プリンターIPは店舗ネットワーク依存のため固定埋め込みせず、設定画面から登録する (#144) */
+    function configurePrinterIp() {
+      var next = window.prompt("レシートプリンターのIPアドレス(店内LAN 例: 192.168.1.50)\n空欄で保存するとブラウザ印刷に戻ります。", printerIp);
+      if (next === null) return;   // キャンセル
+      next = next.trim();
+      if (!next) { printerIp = ""; savePrinterIp(); return; }
+      if (!PRINTER_IP_RE.test(next)) { window.alert("IPv4アドレスの形式で入力してください (例: 192.168.1.50)"); return; }
+      printerIp = next;
+      savePrinterIp();
+    }
+
+    /** 印刷ボタン押下時の実処理。この端末がIPを知らなくてもサーバー保存IPで印字を試み、
+        実機に送れない場合のみブラウザ印刷にフォールバックする */
+    function printSlip() {
+      var order = currentSlipOrder;
+      if (!order) { window.print(); return; }
+      var job = {
+        ip: printerIp || undefined,   // 未設定ならサーバー保存のIPに委ねる
+        table: slipTableEl.textContent,
+        meta: slipMetaEl.textContent,
+        store: slipStoreEl.textContent,
+        style: loadSlipStyle() || undefined,   // 設定ツールのスタイルを実機印字にも反映 (relay側で許容値へ丸める)
+        items: (order.items || []).map(function (it) {
+          return { name: it.name, qty: Number(it.qty) || 1, note: itemNotesText(it) };
+        }),
+      };
+      fetch("/api/print", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(job),
+      }).then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      }).then(function (data) {
+        if (!data || !data.ok) throw new Error((data && data.error) || "print failed");
+      }).catch(function (err) {
+        console.error("[チビ伝] 実機印刷に失敗。ブラウザ印刷にフォールバック:", err);
+        window.print();
+      });
+    }
 
     /* ===================== 卓番ダイヤル (フリーテキスト入力の誤入力防止 #118) ===================== */
     /* 卓番号は要件定義書の「A1」形式(ゾーン英字+番号)。ゾーンタップで新規入力を開始し、
@@ -3431,6 +3588,8 @@
       loadLocked();
       loadStock();
       loadPrefs();
+      loadPrinterIp();
+      refreshSlipStyleFromServer();   // 印刷スタイルをサーバーから取得しておく (#144追補)
       loadView();
       applyMode();
       applyView();
@@ -3453,7 +3612,8 @@
       if (modalBackdrop) modalBackdrop.addEventListener("click", function (e) { if (e.target === modalBackdrop) closeModal(); });
 
       // チビ伝
-      if (slipPrintBtn) slipPrintBtn.addEventListener("click", function () { window.print(); });
+      if (slipPrintBtn) slipPrintBtn.addEventListener("click", printSlip);
+      if (printerSettingsBtn) printerSettingsBtn.addEventListener("click", configurePrinterIp);
       if (slipCloseBtn) slipCloseBtn.addEventListener("click", closeSlip);
       if (slipBackdrop) slipBackdrop.addEventListener("click", function (e) { if (e.target === slipBackdrop) closeSlip(); });
 

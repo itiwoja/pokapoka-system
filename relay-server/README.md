@@ -2,7 +2,9 @@
 
 TableCheck の予約(メニュー・人数等)を取得し、KDS の予約ストックに流し込むためのサーバー。
 6/18 議事録の「ファイルを置くだけの見かけ上のサーバー」役と、TableCheck 取込役の2役を1プロセスで担う。
-**依存パッケージゼロ・Node 18+ のみで動作**(本体リポジトリの単一HTML主義に合わせた設計)。
+**依存パッケージはほぼゼロ・Node 18+ で動作**(本体リポジトリの単一HTML主義に合わせた設計)。
+唯一の例外は `printer.js` の日本語ESC/POS印字用 `iconv-lite`(Node標準にShift_JIS変換が無いため。#144)。
+初回のみ `cd relay-server && npm install` が必要。
 
 ```
 【クラウド】               【店内ミニPC = このサーバー】          【KDS端末】
@@ -131,6 +133,31 @@ WiFi越しに初めて繋ぐときは、設定以外の次の点も確認する(
 | `POST /api/mock/reservations` | (MOCK限定) 予約作成。body は TableCheck Reservation 形 |
 | `PATCH /api/mock/reservations/{id}` | (MOCK限定) 予約変更(人数・メニュー等) |
 | `DELETE /api/mock/reservations/{id}` | (MOCK限定) 予約キャンセル(status=cancelled) |
+| `POST /api/print` | チビ伝を実機プリンターへ印字(#144)。body は `{ip, table, meta, store?, style?, items:[{name,qty,note}]}`。`style` 未指定時はサーバー保存のスタイル(下記)を使う。`ip` は店内LAN想定のプライベートIPv4のみ許可(10/8・172.16-31/12・192.168/16)。ポート9100固定のESC/POS RAWへ生ソケットで送信 |
+| `GET /api/slip-style` | サーバー保存の印刷スタイルを返す(未設定は `{}`) |
+| `POST /api/slip-style` | 印刷スタイルを保存。不正値は許容値へ丸め、`config/slip-style.json` に永続化(git管理外)。どの端末で設定しても全端末のKDS印刷に反映される |
+| `GET /qr` | iPad等からKDS/スタイル設定を開くための接続QRを表示するページ。エンコードするURLは待ち受け中のLAN IPから自動生成 |
+
+### チビ伝の印刷スタイル設定(slip-style-designer.html)
+
+`http://<サーバー>:<port>/slip-style-designer.html` で伝票の見た目(用紙幅・文字サイズ・太字・
+数量表記・罫線・店名/備考の表示など)をプレビューを見ながら設定できる。
+設定は **サーバーに保存**(`POST /api/slip-style` → `config/slip-style.json`)され、
+**どの端末で設定しても、KDSを開いている全端末(PC/iPad)の伝票プレビューと実機印刷に反映される**。
+各端末の localStorage はオフライン用キャッシュで、KDS起動時と伝票を開くたびにサーバーから更新される。
+ESC/POS は文字サイズが段階的(等倍/2倍)のため、実機印字は近似になる:
+卓番は 40px 以上で2倍角、品名は 22px 以上で横2倍、それ未満は等倍。
+
+### チビ伝の実機印刷(#144)
+
+KDS 画面の「印刷」ボタンは、プリンターIP未設定時は従来どおり `window.print()`(ブラウザ手動印刷)。
+実機で印字するには:
+
+1. KDS ヘッダーの「プリンター設定」ボタンでプリンター(例: Star mC-Print3)のIPアドレスを登録する
+   (`localStorage` に端末ごと保存。店舗ネットワーク依存のためコードへの固定埋め込みはしない)
+2. 以降は「印刷」ボタン押下で `POST /api/print` → このサーバーが生ソケットでプリンターの
+   RAWポート(9100)へESC/POSバイト列を送信する(ブラウザは生TCPソケットを開けないため中継が必要)
+3. 実機送信に失敗(未設定・接続不可・タイムアウト)した場合は自動で `window.print()` にフォールバックする
 
 ### KDS への接続(kds-bridge.js)
 
@@ -156,7 +183,8 @@ KDS 本体は無改修。**このサーバー経由で `/` を開くと、配信
 ```sh
 node relay-server/tablecheck-sync.test.js
 node --test relay-server/booking-resync.test.js relay-server/server.test.js \
-  relay-server/seat-occupancy.test.js relay-server/load-config.test.js
+  relay-server/seat-occupancy.test.js relay-server/load-config.test.js \
+  relay-server/printer.test.js
 ```
 
 正規化(スキーマ候補キー・pax→adults フォールバック)、memo パーサ、

@@ -1,0 +1,9 @@
+{
+  "name": "pokapoka-relay-server",
+  "private": true,
+  "description": "店内中継サーバー。依存パッケージは iconv-lite のみ (printer.js のShift_JIS変換用 #144)。",
+  "dependencies": {
+    "iconv-lite": "^0.6.3",
+    "qrcode": "^1.5.4"
+  }
+}
