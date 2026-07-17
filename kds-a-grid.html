@@ -54,6 +54,7 @@
     --u-ok:    #178235;  --on-u-ok:    #FFFFFF;   /* 白の小文字で4.5:1+ を確保 */
     --u-warn:  #F2A100;  --on-u-warn:  #14161A;   /* 琥珀地は濃文字でAA */
     --u-alert: #D62F26;  --on-u-alert: #FFFFFF;
+    --u-alert-dim: #AE5049;                       /* 10分超バナー明滅の沈み側 = 彩度だけ落とした赤 (白文字5.2:1) */
 
     /* ═══ 主要CTA = オレンジ (赤hueと分離・ぽかぽか温感)。白文字でAA4.5:1確保のため#C25200 ═══ */
     --cta:       #C25200;   /* white on this = 4.67:1 (AA) */
@@ -589,7 +590,15 @@
   .card.timer-locked .js-elapsed-val { opacity: 0.55; }
   .card.timer-locked .elapsed .val { text-decoration: line-through; text-decoration-style: dotted; }
 
-  /* 10分超は上段バナーの赤塗りのみで表現（アウトラインと点滅は廃止。点滅=2026-07-16打合せ、外枠=オーナー指示） */
+  /* 10分超は上段バナーだけをゆっくり明滅させる（カード本体・アウトラインは静止のまま）。
+     明度をほぼ据え置き彩度だけ振る (hsl 3,70%,49% ⇄ 4,41%,48%) ため、面のちらつきにならず赤の意味は保つ。
+     2026-07-16 打合せで廃止した「赤チカ」= outline の steps() 明滅 + 経過数値の脈動。本件はその代替の柔らかい表現。
+     prefers-reduced-motion では animation ごと無効化され、静的な赤帯に戻る（末尾のメディアクエリ）。 */
+  .card.lvl-alert .card-banner { animation: alertBannerBlink 2s ease-in-out infinite; }
+  @keyframes alertBannerBlink {
+    0%, 100% { background-color: var(--u-alert); }
+    50%      { background-color: var(--u-alert-dim); }
+  }
 
   /* 品目リスト */
   .items {
