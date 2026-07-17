@@ -580,12 +580,29 @@
   });
 
   /* 実機テスト印刷: 今画面にあるスタイル+サンプル注文をそのまま /api/print へ送る。
-     プリンターIPは KDS と同じ localStorage キーを共有(どちらで設定してもよい) */
+     プリンターIPはサーバー保存(/api/printer)で全端末と共有。localStorageはオフライン用の控え */
   var LS_PRINTER_IP = "kds_printer_ip_v1";
   var printerIpInput = document.getElementById("printerIpInput");
   try { printerIpInput.value = localStorage.getItem(LS_PRINTER_IP) || ""; } catch (e) {}
+  if (typeof fetch === "function") {
+    fetch("/api/printer").then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        if (data && data.ip) {
+          printerIpInput.value = data.ip;
+          try { localStorage.setItem(LS_PRINTER_IP, data.ip); } catch (e) {}
+        }
+      }).catch(function () {});
+  }
   printerIpInput.addEventListener("input", function () {
-    try { localStorage.setItem(LS_PRINTER_IP, printerIpInput.value.trim()); } catch (e) {}
+    var ip = printerIpInput.value.trim();
+    try { localStorage.setItem(LS_PRINTER_IP, ip); } catch (e) {}
+    if (typeof fetch === "function" && (/^(\d{1,3}\.){3}\d{1,3}$/.test(ip) || ip === "")) {
+      fetch("/api/printer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ip: ip }),
+      }).catch(function () {});
+    }
   });
 
   document.getElementById("btnPrintReal").addEventListener("click", function () {

@@ -149,7 +149,7 @@ test("ファイル由来の値にも下限クランプとHTTPS検証が効く", 
 test("同梱の config.example.json は雛形として読み込める", function () {
   var example = path.resolve(__dirname, "..", "config", "config.example.json");
   var overlay = loadConfig.load(example);
-  assert.equal(overlay.HOST, "192.168.1.10");
+  assert.equal(overlay.HOST, "auto");   // 起動時にLAN IPv4を自動検出 (#144追補)
   assert.equal(overlay.PORT, "8000");
   assert.equal(overlay.TABLECHECK_BASE, "https://api.tablecheck.com");
 });

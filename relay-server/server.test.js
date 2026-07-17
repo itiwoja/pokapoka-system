@@ -227,11 +227,13 @@ test("GET/POST /api/slip-style はスタイルを保存・配信し、印刷のs
   var os2 = require("os");
   var path2 = require("path");
   var stylePath = path2.join(os2.tmpdir(), "slip-style-test-" + process.pid + "-" + Date.now() + ".json");
+  var printerIpPath = path2.join(os2.tmpdir(), "printer-ip-test-" + process.pid + "-" + Date.now() + ".json");
   var built = [];
   var relay = serverModule.createRelay({
     port: 0,
     env: { MOCK: "1", POLL_MS: "3000", RESYNC_MS: "900000" },
     slipStylePath: stylePath,
+    printerIpPath: printerIpPath,
     source: {
       listReservations: async function () { return []; },
       listSyncEvents: async function () { return []; },
@@ -248,6 +250,7 @@ test("GET/POST /api/slip-style はスタイルを保存・配信し、印刷のs
   });
   t.after(function () {
     try { require("fs").unlinkSync(stylePath); } catch (e) {}
+    try { require("fs").unlinkSync(printerIpPath); } catch (e) {}
     return relay.stop();
   });
   relay.start();
@@ -280,6 +283,27 @@ test("GET/POST /api/slip-style はスタイルを保存・配信し、印刷のs
   });
   assert.equal(built.length, 1);
   assert.equal(built[0].style.qtyFormat, "kosuu");
+
+  // プリンターIPもサーバー保存でき、ip未指定の印刷に使われる(iPad等の未登録端末対応)
+  var badIp = await requestRaw(relay.server, "/api/printer", {
+    method: "POST",
+    body: JSON.stringify({ ip: "8.8.8.8" }),
+    headers: { "Content-Type": "application/json" },
+  });
+  assert.equal(badIp.status, 400);
+  await requestRaw(relay.server, "/api/printer", {
+    method: "POST",
+    body: JSON.stringify({ ip: "192.168.1.60" }),
+    headers: { "Content-Type": "application/json" },
+  });
+  assert.deepEqual(JSON.parse((await requestRaw(relay.server, "/api/printer")).text), { ip: "192.168.1.60" });
+  var noIpPrint = await requestRaw(relay.server, "/api/print", {
+    method: "POST",
+    body: JSON.stringify({ table: "B1", items: [] }),
+    headers: { "Content-Type": "application/json" },
+  });
+  assert.equal(noIpPrint.status, 200);
+  assert.equal(built.length, 2);
 });
 
 test("LIVE adapterはBooking v1の全ページへshop_idsとBearerを付ける", async function () {

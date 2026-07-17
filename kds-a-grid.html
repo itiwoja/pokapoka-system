@@ -3068,11 +3068,28 @@
     function loadPrinterIp() {
       try { printerIp = localStorage.getItem(LS_PRINTER_IP) || ""; }
       catch (e) { printerIp = ""; }
+      // サーバー保存のIPが正 (#144追補)。どの端末で登録しても全端末から実機印刷できる
+      if (typeof fetch === "function") {
+        fetch("/api/printer").then(function (res) {
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          return res.json();
+        }).then(function (data) {
+          if (data && data.ip) { printerIp = data.ip; savePrinterIp(); }
+        }).catch(function () { /* サーバー未経由ではlocalStorageのまま */ });
+      }
     }
     function savePrinterIp() {
       try { localStorage.setItem(LS_PRINTER_IP, printerIp); } catch (e) {}
+      // サーバーにも保存して他端末(iPad等)と共有する
+      if (typeof fetch === "function") {
+        fetch("/api/printer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ip: printerIp }),
+        }).catch(function () {});
+      }
     }
-    /* プリンターIPは店舗ネットワーク依存のため固定埋め込みせず、端末ごとに設定する (#144) */
+    /* プリンターIPは店舗ネットワーク依存のため固定埋め込みせず、設定画面から登録する (#144) */
     function configurePrinterIp() {
       var next = window.prompt("レシートプリンターのIPアドレス(店内LAN 例: 192.168.1.50)\n空欄で保存するとブラウザ印刷に戻ります。", printerIp);
       if (next === null) return;   // キャンセル
@@ -3083,12 +3100,13 @@
       savePrinterIp();
     }
 
-    /** 印刷ボタン押下時の実処理。プリンターIP未設定 or 実機送信失敗時はブラウザ印刷にフォールバックする */
+    /** 印刷ボタン押下時の実処理。この端末がIPを知らなくてもサーバー保存IPで印字を試み、
+        実機に送れない場合のみブラウザ印刷にフォールバックする */
     function printSlip() {
       var order = currentSlipOrder;
-      if (!printerIp || !order) { window.print(); return; }
+      if (!order) { window.print(); return; }
       var job = {
-        ip: printerIp,
+        ip: printerIp || undefined,   // 未設定ならサーバー保存のIPに委ねる
         table: slipTableEl.textContent,
         meta: slipMetaEl.textContent,
         store: slipStoreEl.textContent,

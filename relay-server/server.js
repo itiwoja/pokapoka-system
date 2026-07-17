@@ -62,6 +62,7 @@ function createRelay(options) {
   var started = false;
   var initialSync = Promise.resolve();
   var slipStyle = createSlipStyleStore(options.slipStylePath || path.join(root, "config", "slip-style.json"), printerModule, log);
+  var printerIp = createPrinterIpStore(options.printerIpPath || path.join(root, "config", "printer-ip.json"), printerModule, log);
 
   var tableCheckSource = options.source || createTableCheckSource({
     apiKey: config.apiKey,
@@ -108,7 +109,25 @@ function createRelay(options) {
     }
 
     if (url.pathname === "/api/print" && req.method === "POST") {
-      return handlePrint(req, res, printerModule, slipStyle);
+      return handlePrint(req, res, printerModule, slipStyle, printerIp);
+    }
+
+    /* プリンターIP (#144追補)。スタイル同様サーバー保存にして、どの端末のKDSからでも
+       登録なしで実機印刷できるようにする(iPadで再入力不要) */
+    if (url.pathname === "/api/printer") {
+      if (req.method === "GET") return json(res, { ip: printerIp.get() });
+      if (req.method === "POST") {
+        return readJson(req, res, function (body) {
+          var ip = body && body.ip != null ? String(body.ip).trim() : "";
+          if (ip && !printerModule.isPrivateIPv4(ip)) {
+            return json(res, { ok: false, error: "printer ip must be a private LAN IPv4 address" }, 400);
+          }
+          printerIp.set(ip);   // 空文字は「未設定に戻す」
+          return json(res, { ok: true, ip: ip });
+        });
+      }
+      res.writeHead(405);
+      return res.end("method not allowed");
     }
 
     /* 印刷スタイル (#144追補)。サーバー保存にすることで、設定した端末に関係なく
@@ -462,10 +481,28 @@ function createSlipStyleStore(filePath, printerModule, log) {
   };
 }
 
+/** プリンターIPの保存領域 (#144追補)。空文字=未設定。ファイルはgit管理外 */
+function createPrinterIpStore(filePath, printerModule, log) {
+  var current = "";
+  try {
+    var loaded = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    if (loaded && printerModule.isPrivateIPv4(loaded.ip)) current = loaded.ip;
+  } catch (e) {}
+  return {
+    get: function () { return current; },
+    set: function (ip) {
+      current = ip || "";
+      try { fs.writeFileSync(filePath, JSON.stringify({ ip: current }, null, 2) + "\n", "utf8"); }
+      catch (err) { log("printer-ip の保存に失敗(メモリ上は反映済み): " + err.message); }
+    },
+  };
+}
+
 /** POST /api/print — チビ伝を実機プリンターへ送る (#144)。IPは店内LANのプライベートアドレスのみ許可 */
-function handlePrint(req, res, printerModule, slipStyle) {
+function handlePrint(req, res, printerModule, slipStyle, printerIp) {
   readJson(req, res, function (body) {
-    var ip = body && body.ip;
+    // ip未指定はサーバー保存のプリンターIP(/api/printer)を使う。端末ごとの再登録を不要にする
+    var ip = (body && body.ip) || (printerIp && printerIp.get());
     if (!printerModule.isPrivateIPv4(ip)) {
       return json(res, { ok: false, error: "printer ip must be a private LAN IPv4 address" }, 400);
     }
