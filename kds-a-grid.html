@@ -589,11 +589,7 @@
   .card.timer-locked .js-elapsed-val { opacity: 0.55; }
   .card.timer-locked .elapsed .val { text-decoration: line-through; text-decoration-style: dotted; }
 
-  /* 10分超は静的な赤アウトライン + 赤帯（点滅は 2026-07-16 打合せで廃止） */
-  .card.lvl-alert {
-    outline: 3px solid var(--elapsed-alert);
-    outline-offset: -3px;
-  }
+  /* 10分超は上段バナーの赤塗りのみで表現（アウトラインと点滅は廃止。点滅=2026-07-16打合せ、外枠=オーナー指示） */
 
   /* 品目リスト */
   .items {
