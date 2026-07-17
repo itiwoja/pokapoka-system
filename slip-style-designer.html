@@ -41,21 +41,21 @@
   .row label.name { flex: 0 0 128px; font-size: 12px; color: var(--sub); }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
   .seg button {
-    border: none; background: #fff; color: var(--ink); font-size: 12px;
-    padding: 6px 10px; cursor: pointer; border-right: 1px solid var(--line);
-    min-height: 30px;
+    border: none; background: #fff; color: var(--ink); font-size: 13px;
+    padding: 6px 14px; cursor: pointer; border-right: 1px solid var(--line);
+    min-height: 44px; min-width: 44px; /* タップ下限 44px (KDS #58 に合わせる) */
   }
   .seg button:last-child { border-right: none; }
   .seg button.on { background: var(--accent); color: #fff; }
   .toggle {
     display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-    font-size: 12px; user-select: none;
+    font-size: 12px; user-select: none; min-height: 44px;
   }
-  .toggle input { width: 16px; height: 16px; }
-  input[type="range"] { flex: 1 1 auto; min-width: 90px; }
+  .toggle input { width: 20px; height: 20px; }
+  input[type="range"] { flex: 1 1 auto; min-width: 90px; min-height: 44px; }
   input[type="text"], input[type="number"] {
     border: 1px solid var(--line); border-radius: 4px; padding: 5px 7px; font-size: 13px;
-    min-height: 30px;
+    min-height: 44px;
   }
   .range-val { font-size: 11px; color: var(--sub); min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
 
@@ -66,12 +66,21 @@
   table.items input.qty { width: 48px; }
   .item-del {
     border: 1px solid var(--line); background: #fff; border-radius: 4px;
-    width: 28px; height: 28px; cursor: pointer; color: #a33; font-size: 14px; line-height: 1;
+    width: 44px; height: 44px; cursor: pointer; color: #a33; font-size: 16px; line-height: 1;
   }
   .add-item {
     margin-top: 8px; border: 1px dashed var(--line); background: #fff; border-radius: 6px;
-    padding: 6px 12px; font-size: 12px; cursor: pointer; color: var(--sub);
+    padding: 6px 14px; font-size: 12px; cursor: pointer; color: var(--sub); min-height: 44px;
   }
+  .inline-confirm { display: none; gap: 8px; align-items: center; margin-top: 10px; font-size: 12px; }
+  .inline-confirm.show { display: flex; flex-wrap: wrap; }
+  .inline-confirm button { min-height: 44px; padding: 0 14px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 700; }
+  .inline-confirm .yes { border: 1px solid #a33; background: #a33; color: #fff; }
+  .inline-confirm .no { border: 1px solid var(--line); background: #fff; color: var(--ink); }
+  .notice { display: none; margin-top: 10px; font-size: 12px; padding: 8px 10px; border-radius: 6px; }
+  .notice.show { display: block; }
+  .notice.err { background: #fbeaea; color: #7a1f1f; border: 1px solid #e3b8b8; }
+  .notice.ok { background: #eaf3ea; color: #2a5a2a; border: 1px solid #bcd8bc; }
 
   .actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .actions button {
@@ -135,7 +144,7 @@
       </div>
       <div class="row">
         <label class="name">下端の送り行数</label>
-        <input type="range" min="0" max="8" step="1" data-key="feedLines">
+        <input type="range" min="0" max="8" step="1" data-key="feedLines" aria-label="下端の送り行数">
         <span class="range-val" data-valfor="feedLines"></span>
       </div>
     </div>
@@ -181,7 +190,7 @@
       </div>
       <div class="row">
         <label class="name">文字サイズ</label>
-        <input type="range" min="10" max="20" step="1" data-key="metaSize">
+        <input type="range" min="10" max="20" step="1" data-key="metaSize" aria-label="受付時刻・備考の文字サイズ">
         <span class="range-val" data-valfor="metaSize"></span>
       </div>
     </div>
@@ -244,10 +253,10 @@
     <div class="panel">
       <h2>プレビュー用サンプル注文</h2>
       <div class="row">
-        <label class="name">卓番</label>
-        <input type="text" id="sampleTable" value="12">
-        <label class="name" style="flex-basis:auto;">受付</label>
-        <input type="text" id="sampleMeta" value="12:34">
+        <label class="name" for="sampleTable">卓番</label>
+        <input type="text" id="sampleTable">
+        <label class="name" style="flex-basis:auto;" for="sampleMeta">受付</label>
+        <input type="text" id="sampleMeta">
       </div>
       <table class="items" id="sampleItems">
         <thead><tr><th>品名</th><th style="width:56px;">数量</th><th>備考</th><th></th></tr></thead>
@@ -265,6 +274,12 @@
         <button type="button" class="btn-ghost" id="btnReset">既定値に戻す</button>
       </div>
       <input type="file" id="fileInput" class="file-input" accept="application/json">
+      <div class="inline-confirm" id="resetConfirm" role="alertdialog" aria-label="リセットの確認">
+        <span>スタイル設定を既定値に戻しますか？</span>
+        <button type="button" class="yes" id="resetYes">戻す</button>
+        <button type="button" class="no" id="resetNo">やめる</button>
+      </div>
+      <div class="notice" id="notice" role="status" aria-live="polite"></div>
       <p class="hint">
         設定はこの端末のブラウザに自動保存されます(localStorage)。他の端末と共有する場合はJSON書き出し→読み込みを使ってください。<br>
         「テスト印刷」は<code>window.print()</code>によるブラウザ印刷のプレビューです。実機プリンター(ESC/POS)は文字サイズが段階的(等倍/2倍)にしか変えられないため、実際の印字はここでの見た目と多少異なります。
@@ -308,14 +323,54 @@
     sepTop: "dashed",
     sepBottom: "dashed"
   };
+  /* 各キーの許容値。JSON読み込みやlocalStorage改変で不正値が入っても
+     printer.js の normalizeJob と同じ発想で既定値へ丸める */
+  var ALLOWED = {
+    paperWidth: [58, 80],
+    feedLines: { min: 0, max: 8 },
+    storeShow: "bool",
+    storeSize: [14, 18, 24],
+    storeWide: "bool",
+    tableSize: [24, 32, 40, 52],
+    tableBold: "bool",
+    metaShow: "bool",
+    metaSize: { min: 10, max: 20 },
+    itemSize: [14, 18, 22, 28],
+    itemBold: "bool",
+    qtyFormat: ["x", "times", "kosuu"],
+    noteShow: "bool",
+    itemGap: [2, 6, 14],
+    sepTop: ["dashed", "solid", "none"],
+    sepBottom: ["dashed", "solid", "none"]
+  };
   var LS_KEY = "slip_style_designer_v1";
   var LS_SAMPLE_KEY = "slip_style_designer_sample_v1";
 
-  var SAMPLE_ITEMS_DEFAULT = [
-    { name: "特上土鍋ご飯", qty: 1, note: "固め" },
-    { name: "だし巻き玉子", qty: 2, note: "" },
-    { name: "本日の味噌汁", qty: 1, note: "" }
-  ];
+  var SAMPLE_DEFAULT = {
+    table: "12",
+    meta: "12:34",
+    items: [
+      { name: "特上土鍋ご飯", qty: 1, note: "固め" },
+      { name: "だし巻き玉子", qty: 2, note: "" },
+      { name: "本日の味噌汁", qty: 1, note: "" }
+    ]
+  };
+
+  /* 不正なキー・値を既定値へ丸めた新しい state を返す */
+  function normalizeState(parsed) {
+    var out = Object.assign({}, DEFAULTS);
+    if (!parsed || typeof parsed !== "object") return out;
+    Object.keys(DEFAULTS).forEach(function (key) {
+      var rule = ALLOWED[key];
+      var val = parsed[key];
+      if (val == null) return;
+      if (rule === "bool") { out[key] = !!val; return; }
+      if (Array.isArray(rule)) { if (rule.indexOf(val) !== -1) out[key] = val; return; }
+      var n = Number(val);
+      if (!isNaN(n)) out[key] = Math.min(rule.max, Math.max(rule.min, Math.round(n)));
+    });
+    return out;
+  }
 
   var state = loadState();
   var sample = loadSample();
@@ -324,19 +379,21 @@
     try {
       var raw = localStorage.getItem(LS_KEY);
       if (!raw) return Object.assign({}, DEFAULTS);
-      var parsed = JSON.parse(raw);
-      return Object.assign({}, DEFAULTS, parsed);
+      return normalizeState(JSON.parse(raw));
     } catch (e) { return Object.assign({}, DEFAULTS); }
   }
   function saveState() {
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
   }
+  function defaultSample() { return JSON.parse(JSON.stringify(SAMPLE_DEFAULT)); }
   function loadSample() {
     try {
       var raw = localStorage.getItem(LS_SAMPLE_KEY);
-      if (!raw) return { table: "12", meta: "12:34", items: SAMPLE_ITEMS_DEFAULT.slice() };
-      return JSON.parse(raw);
-    } catch (e) { return { table: "12", meta: "12:34", items: SAMPLE_ITEMS_DEFAULT.slice() }; }
+      if (!raw) return defaultSample();
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.items)) return defaultSample();
+      return parsed;
+    } catch (e) { return defaultSample(); }
   }
   function saveSample() {
     try { localStorage.setItem(LS_SAMPLE_KEY, JSON.stringify(sample)); } catch (e) {}
@@ -349,6 +406,7 @@
       seg.querySelectorAll("button").forEach(function (btn) {
         var match = String(state[key]) === btn.getAttribute("data-val");
         btn.classList.toggle("on", match);
+        btn.setAttribute("aria-pressed", match ? "true" : "false");
       });
     });
   }
@@ -397,6 +455,8 @@
   var sampleTableEl = document.getElementById("sampleTable");
   var sampleMetaEl = document.getElementById("sampleMeta");
   var itemsBody = document.querySelector("#sampleItems tbody");
+  sampleTableEl.value = sample.table;
+  sampleMetaEl.value = sample.meta;
 
   sampleTableEl.addEventListener("input", function () {
     sample.table = sampleTableEl.value; saveSample(); render();
@@ -456,14 +516,19 @@
   var pSepBottom = document.getElementById("pSepBottom");
   var pItems = document.getElementById("pItems");
 
-  function mmToPx(mm) { return Math.round(mm * 3.35); }
+  function mmToPx(mm) { return Math.round(mm * 96 / 25.4); }   /* 96dpi の実寸換算 */
   function fmtQty(n) {
     if (state.qtyFormat === "times") return "× " + n;
     if (state.qtyFormat === "kosuu") return n + " 個";
     return "x " + n;
   }
 
+  /* 用紙幅に応じた @page サイズ(印刷プレビュー用)。render() から毎回更新する */
+  var pageStyleTag = document.createElement("style");
+  document.head.appendChild(pageStyleTag);
+
   function render() {
+    pageStyleTag.textContent = "@page { size: " + state.paperWidth + "mm auto; margin: 0; }";
     slipEl.style.width = mmToPx(state.paperWidth) + "px";
     slipEl.style.fontFamily = "-apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic', sans-serif";
 
@@ -529,41 +594,50 @@
   document.getElementById("btnImport").addEventListener("click", function () {
     document.getElementById("fileInput").click();
   });
+  /* alert/confirm はブラウザ全体をブロックするため使わず、インライン表示で代替 */
+  var noticeEl = document.getElementById("notice");
+  var noticeTimer = null;
+  function showNotice(kind, message) {
+    noticeEl.className = "notice show " + kind;
+    noticeEl.textContent = message;
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(function () { noticeEl.className = "notice"; }, 5000);
+  }
+
   document.getElementById("fileInput").addEventListener("change", function (e) {
     var file = e.target.files[0];
     if (!file) return;
     var reader = new FileReader();
     reader.onload = function () {
       try {
-        var parsed = JSON.parse(String(reader.result));
-        state = Object.assign({}, DEFAULTS, parsed);
+        state = normalizeState(JSON.parse(String(reader.result)));
         syncControls(); render(); saveState();
+        showNotice("ok", "設定を読み込みました。");
       } catch (err) {
-        alert("JSONの読み込みに失敗しました: " + err.message);
+        showNotice("err", "JSONの読み込みに失敗しました: " + err.message);
       }
     };
     reader.readAsText(file);
     e.target.value = "";
   });
+
+  var resetConfirmEl = document.getElementById("resetConfirm");
   document.getElementById("btnReset").addEventListener("click", function () {
-    if (!confirm("スタイル設定を既定値に戻しますか？")) return;
+    resetConfirmEl.classList.add("show");
+  });
+  document.getElementById("resetNo").addEventListener("click", function () {
+    resetConfirmEl.classList.remove("show");
+  });
+  document.getElementById("resetYes").addEventListener("click", function () {
+    resetConfirmEl.classList.remove("show");
     state = Object.assign({}, DEFAULTS);
     syncControls(); render(); saveState();
+    showNotice("ok", "既定値に戻しました。");
   });
 
   syncControls();
   renderItemRows();
   render();
-
-  /* 用紙幅に応じて @page サイズを切り替える(印刷プレビュー用) */
-  var styleTag = document.createElement("style");
-  document.head.appendChild(styleTag);
-  function updatePageRule() {
-    styleTag.textContent = "@page { size: " + state.paperWidth + "mm auto; margin: 0; }";
-  }
-  var origRender = render;
-  render = function () { origRender(); updatePageRule(); };
-  updatePageRule();
 })();
 </script>
 </body>
