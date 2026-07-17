@@ -589,15 +589,11 @@
   .card.timer-locked .js-elapsed-val { opacity: 0.55; }
   .card.timer-locked .elapsed .val { text-decoration: line-through; text-decoration-style: dotted; }
 
-  /* 10分超は数値を脈動 + カード全体を明滅 (色覚に依存しない動き) */
-  .card.lvl-alert .elapsed { animation: pulse 1.4s ease-in-out infinite; }
+  /* 10分超は静的な赤アウトライン + 赤帯（点滅は 2026-07-16 打合せで廃止） */
   .card.lvl-alert {
     outline: 3px solid var(--elapsed-alert);
     outline-offset: -3px;
-    animation: alertBlink 1s steps(1, end) infinite;
   }
-  @keyframes alertBlink { 50% { outline-color: transparent; } }
-  @keyframes pulse { 0%,100% { transform: none; } 50% { transform: scale(1.04); } }
 
   /* 品目リスト */
   .items {
