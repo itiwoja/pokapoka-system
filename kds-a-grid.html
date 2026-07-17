@@ -669,9 +669,9 @@
     font-variant-numeric: tabular-nums; line-height: 1;
     white-space: nowrap;
   }
-  /* #153: 途中経過は「残数 /全数」を併記 (例: 2/3)。qty=1 品目や未着手・完了時は非表示 */
+  /* #153: 複数個品目は「完了個数 /全数」を 0/n から併記 (例: 0/3→1/3→2/3)。完了(打消線)になったら非表示 */
   .item-qty .qty-total { display: none; font-size: 11px; font-weight: 700; margin-left: 1px; }
-  .item.partial .item-qty .qty-total { display: inline; }
+  .item.multi:not(.done) .item-qty .qty-total { display: inline; }
 
   /* 完了状態: 打ち消し線 + 減光 (色だけに頼らず線で示す) */
   .item.done .item-name { text-decoration: line-through; text-decoration-thickness: 2px; color: var(--text-secondary); }
@@ -2011,7 +2011,7 @@
       }).join("");
     }
 
-    /* 品目ボタンへ doneCount を反映 (打ち消し線/破線下線/残数表示の切替)。
+    /* 品目ボタンへ doneCount を反映 (打ち消し線/破線下線/進捗表示の切替)。
        tap(+1)・長押し(-1)・他タブ同期のすべてがこの単一経路を通る (#153) */
     function updateItemButtonDone(btn, count, qty) {
       var total = Number(qty) || 1;
@@ -2022,7 +2022,8 @@
       btn.classList.toggle("partial", partial);
       btn.setAttribute("aria-pressed", done ? "true" : "false");
       var numEl = btn.querySelector(".qty-num");
-      if (numEl) numEl.textContent = String(partial ? Math.max(total - c, 0) : total);
+      // 複数個品目は 0/n から数え上げ、完了したら打ち消し線の全数表示に切替 (#153)
+      if (numEl) numEl.textContent = String(done ? total : c);
     }
 
     /* 品目ボタンのタップ(+1)/長押し(-1・誤タップの戻し)を配線する (#153)。
@@ -2068,7 +2069,8 @@
         var li = document.createElement("li");
         var btn = document.createElement("button");
         btn.type = "button";
-        btn.className = "item";
+        // qty>1 の品目だけ「0/n」の分数表示を出す (#153)。qty=1 は従来通り単純な数字のみ
+        btn.className = (Number(it.qty) || 1) > 1 ? "item multi" : "item";
         btn.setAttribute("data-index", String(idx));
 
         var chk = document.createElement("span");
