@@ -661,7 +661,7 @@
   /* 署名: 黒塗り四角 + 白数字 (Okage) */
   .item-qty  {
     min-width: 34px; height: 34px; padding: 0 7px;
-    display: inline-grid; place-items: center;
+    display: inline-flex; align-items: baseline; justify-content: center;
     background: var(--qty-box); color: var(--qty-num);
     border-radius: var(--r-box);
     font-family: var(--font-num);
@@ -669,7 +669,9 @@
     font-variant-numeric: tabular-nums; line-height: 1;
     white-space: nowrap;
   }
-  .item-qty .x { display: none; }   /* × を消し数字のみを box 内に */
+  /* #153: 途中経過は「残数 /全数」を併記 (例: 2/3)。qty=1 品目や未着手・完了時は非表示 */
+  .item-qty .qty-total { display: none; font-size: 11px; font-weight: 700; margin-left: 1px; }
+  .item.partial .item-qty .qty-total { display: inline; }
 
   /* 完了状態: 打ち消し線 + 減光 (色だけに頼らず線で示す) */
   .item.done .item-name { text-decoration: line-through; text-decoration-thickness: 2px; color: var(--text-secondary); }
@@ -681,6 +683,11 @@
     color: #fff;
   }
   .item.done .check::after { content: "\2713"; }   /* チェックマーク */
+
+  /* #153: 複数個の途中経過 (打ち消し線とは区別する破線下線。色は追加しない) */
+  .item.partial .item-name { text-decoration: underline; text-decoration-style: dashed; text-decoration-thickness: 2px; text-underline-offset: 2px; }
+  /* 長押し(残数を1戻す)の進行フィードバック */
+  .item.pressing .item-qty { outline: 2px solid var(--qty-num); outline-offset: -2px; }
 
   /* ============================================================ コンロ番号 1〜10 (デシャップ後打ち)
      状態サイクル: スケルトン(未使用/透明) → 白(使用中) → 赤(タイマー管理中) → スケルトン
@@ -1459,7 +1466,8 @@
     var POLL_MS = 1000;            // window.KDS_ORDERS ポーリング間隔
     var TICK_MS = 1000;            // 経過時間 / 時計 更新間隔
     var FADE_MS = 300;             // 全完了カードのフェードアウト
-    var LS_DONE = "kds_done_v1";   // 品目完了状態 (id -> [bool,...])
+    var LS_DONE = "kds_done_v2";   // 品目完了状態 (id -> [doneCount,...]) #153: 個数カウントダウン方式
+    var LS_DONE_V1 = "kds_done_v1"; // 旧版 (id -> [bool,...])。初回のみ読み込み移行 (#153)
     var LS_KONRO = "kds_konro_v1"; // コンロ番号状態 (cardId -> { "1":"white", "3":"red", ... })
     var LS_ORDER = "kds_order_v1"; // 配膳カードの並び順 (orderId 配列)
     var LS_STOCK = "kds_stock_v1"; // 予約ストック (当日分のみ。永続DB無し)
@@ -1516,7 +1524,7 @@
       "ウーロン茶", "オレンジ", "コーラ", "サイダー"
     ];
     /* ---- 状態 ---- */
-    var doneMap = {};              // { orderId: [bool, bool, ...] }  完了状態(LocalStorage正本)
+    var doneMap = {};              // { orderId: [doneCount, ...] }  完了個数(LocalStorage正本 #153)
     var konroMap = {};             // { cardId: { "1":"white", "3":"red", ... } } コンロ状態(LocalStorage正本)
     var cards = {};                // { orderId: { el, order, level } } DOM キャッシュ
     var orderSeq = [];             // 配膳カードの表示順 (orderId 文字列の配列。LS正本)
@@ -1640,12 +1648,14 @@
         var entry = cards[id];
         if (!entry || !entry.order) return;
         var order = entry.order;
-        var done = doneMap[order.id] || [];
         var lvl = lockedTimers[id] ? "ok" : levelOf(elapsedMin(order.start));
         (order.items || []).forEach(function (it, idx) {
-          if (done[idx]) return;   // 完了品目はレーンに出さない
-          buckets[itemCategory(it.name)].push({ order: order, item: it, idx: idx, lvl: lvl });
-          sig.push(id + ":" + idx + ":" + lvl);
+          if (it.done) return;   // 完了品目はレーンに出さない
+          var qty = Number(it.qty) || 1;
+          var count = Number(it.doneCount) || 0;
+          var remain = Math.max(qty - count, 0);
+          buckets[itemCategory(it.name)].push({ order: order, item: it, idx: idx, lvl: lvl, remain: remain });
+          sig.push(id + ":" + idx + ":" + lvl + ":" + count);   // #153: 残数変化でも再描画させる
         });
       });
       var sigStr = sig.join("|");
@@ -1715,7 +1725,7 @@
 
       var qty = document.createElement("span");
       qty.className = "lane-qty";
-      qty.textContent = "×" + Number(it.qty || 1);
+      qty.textContent = "×" + r.remain;   // #153: 残数を表示
 
       btn.appendChild(tbl);
       btn.appendChild(mid);
@@ -1755,7 +1765,7 @@
       try {
         var last = localStorage.getItem(LS_DAY);
         if (last && last !== today) {
-          [LS_STOCK, LS_DONE, LS_ORDER, LS_KONRO, LS_LOCKED, LS_DELETED].forEach(function (key) {
+          [LS_STOCK, LS_DONE, LS_DONE_V1, LS_ORDER, LS_KONRO, LS_LOCKED, LS_DELETED].forEach(function (key) {
             localStorage.removeItem(key);
           });
         }
@@ -1764,7 +1774,13 @@
     }
 
     /* ===================== LocalStorage (完了状態) ===================== */
-    function loadDone() { doneMap = safeParse(localStorage.getItem(LS_DONE), {}) || {}; }
+    /* v2 (kds_done_v2) が無ければ旧v1 (bool配列) を読み込む。bool→個数の確定は
+       qty が判明する applyDoneToOrders() 側で行う (#153) */
+    function loadDone() {
+      var v2 = safeParse(localStorage.getItem(LS_DONE), null);
+      doneMap = (v2 && typeof v2 === "object") ? v2 :
+        (safeParse(localStorage.getItem(LS_DONE_V1), {}) || {});
+    }
 
     function saveDone() {
       try { localStorage.setItem(LS_DONE, JSON.stringify(doneMap)); } catch (e) {}
@@ -1867,21 +1883,31 @@
       if (changed) saveLocked();
     }
 
-    /* 注文配列に対して doneMap を「正本」として上書き適用 (リロード復元 / ポーリング時) */
+    /* doneMap の1件を doneCount(0..qty) へ正規化する。v1(bool)/v2(number)/未登録すべてを
+       ここで吸収する単一の入口 (#153) */
+    function normalizeDoneCount(v, qty) {
+      var q = Number(qty) || 0;
+      if (v === true) return q;                 // 旧v1: 完了 -> 全数
+      if (v === false || v == null) return 0;    // 旧v1: 未完了 / 未登録
+      var n = Number(v);
+      if (!isFinite(n) || n < 0) return 0;
+      return q > 0 ? Math.min(n, q) : n;
+    }
+
+    /* 注文配列に対して doneMap を「正本」として上書き適用 (リロード復元 / ポーリング時)。
+       bool/number混在のdoneMapをここで doneCount(数値)へ正規化して書き戻す (#153) */
     function applyDoneToOrders(orders) {
       orders.forEach(function (o) {
         var saved = doneMap[o.id];
+        var counts = [];
         (o.items || []).forEach(function (it, i) {
-          if (saved && typeof saved[i] === "boolean") {
-            it.done = saved[i];                 // LS が正本
-          } else {
-            it.done = !!it.done;                // 初期値を尊重
-          }
+          var qty = Number(it.qty) || 1;
+          var count = saved ? normalizeDoneCount(saved[i], qty) : (it.done ? qty : 0);
+          counts[i] = count;
+          it.doneCount = count;
+          it.done = count >= qty;              // 全数完了フラグ (外部契約 / isAllDone 等が参照)
         });
-        // doneMap 未登録なら現状を取り込む
-        if (!saved) {
-          doneMap[o.id] = (o.items || []).map(function (it) { return !!it.done; });
-        }
+        doneMap[o.id] = counts;
       });
     }
 
@@ -1895,7 +1921,7 @@
           if (!msg) return;
           if (msg.type === "toggle") {
             if (!doneMap[msg.id]) doneMap[msg.id] = [];
-            doneMap[msg.id][msg.index] = msg.done;
+            doneMap[msg.id][msg.index] = msg.doneCount;
             saveDone();
             // 該当カードへ即時反映
             var c = cards[msg.id];
@@ -1947,9 +1973,9 @@
       try { bc.postMessage({ type: "moveToMain", stock: stock, order: order }); } catch (e) {}
     }
 
-    function broadcastToggle(id, index, done) {
+    function broadcastToggle(id, index, doneCount) {
       if (!bc) return;
-      try { bc.postMessage({ type: "toggle", id: id, index: index, done: done }); } catch (e) {}
+      try { bc.postMessage({ type: "toggle", id: id, index: index, doneCount: doneCount }); } catch (e) {}
     }
 
     function broadcastKonro(id, num, state) {
@@ -1985,6 +2011,55 @@
       }).join("");
     }
 
+    /* 品目ボタンへ doneCount を反映 (打ち消し線/破線下線/残数表示の切替)。
+       tap(+1)・長押し(-1)・他タブ同期のすべてがこの単一経路を通る (#153) */
+    function updateItemButtonDone(btn, count, qty) {
+      var total = Number(qty) || 1;
+      var c = Math.max(0, Math.min(total, Number(count) || 0));
+      var done = c >= total;
+      var partial = !done && c > 0;
+      btn.classList.toggle("done", done);
+      btn.classList.toggle("partial", partial);
+      btn.setAttribute("aria-pressed", done ? "true" : "false");
+      var numEl = btn.querySelector(".qty-num");
+      if (numEl) numEl.textContent = String(partial ? Math.max(total - c, 0) : total);
+    }
+
+    /* 品目ボタンのタップ(+1)/長押し(-1・誤タップの戻し)を配線する (#153)。
+       長押し成立時はその後の click を1回だけ抑止し、+1 との二重発火を防ぐ。
+       並べ替え長押し(attachReorderHandlers)と同じ LONGPRESS_MS / 12px キャンセル閾値を踏襲。 */
+    function attachItemHandlers(btn, order, idx) {
+      var pressTimer = null;
+      var startX = 0, startY = 0;
+      var suppressClick = false;
+
+      function clearPressTimer() {
+        if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+        btn.classList.remove("pressing");
+      }
+      btn.addEventListener("pointerdown", function (ev) {
+        if (ev.button != null && ev.button !== 0) return;
+        startX = ev.clientX; startY = ev.clientY;
+        btn.classList.add("pressing");
+        pressTimer = setTimeout(function () {
+          pressTimer = null;
+          btn.classList.remove("pressing");
+          suppressClick = true;
+          onItemDecrement(order.id, idx);
+        }, LONGPRESS_MS);
+      });
+      btn.addEventListener("pointermove", function (ev) {
+        if (!pressTimer) return;
+        if (Math.abs(ev.clientX - startX) > 12 || Math.abs(ev.clientY - startY) > 12) clearPressTimer();
+      });
+      btn.addEventListener("pointerup", clearPressTimer);
+      btn.addEventListener("pointercancel", clearPressTimer);
+      btn.addEventListener("click", function (ev) {
+        if (suppressClick) { suppressClick = false; ev.preventDefault(); return; }
+        onToggle(order.id, idx);
+      });
+    }
+
     /* 品目リスト <ul.items> を生成 (buildCard 初回 / ポーリングでの品目変更時の再構築で共用) */
     function buildItemsList(order) {
       var ul = document.createElement("ul");
@@ -1993,9 +2068,8 @@
         var li = document.createElement("li");
         var btn = document.createElement("button");
         btn.type = "button";
-        btn.className = "item" + (it.done ? " done" : "");
+        btn.className = "item";
         btn.setAttribute("data-index", String(idx));
-        btn.setAttribute("aria-pressed", it.done ? "true" : "false");
 
         var chk = document.createElement("span");
         chk.className = "check";
@@ -2015,14 +2089,22 @@
           main.appendChild(op);
         }
 
+        var totalQty = Number(it.qty || 1);
         var qty = document.createElement("span");
         qty.className = "item-qty";
-        qty.innerHTML = '<span class="x">×</span>' + Number(it.qty || 1);
+        var qtyNum = document.createElement("span");
+        qtyNum.className = "qty-num";
+        var qtyTotal = document.createElement("span");
+        qtyTotal.className = "qty-total";
+        qtyTotal.textContent = "/" + totalQty;
+        qty.appendChild(qtyNum);
+        qty.appendChild(qtyTotal);
 
         btn.appendChild(chk);
         btn.appendChild(main);
         btn.appendChild(qty);
-        btn.addEventListener("click", function () { onToggle(order.id, idx); });
+        attachItemHandlers(btn, order, idx);
+        updateItemButtonDone(btn, Number(it.doneCount) || 0, totalQty);
         li.appendChild(btn);
         ul.appendChild(li);
       });
@@ -2378,10 +2460,11 @@
       var saved = doneMap[order.id] || [];
       var btns = entry.el.querySelectorAll(".item");
       for (var i = 0; i < btns.length; i++) {
-        var d = !!saved[i];
-        order.items[i].done = d;
-        btns[i].classList.toggle("done", d);
-        btns[i].setAttribute("aria-pressed", d ? "true" : "false");
+        var qty = Number(order.items[i].qty) || 1;
+        var count = normalizeDoneCount(saved[i], qty);
+        order.items[i].doneCount = count;
+        order.items[i].done = count >= qty;
+        updateItemButtonDone(btns[i], count, qty);
       }
       if (isAllDone(entry)) {
         if (animateRemoval) { recordServe(entry); removeCard(order.id, /*fade*/ true); } // #29
@@ -2406,27 +2489,51 @@
     }
 
     /* ===================== 操作: 品目タップ ===================== */
+    /* 未完了行タップ = +1。完了行タップ = qty-1 に戻す(現行「done行タップで未完了に戻る」の後継)。
+       ×3→×2→×1→完了 のカウントダウンは doneCount(0..qty) で表現する (#153) */
     function onToggle(id, index) {
       var entry = cards[id];
       if (!entry) return;
-      if (!doneMap[id]) doneMap[id] = entry.order.items.map(function (it) { return !!it.done; });
-      var next = !doneMap[id][index];
+      if (!doneMap[id]) doneMap[id] = entry.order.items.map(function (it) { return Number(it.doneCount) || 0; });
+      var qty = Number(entry.order.items[index].qty) || 1;
+      var cur = Number(doneMap[id][index]) || 0;
+      var next = cur >= qty ? qty - 1 : cur + 1;
+      next = Math.max(0, Math.min(qty, next));
       doneMap[id][index] = next;
       saveDone();                                   // LS 即時保存 (正本)
       broadcastToggle(id, index, next);             // 他タブへ同期
 
-      entry.order.items[index].done = next;
+      entry.order.items[index].doneCount = next;
+      entry.order.items[index].done = next >= qty;
       var btn = entry.el.querySelectorAll(".item")[index];
-      if (btn) {
-        btn.classList.toggle("done", next);
-        btn.setAttribute("aria-pressed", next ? "true" : "false");
-      }
+      if (btn) updateItemButtonDone(btn, next, qty);
       if (isAllDone(entry)) {
         recordServe(entry);              // #29 提供時間ログ
         removeCard(id, /*fade*/ true);
         showUndoToast(entry.order, index);
       }
       if (view === "lane") renderLanes();   // #13 レーンから完了品目を除く
+    }
+
+    /* 長押し(0.8s)= 誤タップの戻し。doneCount -1 (0未満にはしない) (#153) */
+    function onItemDecrement(id, index) {
+      var entry = cards[id];
+      if (!entry) return;
+      var order = entry.order;
+      var qty = Number(order.items[index].qty) || 1;
+      if (!doneMap[id]) doneMap[id] = order.items.map(function (it) { return Number(it.doneCount) || 0; });
+      var cur = Number(doneMap[id][index]) || 0;
+      var next = Math.max(0, cur - 1);
+      if (next === cur) return;   // 既に0なら何もしない
+      doneMap[id][index] = next;
+      saveDone();
+      broadcastToggle(id, index, next);
+
+      order.items[index].doneCount = next;
+      order.items[index].done = next >= qty;
+      var btn = entry.el.querySelectorAll(".item")[index];
+      if (btn) updateItemButtonDone(btn, next, qty);
+      if (view === "lane") renderLanes();
     }
 
     /* ===================== 全完了の取り消しトースト ===================== */
@@ -2447,9 +2554,10 @@
       var id = undoInfo.id, idx = undoInfo.index;
       hideUndoToast();
       if (!doneMap[id]) doneMap[id] = [];
-      doneMap[id][idx] = false;          // 最後にタップした品目を未完了へ戻す
+      var cur = Number(doneMap[id][idx]) || 0;
+      doneMap[id][idx] = Math.max(0, cur - 1);   // 最後の1個分だけ未完了へ戻す (#153)
       saveDone();
-      broadcastToggle(id, idx, false);
+      broadcastToggle(id, idx, doneMap[id][idx]);
       poll();                            // 配膳カードを復帰させる
     }
 

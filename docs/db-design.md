@@ -34,7 +34,7 @@ POS 連携は**行わない**。売上・会計は別のレジで管理する（
 | 予約（メニュー・人数等） | **テーブルチェック**（クラウド） | 恒久（TableCheck側） | 店内は下記中継サーバーが当日分をコピー保持するのみ |
 | 予約の店内コピー | 中継サーバー（ミニPC）**メモリ** | 当日分のみ | `relay-server/` 実装済み。DBファイルは持たない |
 | 注文 | KDS `window.KDS_ORDERS`（メモリ） | セッション中（当日） | 使い捨て。`{id, table, type, start, people, items:[{name, qty, options, allergies, done}]}` |
-| 品目完了状態 | KDS `LocalStorage` `kds_done_v1` | 端末ローカル | 一時的な表示状態。orderId → bool 配列 |
+| 品目完了状態 | KDS `LocalStorage` `kds_done_v2` | 端末ローカル | 一時的な表示状態。orderId → doneCount(完了個数) 配列（#153） |
 | 予約ストック | KDS `LocalStorage` `kds_stock_v1` | 端末ローカル・当日分のみ | `[{rid, time, adults, kids, name, menu:[{name,qty}], seenAt}]` |
 | 提供時間ログ | KDS `LocalStorage` `kds_serve_log_v1` | 端末ローカル | KPI ベースライン（Issue #29）。永続保証はない |
 | メニュー分類 | コード内 `itemCategory()` | — | マスタDBは持たない。品名の正規表現でカテゴリ判定（Issue #13） |
@@ -240,7 +240,7 @@ orders 1──n order_items ──(n..1 任意)── menu_items
 - 客席タブレットはフリーアドレスだが、スタッフが手渡し時に卓番号を入力するため、タブレット由来の注文は卓番号付きで届く（A項）。
 - 同一卓の追加注文は**別の orders 行**になる（注文単位＝KDSカード単位）。
 
-### 5.5 order_items — 注文品目（現 `items[]` + `kds_done_v1`）
+### 5.5 order_items — 注文品目（現 `items[]` + `kds_done_v2`）
 
 | 列 | 型 | 制約 | 備考 |
 |---|---|---|---|
