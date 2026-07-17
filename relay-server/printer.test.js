@@ -44,6 +44,56 @@ test("buildEscPos: 初期化コマンドで始まり、卓番・品名がShift_J
   assert.notEqual(buf.indexOf(iconv.encode("卵多め", "Shift_JIS")), -1);
 });
 
+test("normalizeStyle: 不正値・欠損は既定値へ丸める", function () {
+  var st = printer.normalizeStyle({
+    paperWidth: 9999, qtyFormat: "evil", feedLines: -3,
+    tableBold: 0, sepTop: "solid", itemSize: 22,
+  });
+  assert.equal(st.paperWidth, 80);       // 許容リスト外 → 既定値
+  assert.equal(st.qtyFormat, "x");
+  assert.equal(st.feedLines, 0);         // 範囲へクランプ
+  assert.equal(st.tableBold, false);
+  assert.equal(st.sepTop, "solid");
+  assert.equal(st.itemSize, 22);
+  assert.deepEqual(printer.normalizeStyle(null), printer.STYLE_DEFAULTS);
+});
+
+test("buildEscPos: スタイル指定が印字コマンドへ反映される (#144追補)", function () {
+  var job = printer.normalizeJob({
+    table: "B7",
+    meta: "12:00",
+    store: "土鍋飯ぽかぽか",
+    style: {
+      storeShow: true, metaShow: false, qtyFormat: "kosuu",
+      tableSize: 24, tableBold: false, itemSize: 14, itemBold: false,
+      sepTop: "none", sepBottom: "dashed", paperWidth: 58, feedLines: 2, noteShow: false,
+    },
+    items: [{ name: "焼売", qty: 3, note: "醤油なし" }],
+  });
+  var buf = printer.buildEscPos(job);
+  assert.notEqual(buf.indexOf(iconv.encode("土鍋飯ぽかぽか", "Shift_JIS")), -1);  // 店名印字
+  assert.equal(buf.indexOf(iconv.encode("12:00", "Shift_JIS")), -1);              // metaShow:false
+  assert.notEqual(buf.indexOf(iconv.encode("  3 個", "Shift_JIS")), -1);          // 数量表記
+  assert.equal(buf.indexOf(iconv.encode("醤油なし", "Shift_JIS")), -1);           // noteShow:false
+  assert.equal(buf.indexOf(Buffer.from("========", "latin1")), -1);               // sepTop:none
+  assert.notEqual(buf.indexOf(Buffer.from(new Array(25).join("-"), "latin1")), -1); // 58mm=24桁の破線
+  // 卓番: tableSize<40 なので2倍角(GS ! 0x11)ではなく等倍(GS ! 0x00)
+  assert.equal(buf.indexOf(Buffer.from("\x1d\x21\x11", "latin1")), -1);
+  // 品目: itemSize<22 なので横2倍(GS ! 0x01)を使わない
+  assert.equal(buf.indexOf(Buffer.from("\x1d\x21\x01", "latin1")), -1);
+});
+
+test("buildEscPos: style未指定は従来相当 (店名なし・x表記・2倍角卓番)", function () {
+  var job = printer.normalizeJob({
+    table: "A3", meta: "18:30",
+    items: [{ name: "焼売", qty: 2, note: "" }],
+  });
+  var buf = printer.buildEscPos(job);
+  assert.equal(buf.indexOf(iconv.encode("ぽかぽか", "Shift_JIS")), -1);  // storeが空なら印字しない
+  assert.notEqual(buf.indexOf(iconv.encode("  x 2", "Shift_JIS")), -1);
+  assert.notEqual(buf.indexOf(Buffer.from("\x1d\x21\x11", "latin1")), -1); // 卓番2倍角
+});
+
 test("isPrivateIPv4: 店内LAN想定のプライベートアドレスのみ許可する", function () {
   assert.equal(printer.isPrivateIPv4("192.168.1.50"), true);
   assert.equal(printer.isPrivateIPv4("10.0.0.5"), true);

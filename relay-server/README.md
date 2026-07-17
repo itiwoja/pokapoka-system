@@ -133,7 +133,17 @@ WiFi越しに初めて繋ぐときは、設定以外の次の点も確認する(
 | `POST /api/mock/reservations` | (MOCK限定) 予約作成。body は TableCheck Reservation 形 |
 | `PATCH /api/mock/reservations/{id}` | (MOCK限定) 予約変更(人数・メニュー等) |
 | `DELETE /api/mock/reservations/{id}` | (MOCK限定) 予約キャンセル(status=cancelled) |
-| `POST /api/print` | チビ伝を実機プリンターへ印字(#144)。body は `{ip, table, meta, items:[{name,qty,note}]}`。`ip` は店内LAN想定のプライベートIPv4のみ許可(10/8・172.16-31/12・192.168/16)。ポート9100固定のESC/POS RAWへ生ソケットで送信 |
+| `POST /api/print` | チビ伝を実機プリンターへ印字(#144)。body は `{ip, table, meta, store?, style?, items:[{name,qty,note}]}`。`style` は印刷スタイル設定(下記)で、不正値は既定値へ丸める。`ip` は店内LAN想定のプライベートIPv4のみ許可(10/8・172.16-31/12・192.168/16)。ポート9100固定のESC/POS RAWへ生ソケットで送信 |
+
+### チビ伝の印刷スタイル設定(slip-style-designer.html)
+
+`http://<サーバー>:<port>/slip-style-designer.html` で伝票の見た目(用紙幅・文字サイズ・太字・
+数量表記・罫線・店名/備考の表示など)をプレビューを見ながら設定できる。
+設定は localStorage(`slip_style_designer_v1`)に保存され、**同一オリジンで配信される KDS が
+伝票プレビューと実機印刷の両方に自動反映する**(このため設定ツールは必ずこのサーバー経由で開く。
+`file://` で開くと KDS と localStorage を共有できず反映されない)。
+ESC/POS は文字サイズが段階的(等倍/2倍)のため、実機印字は近似になる:
+卓番は 40px 以上で2倍角、品名は 22px 以上で横2倍、それ未満は等倍。
 
 ### チビ伝の実機印刷(#144)
 

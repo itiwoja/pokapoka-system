@@ -51,6 +51,7 @@ function createRelay(options) {
   var root = path.resolve(__dirname, "..");
   var allowedStaticFiles = [
     "kds-a-grid.html",
+    "slip-style-designer.html",   // 印刷スタイル設定ツール。KDSと同一オリジンで配信しlocalStorageを共有する
     path.join("relay-server", "kds-bridge.js"),
   ];
   var timers = [];

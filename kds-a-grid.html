@@ -1414,7 +1414,7 @@
   <!-- チビ伝印刷プレビュー -->
   <div class="slip-backdrop" id="slipBackdrop">
     <div class="slip" id="slip" role="dialog" aria-modal="true" aria-label="伝票プレビュー">
-      <div class="slip-store">土鍋飯ぽかぽか</div>
+      <div class="slip-store" id="slipStore">土鍋飯ぽかぽか</div>
       <div class="slip-table" id="slipTable">--</div>
       <div class="slip-meta" id="slipMeta"></div>
       <ul id="slipItems"></ul>
@@ -1483,6 +1483,7 @@
     var LS_DAY = "kds_day_v1";     // 最終利用日 (YYYY-MM-DD)。日付が変わったら当日データを破棄 (#63)
     var LS_DELETED = "kds_deleted_v1"; // 削除済み注文ID (POS再送で復活させないトゥームストーン #67)
     var LS_PRINTER_IP = "kds_printer_ip_v1"; // チビ伝 実機プリンターIP (店舗LAN依存のため固定埋め込み不可 #144)
+    var LS_SLIP_STYLE = "slip_style_designer_v1"; // チビ伝 印刷スタイル (slip-style-designer.html が書く。同一オリジン配信で共有)
     var BC_NAME = "kds_sync";      // BroadcastChannel 名
     var PRINTER_IP_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
     // #59 仕様未決定の先行実装は既定OFF (フィーチャーフラグ)。会議決定が出たら true にして仕様追記。
@@ -1581,6 +1582,9 @@
     var slipTableEl = document.getElementById("slipTable");
     var slipMetaEl = document.getElementById("slipMeta");
     var slipItemsEl = document.getElementById("slipItems");
+    var slipStoreEl = document.getElementById("slipStore");
+    var slipPageStyleEl = document.createElement("style");   // 用紙幅に応じた @page 上書き (スタイル設定 #144追補)
+    document.head.appendChild(slipPageStyleEl);
     var slipPrintBtn = document.getElementById("slipPrint");
     var slipCloseBtn = document.getElementById("slipClose");
     var seatBackdrop = document.getElementById("seatBackdrop");
@@ -2965,8 +2969,55 @@
     }
 
     /* ===================== チビ伝印刷 (簡易プレビュー + 実機印刷/window.printフォールバック #144) ===================== */
+
+    /* 印刷スタイル (slip-style-designer.html で設定した JSON) を読む。
+       設定が無い・壊れている場合は null を返し、従来の見た目のまま表示する */
+    function loadSlipStyle() {
+      try {
+        var raw = localStorage.getItem(LS_SLIP_STYLE);
+        if (!raw) return null;
+        var st = JSON.parse(raw);
+        return (st && typeof st === "object") ? st : null;
+      } catch (e) { return null; }
+    }
+
+    /* 数量表記 (設定ツールの qtyFormat に対応。未設定は従来の「×N」) */
+    function slipQtyText(st, qty) {
+      if (!st) return "×" + qty;
+      if (st.qtyFormat === "kosuu") return qty + " 個";
+      if (st.qtyFormat === "x") return "x " + qty;
+      return "× " + qty;
+    }
+
+    /* 設定JSONをプレビューDOM/印刷CSSへ反映する (実機ESC/POSと違いブラウザ側はpx指定をそのまま使える) */
+    function applySlipStyle(st) {
+      slipStoreEl.style.display = (!st || st.storeShow !== false) ? "" : "none";
+      slipMetaEl.style.display = (!st || st.metaShow !== false) ? "" : "none";
+      if (!st) {
+        slipStoreEl.style.fontSize = slipStoreEl.style.letterSpacing = "";
+        slipTableEl.style.fontSize = slipTableEl.style.fontWeight = "";
+        slipMetaEl.style.fontSize = "";
+        slipItemsEl.style.borderTopStyle = slipItemsEl.style.borderBottomStyle = "";
+        slipPageStyleEl.textContent = "";
+        return;
+      }
+      if (st.storeSize) slipStoreEl.style.fontSize = st.storeSize + "px";
+      slipStoreEl.style.letterSpacing = st.storeWide === false ? "normal" : "";
+      if (st.tableSize) slipTableEl.style.fontSize = st.tableSize + "px";
+      slipTableEl.style.fontWeight = st.tableBold === false ? "400" : "900";
+      if (st.metaSize) slipMetaEl.style.fontSize = st.metaSize + "px";
+      slipItemsEl.style.borderTopStyle = st.sepTop === "none" ? "hidden" : (st.sepTop || "dashed");
+      slipItemsEl.style.borderBottomStyle = st.sepBottom === "none" ? "hidden" : (st.sepBottom || "dashed");
+      var w = st.paperWidth === 58 ? 58 : 80;
+      slipPageStyleEl.textContent =
+        "@page { size: " + w + "mm auto; margin: 0; }\n" +
+        "@media print { .slip { width: " + w + "mm !important; } }";
+    }
+
     function openSlip(order) {
       currentSlipOrder = order;
+      var st = loadSlipStyle();
+      applySlipStyle(st);
       slipTableEl.textContent = order.table != null ? String(order.table) : "--";
       slipMetaEl.textContent = t("slipMeta") + " " + hhmm(order.start);
       slipItemsEl.innerHTML = "";
@@ -2975,7 +3026,9 @@
         var nm = document.createElement("span");
         var slipNotes = itemNotesText(it);
         nm.textContent = it.name;
-        if (slipNotes) {
+        if (st && st.itemSize) nm.style.fontSize = st.itemSize + "px";
+        if (st) nm.style.fontWeight = st.itemBold === false ? "400" : "700";
+        if (slipNotes && (!st || st.noteShow !== false)) {
           var o = document.createElement("span");
           o.className = "o";
           o.textContent = " (" + slipNotes + ")";
@@ -2983,9 +3036,10 @@
         }
         var q = document.createElement("span");
         q.className = "q";
-        q.textContent = "×" + (Number(it.qty) || 1);
+        q.textContent = slipQtyText(st, Number(it.qty) || 1);
         li.appendChild(nm);
         li.appendChild(q);
+        if (st && st.itemGap != null) li.style.paddingTop = li.style.paddingBottom = (st.itemGap / 2) + "px";
         slipItemsEl.appendChild(li);
       });
       document.body.classList.add("slip-open");
@@ -3018,6 +3072,8 @@
         ip: printerIp,
         table: slipTableEl.textContent,
         meta: slipMetaEl.textContent,
+        store: slipStoreEl.textContent,
+        style: loadSlipStyle() || undefined,   // 設定ツールのスタイルを実機印字にも反映 (relay側で許容値へ丸める)
         items: (order.items || []).map(function (it) {
           return { name: it.name, qty: Number(it.qty) || 1, note: itemNotesText(it) };
         }),
