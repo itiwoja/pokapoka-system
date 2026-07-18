@@ -16,7 +16,12 @@
           <p class="eyebrow">Kitchen Display Mockup</p>
           <h1>&#x30AA;&#x30FC;&#x30C0;&#x30FC;&#x7BA1;&#x7406;</h1>
         </div>
-        <time id="clock" class="clock" datetime=""></time>
+        <div class="top-actions">
+          <button id="alert-toggle" class="icon-button" type="button" aria-pressed="true">
+            &#x97F3; ON
+          </button>
+          <time id="clock" class="clock" datetime=""></time>
+        </div>
       </header>
 
       <main class="layout">
@@ -35,10 +40,24 @@
           </div>
           <div id="reserve-list" class="reserve-list"></div>
           <p id="reserve-empty" class="empty-state small" hidden>&#x4E88;&#x7D04;&#x30E1;&#x30CB;&#x30E5;&#x30FC;&#x306F;&#x3042;&#x308A;&#x307E;&#x305B;&#x3093;</p>
+          <section class="ops-summary" aria-labelledby="summary-title">
+            <h3 id="summary-title">&#x672C;&#x65E5;&#x306E;&#x63D0;&#x4F9B;&#x30E1;&#x30C8;&#x30EA;&#x30AF;&#x30B9;</h3>
+            <div class="summary-grid">
+              <div>
+                <span class="summary-label">&#x5B8C;&#x4E86;</span>
+                <strong id="completed-count">0&#x4EF6;</strong>
+              </div>
+              <div>
+                <span class="summary-label">&#x5E73;&#x5747;&#x63D0;&#x4F9B;</span>
+                <strong id="average-duration">0&#x5206;</strong>
+              </div>
+            </div>
+          </section>
         </aside>
       </main>
     </div>
 
+    <script src="./app.logic.js" charset="utf-8"></script>
     <script src="./app.js" charset="utf-8"></script>
   </body>
 </html>
