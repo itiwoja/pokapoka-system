@@ -1482,9 +1482,6 @@
     var LS_VIEW   = "kds_view_v1"; // #13 表示モード (grid / lane)
     var LS_DAY = "kds_day_v1";     // 最終利用日 (YYYY-MM-DD)。日付が変わったら当日データを破棄 (#63)
     var LS_DELETED = "kds_deleted_v1"; // 削除済み注文ID (POS再送で復活させないトゥームストーン #67)
-    // relay-server/kds-bridge.js が所有する取込済みrid記録。書くのは向こうだが、
-    // 日次パージの対象に入れる必要があるためキー名だけここでも持つ (#172)
-    var LS_BRIDGE_SEEN = "kds_bridge_seen_v1";
     var BC_NAME = "kds_sync";      // BroadcastChannel 名
     // #59 仕様未決定の先行実装は既定OFF (フィーチャーフラグ)。会議決定が出たら true にして仕様追記。
     var FEATURE_TIMER_LOCK   = false; // タイマーロック (停/再) ボタン
@@ -1773,11 +1770,7 @@
       try {
         var last = localStorage.getItem(LS_DAY);
         if (last && last !== today) {
-          // LS_BRIDGE_SEEN も破棄する。予約ストック(LS_STOCK)だけ消して取込済み記録を残すと、
-          // TableCheck 側で日程変更された予約 (予約IDは不変) が「取込済み」と判定されて
-          // 変更後の日に二度と取り込まれない (#172)
-          [LS_STOCK, LS_DONE, LS_DONE_V1, LS_ORDER, LS_KONRO, LS_LOCKED, LS_DELETED,
-           LS_BRIDGE_SEEN].forEach(function (key) {
+          [LS_STOCK, LS_DONE, LS_DONE_V1, LS_ORDER, LS_KONRO, LS_LOCKED, LS_DELETED].forEach(function (key) {
             localStorage.removeItem(key);
           });
         }
