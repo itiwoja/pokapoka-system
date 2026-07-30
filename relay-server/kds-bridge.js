@@ -31,22 +31,29 @@
 
   /**
    * サーバー取得分 (incoming) を既存ストックへマージする純粋関数。
-   * seen (取込済み rid の記録) は新規取込時にこの場で書き足される。
+   * seen (取込済み rid の記録) は incoming に載った rid をこの場で書き足す。
    * @param {Array}  stock    - 現在の kds_stock_v1 の中身
    * @param {Object} seen     - kds_bridge_seen_v1 の中身 (rid -> 1)。破壊的に更新される
    * @param {Array}  incoming - /api/stock のレスポンス
-   * @returns {{stock: Array, changed: boolean}} マージ後のストック (time 昇順)
+   * @returns {{stock: Array, changed: boolean, seenChanged: boolean}}
+   *          stock: マージ後のストック (time 昇順) / changed: stock を保存すべきか /
+   *          seenChanged: seen を保存すべきか (changed とは独立 #175)
    */
   function mergeStock(stock, seen, incoming) {
     var byRid = {};
     stock.forEach(function (r) { if (r && r.rid != null) byRid[String(r.rid)] = r; });
     var incomingRids = {};
     var changed = false;
+    var seenChanged = false;
 
     incoming.forEach(function (r) {
       if (!r || r.rid == null) return;
       var rid = String(r.rid);
       incomingRids[rid] = true;
+      // incoming に載っている = サーバー由来が確定。新規取込かどうかに関わらず seen へ記録する。
+      // 上書きだけして seen に載せずにいると、その後キャンセルされても下の削除判定を通らない (Issue #175)
+      var wasSeen = !!seen[rid];
+      if (!wasSeen) { seen[rid] = 1; seenChanged = true; }
       if (byRid[rid]) {                      // 既存 → 内容が変わっていれば上書き (updated 反映)
         var cur = byRid[rid];
         if (JSON.stringify({ a: cur.time, b: cur.adults, c: cur.kids, d: cur.name, e: cur.menu }) !==
@@ -54,8 +61,8 @@
           r.seenAt = cur.seenAt || r.seenAt; // 30分前通知の再発火を避けるため取込時刻は維持
           byRid[rid] = r; changed = true;
         }
-      } else if (!seen[rid]) {               // 新規 (着手/削除済みは seen に載っているので復活させない)
-        byRid[rid] = r; seen[rid] = 1; changed = true;
+      } else if (!wasSeen) {                 // 新規 (着手/削除済みは seen に載っているので復活させない)
+        byRid[rid] = r; changed = true;
       }
     });
 
@@ -67,7 +74,7 @@
 
     var next = Object.keys(byRid).map(function (k) { return byRid[k]; });
     next.sort(function (a, b) { return String(a.time) < String(b.time) ? -1 : 1; });
-    return { stock: next, changed: changed };
+    return { stock: next, changed: changed, seenChanged: seenChanged };
   }
 
   async function tickOnce() {
@@ -81,9 +88,11 @@
 
     var seen = load(LS_BRIDGE_SEEN, {});
     var merged = mergeStock(load(LS_STOCK, []), seen, incoming);
+    // 取込実績は stock が変わっていない tick でも保存する。
+    // changed 側にぶら下げると「上書きのみ」「変化なし」の tick で seen を取りこぼす (Issue #175)
+    if (merged.seenChanged) save(LS_BRIDGE_SEEN, seen);
     if (!merged.changed) return;
     save(LS_STOCK, merged.stock);
-    save(LS_BRIDGE_SEEN, seen);
     if (bc) { try { bc.postMessage({ type: "stock", stock: merged.stock }); } catch (e) {} }
     // 同一タブへの反映: KDS は storage イベント/BC を購読しているが、自タブには BC が届かないため
     // ページ側の再描画フックが無い場合に備え、控えめにリロードは行わず storage 書換のみとする。
