@@ -144,3 +144,88 @@ test("sendToPrinter: タイムアウトで拒否する", async function () {
   socket.emit("timeout");
   await assert.rejects(promise, /timeout/);
 });
+
+/* ===== ラスター(画像)印字 ===== */
+
+/** 幅widthドット・高さheight行の1bitラスターを作る (中身は0埋め) */
+function fakeRaster(width, height) {
+  var widthBytes = Math.ceil(width / 8);
+  return {
+    raster: {
+      width: width,
+      height: height,
+      data: Buffer.alloc(widthBytes * height).toString("base64"),
+    },
+  };
+}
+
+test("normalizeRaster: 正しい寸法とデータ長なら受理する", function () {
+  var r = printer.normalizeRaster(fakeRaster(576, 10));
+  assert.equal(r.widthBytes, 72);
+  assert.equal(r.height, 10);
+  assert.equal(r.bits.length, 720);
+});
+
+test("normalizeRaster: 寸法とデータ長が食い違うものは拒否する", function () {
+  var body = fakeRaster(576, 10);
+  body.raster.height = 11;     // データは10行ぶんしかない
+  assert.equal(printer.normalizeRaster(body), null);
+});
+
+test("normalizeRaster: 上限を超える寸法・ラスター無しは拒否する", function () {
+  assert.equal(printer.normalizeRaster(fakeRaster(600, 10)), null);    // 幅が印字可能幅超え
+  assert.equal(printer.normalizeRaster(fakeRaster(576, 2401)), null);  // 高さが上限超え
+  assert.equal(printer.normalizeRaster({}), null);
+});
+
+test("buildRaster(escpos): GS v 0 を帯に分けて送り、カットで終わる", function () {
+  var r = printer.normalizeRaster(fakeRaster(576, 300));
+  var buf = printer.buildRaster(r, { feedLines: 3, emulation: "escpos" });
+  var hex = buf.toString("latin1");
+  assert.ok(hex.startsWith("\x1b@"), "初期化で始まる");
+  // 300行 = 128 + 128 + 44 の3帯
+  var bands = hex.split("\x1d\x76\x30\x00").length - 1;
+  assert.equal(bands, 3);
+  // 最終帯の高さ(44)がリトルエンディアンで入っている
+  assert.ok(hex.indexOf("\x1d\x76\x30\x00\x48\x00\x2c\x00") !== -1);
+  assert.ok(hex.indexOf("\x1b\x64\x03") !== -1, "紙送り3行");
+  assert.ok(hex.endsWith("\x1b\x64\x02\x1bm"), "カットで終わる");
+});
+
+test("buildRaster(starprnt): ESC GS S で画像を1コマンドで送り、Starのカットで終わる", function () {
+  var r = printer.normalizeRaster(fakeRaster(576, 300));
+  var buf = printer.buildRaster(r, { feedLines: 2, emulation: "starprnt" });
+  var hex = buf.toString("latin1");
+  // 1B 1D 53 01 xL xH yL yH 00 : 幅72バイト(=576ドット)・高さ300ドット
+  assert.ok(hex.indexOf("\x1b\x1dS\x01\x48\x00\x2c\x01\x00") !== -1, "ESC GS S のヘッダ");
+  assert.equal(hex.split("\x1b\x1dS").length - 1, 1, "画像は1コマンドで送る");
+  assert.ok(hex.indexOf("\x1d\x76\x30") === -1, "ESC/POS の GS v 0 は混ぜない");
+  assert.ok(hex.endsWith("\n\n\x1b\x64\x33"), "紙送り2行 + ESC d 3 (ASCIIの'3') で終わる");
+});
+
+test("buildRaster(starline): ラスターモードで囲み、b コマンドを行数ぶん送る", function () {
+  var r = printer.normalizeRaster(fakeRaster(384, 5));
+  var buf = printer.buildRaster(r, { feedLines: 0, emulation: "starline" });
+  var hex = buf.toString("latin1");
+  assert.ok(hex.indexOf("\x1b\x2a\x72\x41") !== -1, "ESC * r A で開始");
+  assert.ok(hex.indexOf("\x1b\x2a\x72\x50\x30\x00") !== -1, "ページ長=連続紙");
+  // b n1 n2 が5行ぶん (48mm=384ドット → 48バイト/行)
+  assert.equal(hex.split("\x62\x30\x00").length - 1, 5);
+  assert.ok(hex.indexOf("\x1b\x0c\x00") !== -1, "ESC FF NUL で印字");
+  assert.ok(hex.indexOf("\x1b\x2a\x72\x42") !== -1, "ESC * r B で終了");
+  assert.ok(hex.endsWith("\x1b\x64\x33"), "Star のカットで終わる");
+});
+
+test("buildRaster: 既定は本番機(mC-Print3)の StarPRNT。未知の指定も既定へ倒す", function () {
+  var r = printer.normalizeRaster(fakeRaster(576, 2));
+  assert.ok(printer.buildRaster(r, {}).toString("latin1").indexOf("\x1b\x1dS") !== -1);
+  assert.ok(printer.buildRaster(r, { emulation: "unknown" }).toString("latin1").indexOf("\x1b\x1dS") !== -1);
+});
+
+test("buildRaster: feedLines は 0..8 に丸める", function () {
+  var r = printer.normalizeRaster(fakeRaster(576, 2));
+  var over = printer.buildRaster(r, { feedLines: 99, emulation: "escpos" }).toString("latin1");
+  assert.ok(over.indexOf("\x1b\x64\x08") !== -1, "8行に丸める");
+  var under = printer.buildRaster(r, { feedLines: -5, emulation: "starprnt" }).toString("latin1");
+  assert.ok(under.endsWith("\x1b\x64\x33"), "0行なら紙送り無しでカットへ");
+});
