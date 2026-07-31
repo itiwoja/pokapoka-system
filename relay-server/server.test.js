@@ -244,7 +244,7 @@ test("GET/POST /api/slip-style はスタイルを保存・配信し、印刷のs
     setInterval: function () { return 1; },
     clearInterval: function () {},
     printer: Object.assign({}, printerModule, {
-      buildEscPos: function (job) { built.push(job); return Buffer.from("x"); },
+      buildStarLine: function (job) { built.push(job); return Buffer.from("x"); },
       sendToPrinter: function () { return Promise.resolve(); },
     }),
   });

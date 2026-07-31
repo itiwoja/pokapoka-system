@@ -1,5 +1,5 @@
 /**
- * printer.js — チビ伝の実機印刷 (Star mC-Print3 MCP31LB WT JP 等・ESC/POS RAWポート)
+ * printer.js — チビ伝の実機印刷 (Star mC-Print3 MCP31LB WT JP・STAR Line Mode / RAWポート)
  *
  * KDS(ブラウザ)は生TCPソケットを開けないため、relay-server(Node)が仲介する。
  * プリンターIPは店舗ネットワーク依存のため固定埋め込みせず、リクエストボディで受け取る(#144)。
@@ -13,7 +13,7 @@
 var net = require("net");
 var iconv = require("iconv-lite");
 
-var PRINT_PORT = 9100;                 // ESC/POS RAWポートの事実上の標準
+var PRINT_PORT = 9100;                 // RAWポートの事実上の標準
 var DEFAULT_TIMEOUT_MS = 5000;
 var MAX_TABLE_LEN = 20;
 var MAX_META_LEN = 40;
@@ -111,32 +111,55 @@ function sepLine(kind, paperWidth) {
   return new Array(cols + 1).join(ch) + "\n";
 }
 
-/** チビ伝1枚分のESC/POSバイト列を組み立てる (感熱ロール紙想定。style未指定は従来相当) */
-function buildEscPos(job) {
+/* ---- STAR Line Mode コマンド ----
+   mC-Print3 の出荷時エミュレーションは STAR Line Mode で、ESC/POS とは体系が違う。
+   同じバイト列でも意味が変わるうえ、解釈できないバイトはそのまま文字として印字されるため
+   間違えても送信は成功扱いになり誰も気づけない (実測: ESC/POS版は伝票に "@" と "!" が
+   混ざり、中央寄せ・倍角・太字が無言で全滅していた。ESC/POSの中央寄せ ESC a 1 は
+   STAR Line Mode では「1行紙送り」)。プリンター側の設定に依存させず、出荷状態のまま
+   挿せば正しく出るよう Star のネイティブコマンドで組み立てる。
+   出典: STAR Line Mode Command Specifications Rev.1.80 */
+function chr(n) { return String.fromCharCode(n); }
+function starAlign(n)         { return ESC + GS + "\x61" + chr(n); }         // 1B 1D 61 n   0=左 1=中央
+function starExpand(hi, wide) { return ESC + "\x69" + chr(hi) + chr(wide); } // 1B 69 n1 n2  0=等倍 1=2倍
+function starBold(on)         { return ESC + (on ? "\x45" : "\x46"); }       // 1B 45 / 1B 46
+function starFeed(lines)      { return ESC + "\x61" + chr(lines); }          // 1B 61 n      n行紙送り(1..127)
+function starCut()            { return ESC + "\x64\x03"; }                   // 1B 64 03     カット位置まで送り部分カット
+
+/* 先頭の状態リセット。初期化コマンド ESC @ (1B 40) は使わない。
+   mC-Print3 実機では解釈されず "@" が伝票の1行目に印字されてしまうため(実測)。
+   このモジュールが触る属性は寄せ・拡大・強調の3つだけなので、
+   それらを明示的に既定へ戻せば ESC @ 無しでも開始状態は確定する */
+function starReset() { return starAlign(0) + starExpand(0, 0) + starBold(false); }
+
+/** チビ伝1枚分のSTAR Line Modeバイト列を組み立てる (感熱ロール紙想定) */
+function buildStarLine(job) {
   var st = job.style || STYLE_DEFAULTS;
   var parts = [];
-  parts.push(ctl(ESC + "@"));                                              // 初期化
+  parts.push(ctl(starReset()));
 
   if (st.storeShow && job.store) {
-    parts.push(ctl(ESC + "\x61\x01"));                                     // 中央寄せ
+    parts.push(ctl(starAlign(1)));
     parts.push(sjis(job.store + "\n"));
-    parts.push(ctl(ESC + "\x61\x00"));
+    parts.push(ctl(starAlign(0)));
   }
 
-  var tableScale = st.tableSize >= 40 ? "\x11" : "\x00";                   // 2倍角 or 等倍
-  parts.push(ctl(ESC + "\x61\x01" + GS + "\x21" + tableScale + (st.tableBold ? ESC + "\x45\x01" : "")));
+  // 卓番は遠くから読めることが最優先なので縦横とも2倍にする
+  var tableBig = st.tableSize >= 40 ? 1 : 0;
+  parts.push(ctl(starAlign(1) + starExpand(tableBig, tableBig) + (st.tableBold ? starBold(true) : "")));
   parts.push(sjis("卓  " + job.table + "\n"));
-  parts.push(ctl(ESC + "\x45\x00" + GS + "\x21\x00" + ESC + "\x61\x00"));   // 太字・拡大・寄せ 解除
+  parts.push(ctl(starBold(false) + starExpand(0, 0) + starAlign(0)));
 
   if (st.metaShow && job.meta) parts.push(sjis(job.meta + "\n"));
   var top = sepLine(st.sepTop, st.paperWidth);
   if (top) parts.push(ctl(top));
 
-  var itemScale = st.itemSize >= 22 ? "\x01" : "\x00";                     // 横2倍 or 等倍
+  // 品名は横だけ広げる。縦に伸ばすと1枚に載る品数が減るため
+  var itemWide = st.itemSize >= 22 ? 1 : 0;
   job.items.forEach(function (it) {
-    parts.push(ctl(GS + "\x21" + itemScale + (st.itemBold ? ESC + "\x45\x01" : "")));
+    parts.push(ctl(starExpand(0, itemWide) + (st.itemBold ? starBold(true) : "")));
     parts.push(sjis(it.name + "\n"));
-    parts.push(ctl(ESC + "\x45\x00" + GS + "\x21\x00"));                   // 太字・拡大 解除
+    parts.push(ctl(starBold(false) + starExpand(0, 0)));
     parts.push(sjis(qtyText(st.qtyFormat, it.qty) + "\n"));
     if (st.noteShow && it.note) parts.push(sjis("  ※ " + it.note + "\n"));
     parts.push(ctl("\n"));
@@ -145,8 +168,8 @@ function buildEscPos(job) {
   var bottom = sepLine(st.sepBottom, st.paperWidth);
   if (bottom) parts.push(ctl(bottom));
 
-  if (st.feedLines > 0) parts.push(ctl(ESC + "\x64" + String.fromCharCode(st.feedLines)));  // 紙送り
-  parts.push(ctl(ESC + "\x64\x02" + ESC + "\x6d"));      // カット
+  if (st.feedLines > 0) parts.push(ctl(starFeed(st.feedLines)));
+  parts.push(ctl(starCut()));
   return Buffer.concat(parts);
 }
 
@@ -192,7 +215,7 @@ function sendToPrinter(ip, buffer, options) {
 module.exports = {
   normalizeJob: normalizeJob,
   normalizeStyle: normalizeStyle,
-  buildEscPos: buildEscPos,
+  buildStarLine: buildStarLine,
   isPrivateIPv4: isPrivateIPv4,
   sendToPrinter: sendToPrinter,
   PRINT_PORT: PRINT_PORT,

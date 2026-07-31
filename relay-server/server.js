@@ -510,7 +510,7 @@ function handlePrint(req, res, printerModule, slipStyle, printerIp) {
     if (body && body.style == null && slipStyle) body.style = slipStyle.get();
     var job = printerModule.normalizeJob(body);
     var buffer;
-    try { buffer = printerModule.buildEscPos(job); }
+    try { buffer = printerModule.buildStarLine(job); }
     catch (err) { return json(res, { ok: false, error: "failed to build print job: " + err.message }, 500); }
     printerModule.sendToPrinter(ip, buffer).then(function () {
       json(res, { ok: true });
