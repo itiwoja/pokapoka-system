@@ -293,9 +293,11 @@ function sendToPrinter(ip, buffer, options) {
     socket.setTimeout(timeoutMs);
     socket.on("timeout", function () { finish(new Error("printer timeout: " + ip + ":" + port)); });
     socket.on("error", finish);
-    socket.on("connect", function () {
-      socket.end(buffer, function () { finish(); });
-    });
+    // プリンターが読み切る前に destroy すると RST になり、ジョブごと捨てられることがある。
+    // FIN を送って相手が閉じる(close)のを待ってから解決する。ラスター画像は数十KBあり、
+    // 「書き込み完了 = プリンターが受け取った」ではないため、ここを急いではいけない
+    socket.on("close", function () { finish(); });
+    socket.on("connect", function () { socket.end(buffer); });
   });
 }
 

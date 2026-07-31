@@ -107,24 +107,33 @@ test("isPrivateIPv4: 店内LAN想定のプライベートアドレスのみ許�
   assert.equal(printer.isPrivateIPv4(null), false);
 });
 
+/** 実ソケットの代役。end() は FIN 相当で、close は相手が閉じたときにテスト側から発火させる */
 function fakeSocket() {
   var socket = new EventEmitter();
   socket.setTimeout = function () {};
   socket.destroy = function () {};
-  socket.end = function (buffer, cb) { socket.written = buffer; cb(); };
+  socket.end = function (buffer) { socket.written = buffer; };
   return socket;
 }
 
-test("sendToPrinter: connectしてバイト列を書き込んだら解決する", async function () {
+test("sendToPrinter: 書き込み完了ではなく、相手が接続を閉じてから解決する", async function () {
   var socket = fakeSocket();
   var seen = null;
+  var resolved = false;
   var promise = printer.sendToPrinter("192.168.1.50", Buffer.from("hi"), {
     connect: function (port, ip) { seen = { port: port, ip: ip }; return socket; },
-  });
+  }).then(function () { resolved = true; });
+
   socket.emit("connect");
-  await promise;
-  assert.deepEqual(seen, { port: printer.PRINT_PORT, ip: "192.168.1.50" });
+  await new Promise(function (r) { setImmediate(r); });
+  // プリンターが読み切る前に解決すると、RSTでジョブが捨てられても成功扱いになってしまう
+  assert.equal(resolved, false, "close 前は解決しない");
   assert.equal(socket.written.toString(), "hi");
+
+  socket.emit("close");
+  await promise;
+  assert.equal(resolved, true);
+  assert.deepEqual(seen, { port: printer.PRINT_PORT, ip: "192.168.1.50" });
 });
 
 test("sendToPrinter: ソケットエラーで拒否する", async function () {
