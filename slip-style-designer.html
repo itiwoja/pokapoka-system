@@ -177,11 +177,8 @@
     <div class="panel">
       <h2>要素</h2>
       <div class="el-list" id="elList"></div>
-      <div class="add-row">
-        <button type="button" data-add="text">＋ 文字</button>
-        <button type="button" data-add="line">＋ 罫線</button>
-        <button type="button" data-add="items">＋ 品目リスト</button>
-      </div>
+      <p class="hint" style="margin-bottom:4px;">押すと、書式と差込フィールドが入った状態で用紙の下端に追加されます。</p>
+      <div class="add-row" id="partList"></div>
     </div>
 
     <div class="panel" id="propPanel">
@@ -338,6 +335,7 @@
       store: "土鍋飯ぽかぽか",
       table: sample.table || "--",
       meta: sample.meta || "",
+      metaDate: (now.getMonth() + 1) + "/" + now.getDate(),
       people: sample.people || "",
       kind: "予約",
       orderNo: "1042",
@@ -500,21 +498,15 @@
     if (el.type === "line") return el.style === "dashed" ? "破線" : (el.style === "double" ? "二重線" : "実線");
     return "品目リスト";
   }
-  function addEl(type) {
-    var dots = R.DOTS[tpl.paperWidth];
-    var y = lastLayout ? Math.min(R.MAX_HEIGHT - 40, Math.round(lastLayout.height)) : 200;
-    var el;
-    if (type === "text") {
-      el = { id: newId(), type: "text", x: 12, y: y, w: dots - 24, anchor: "top", align: "left",
-             text: "文字を入力", font: "gothic", size: 28, bold: false, lineHeight: 1.25 };
-    } else if (type === "line") {
-      el = { id: newId(), type: "line", x: 12, y: y, w: dots - 24, anchor: "top", thickness: 2, style: "dashed" };
-    } else {
-      el = { id: newId(), type: "items", x: 12, y: y, w: dots - 24, anchor: "top", align: "left",
-             font: "gothic", size: 32, bold: true, lineHeight: 1.25,
-             qtyShow: true, qtyFormat: "x", qtyPos: "inline", qtySize: 26,
-             noteShow: true, noteSize: 24, noteIndent: 24, rowGap: 14 };
-    }
+  /* 部品を用紙の下端へ追加する。中身と書式は slip-renderer.js の PARTS が持っている */
+  function addPart(key) {
+    var el = R.makePart(key, tpl.paperWidth);
+    el.id = newId();
+    el.anchor = "top";
+    el.font = el.font || "gothic";
+    el.lineHeight = el.lineHeight || 1.25;
+    // いま一番下にある要素の下へ置く。既存の要素に重ならないので、置いた瞬間に見える
+    el.y = lastLayout ? Math.min(R.MAX_HEIGHT - 60, Math.round(lastLayout.height)) : 200;
     tpl.elements.push(el);
     selectedId = el.id;
     syncAll(); saveTemplate();
@@ -578,8 +570,13 @@
       elListEl.appendChild(row);
     });
   }
-  document.querySelectorAll("[data-add]").forEach(function (btn) {
-    btn.addEventListener("click", function () { addEl(btn.getAttribute("data-add")); });
+  var partListEl = document.getElementById("partList");
+  R.PARTS.forEach(function (part) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "＋ " + part.label;
+    btn.addEventListener("click", function () { addPart(part.key); });
+    partListEl.appendChild(btn);
   });
 
   /* ===== プロパティパネル ===== */

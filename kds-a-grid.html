@@ -3066,6 +3066,10 @@
         store: slipStoreEl.textContent,
         table: order.table != null ? String(order.table) : "--",
         meta: hhmm(order.start),
+        metaDate: (function () {                       // 受付「日」。日を跨いだ卓かどうかが伝票で分かるように
+          var d = new Date(order.start);
+          return isNaN(d.getTime()) ? "" : (d.getMonth() + 1) + "/" + d.getDate();
+        })(),
         people: order.people != null ? String(order.people) : "",
         kind: order.type === "reserved" ? t("reserved") : t("new"),
         orderNo: order.id != null ? String(order.id) : "",

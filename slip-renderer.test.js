@@ -67,3 +67,36 @@ test("fillFields: 差込フィールドを注文データへ置換し、欠損�
 test("fillFields: 同じフィールドが複数あってもすべて置換する", function () {
   assert.equal(R.fillFields("{卓番}-{卓番}", { table: "B2" }), "B2-B2");
 });
+
+test("fillFields: {受付日} は {受付} より先に置換され、混ざらない", function () {
+  // 「{受付}」は「{受付日}」の一部なので、置換順を誤ると "12:34日" になる
+  assert.equal(R.fillFields("受付 {受付日} {受付}", { meta: "12:34", metaDate: "7/31" }), "受付 7/31 12:34");
+});
+
+test("makePart: どの部品も用紙幅に収まる要素を返す", function () {
+  R.PARTS.forEach(function (part) {
+    [58, 80].forEach(function (paper) {
+      var el = R.makePart(part.key, paper);
+      var dots = R.DOTS[paper];
+      assert.ok(el && el.type, part.key + " が要素を返す");
+      assert.ok(el.x >= 0 && el.x + el.w <= dots, part.key + " が " + paper + "mm 紙に収まる");
+    });
+  });
+});
+
+test("makePart: 未知のキーでも描画できる要素へ倒す", function () {
+  assert.equal(R.makePart("存在しない部品", 80).type, "text");
+});
+
+test("makePart で作った要素は normalizeTemplate を素通りできる", function () {
+  var tpl = R.normalizeTemplate({
+    paperWidth: 80,
+    elements: R.PARTS.map(function (part, i) {
+      var el = R.makePart(part.key, 80);
+      el.id = "p" + i;
+      el.y = i * 40;
+      return el;
+    }),
+  });
+  assert.equal(tpl.elements.length, R.PARTS.length, "捨てられる部品が無い");
+});

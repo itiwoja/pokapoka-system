@@ -46,12 +46,54 @@
     { key: "{店名}", label: "店名" },
     { key: "{卓番}", label: "卓番" },
     { key: "{受付}", label: "受付時刻" },
+    { key: "{受付日}", label: "受付日" },
     { key: "{人数}", label: "人数" },
     { key: "{区分}", label: "予約/新規" },
     { key: "{注文番号}", label: "注文番号" },
     { key: "{日付}", label: "印刷日付" },
     { key: "{時刻}", label: "印刷時刻" },
   ];
+
+  /* ワンタップで置ける部品。よく使う要素を「中身と書式が入った状態」で追加する。
+     空の要素を足してから差込フィールドを打ち込む手間を無くすためのもの。
+     x/w は用紙の印字可能幅(dots)から決めるので、58mm/80mm どちらでも収まる */
+  var PARTS = [
+    { key: "store", label: "店名",
+      make: function (d) { return { type: "text", x: 0, w: d, align: "center", text: "{店名}", size: 26, bold: false }; } },
+    { key: "table", label: "卓番",
+      make: function (d) { return { type: "text", x: 0, w: d, align: "center", text: "卓 {卓番}", size: 64, bold: true, lineHeight: 1.15 }; } },
+    { key: "meta", label: "受付時刻",
+      make: function (d) { return { type: "text", x: 12, w: d - 24, align: "left", text: "受付 {受付}", size: 24, bold: false }; } },
+    { key: "metaFull", label: "受付日時",
+      make: function (d) { return { type: "text", x: 12, w: d - 24, align: "left", text: "受付 {受付日} {受付}", size: 24, bold: false }; } },
+    { key: "people", label: "人数",
+      make: function (d) { return { type: "text", x: 12, w: d - 24, align: "left", text: "{人数} 名", size: 28, bold: true }; } },
+    { key: "kind", label: "予約/新規",
+      make: function (d) { return { type: "text", x: 12, w: d - 24, align: "left", text: "{区分}", size: 28, bold: true }; } },
+    { key: "orderNo", label: "注文番号",
+      make: function (d) { return { type: "text", x: 12, w: d - 24, align: "left", text: "No. {注文番号}", size: 24, bold: false }; } },
+    { key: "printedAt", label: "印刷日時",
+      make: function (d) { return { type: "text", x: 12, w: d - 24, align: "right", text: "{日付} {時刻}", size: 20, bold: false }; } },
+    { key: "free", label: "自由テキスト",
+      make: function (d) { return { type: "text", x: 12, w: d - 24, align: "left", text: "文字を入力", size: 28, bold: false }; } },
+    { key: "line", label: "罫線",
+      make: function (d) { return { type: "line", x: 12, w: d - 24, thickness: 2, style: "dashed" }; } },
+    { key: "items", label: "品目リスト",
+      make: function (d) {
+        return { type: "items", x: 12, w: d - 24, align: "left", size: 32, bold: true,
+                 qtyShow: true, qtyFormat: "x", qtyPos: "inline", qtySize: 26,
+                 noteShow: true, noteSize: 24, noteIndent: 24, rowGap: 14 };
+      } },
+  ];
+
+  /** 部品キーから、用紙幅に合わせた新しい要素を作る (id と y は呼び出し側が入れる) */
+  function makePart(key, paperWidth) {
+    var dots = DOTS[paperWidth === 58 ? 58 : 80];
+    for (var i = 0; i < PARTS.length; i++) {
+      if (PARTS[i].key === key) return PARTS[i].make(dots);
+    }
+    return PARTS[PARTS.length - 3].make(dots);   // 未知のキーは自由テキストへ倒す
+  }
 
   function clamp(n, min, max) {
     n = Math.round(Number(n));
@@ -178,6 +220,7 @@
     return String(text)
       .replace(/\{店名\}/g, o.store == null ? "" : o.store)
       .replace(/\{卓番\}/g, o.table == null ? "" : o.table)
+      .replace(/\{受付日\}/g, o.metaDate == null ? "" : o.metaDate)
       .replace(/\{受付\}/g, o.meta == null ? "" : o.meta)
       .replace(/\{人数\}/g, o.people == null ? "" : o.people)
       .replace(/\{区分\}/g, o.kind == null ? "" : o.kind)
@@ -346,6 +389,8 @@
     MAX_ELEMENTS: MAX_ELEMENTS,
     FONTS: FONTS,
     FIELDS: FIELDS,
+    PARTS: PARTS,
+    makePart: makePart,
     QTY_FORMATS: QTY_FORMATS,
     defaultTemplate: defaultTemplate,
     normalizeTemplate: normalizeTemplate,
