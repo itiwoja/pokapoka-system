@@ -91,7 +91,10 @@ test("buildEscPos: style未指定は従来相当 (店名なし・x表記・2倍�
   var buf = printer.buildEscPos(job);
   assert.equal(buf.indexOf(iconv.encode("ぽかぽか", "Shift_JIS")), -1);  // storeが空なら印字しない
   assert.notEqual(buf.indexOf(iconv.encode("  x 2", "Shift_JIS")), -1);
-  assert.notEqual(buf.indexOf(Buffer.from("\x1d\x21\x11", "latin1")), -1); // 卓番2倍角
+  // 卓番2倍角は Star の ESC i n1 n2。ESC/POS の GS ! は本番機(mC-Print3)で効かないことを実機で確認済み
+  assert.notEqual(buf.indexOf(Buffer.from("\x1b\x69\x01\x01", "latin1")), -1);
+  assert.equal(buf.indexOf(Buffer.from("\x1d\x21", "latin1")), -1, "ESC/POS の文字サイズ命令は送らない");
+  assert.equal(buf.indexOf(Buffer.from("\x1b\x61", "latin1")), -1, "ESC/POS の寄せ命令は送らない");
 });
 
 test("isPrivateIPv4: 店内LAN想定のプライベートアドレスのみ許可する", function () {

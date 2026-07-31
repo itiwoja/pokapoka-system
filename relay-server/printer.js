@@ -111,32 +111,46 @@ function sepLine(kind, paperWidth) {
   return new Array(cols + 1).join(ch) + "\n";
 }
 
-/** チビ伝1枚分のESC/POSバイト列を組み立てる (感熱ロール紙想定。style未指定は従来相当) */
+/* Star系(StarPRNT)の文字装飾コマンド。
+   本番機 Star mC-Print3 で1コマンドずつ実機印字して効くことを確認した組み合わせ:
+     ESC GS a n   : 寄せ (0=左 1=中央 2=右)   … ESC/POS の ESC a は効かない
+     ESC i n1 n2  : 縦横の倍率 (0=等倍 1=2倍) … ESC/POS の GS ! は効かない
+     ESC E / ESC F: 太字 オン/オフ
+     ESC d 3      : 紙送り付きパーシャルカット
+   以前は ESC/POS のコマンドを送っていたため、卓番が拡大も中央寄せもされていなかった。 */
+var STAR_ALIGN = { left: "\x00", center: "\x01", right: "\x02" };
+function starAlign(kind) { return ESC + GS + "\x61" + (STAR_ALIGN[kind] || "\x00"); }
+function starScale(w, h) { return ESC + "\x69" + String.fromCharCode(h) + String.fromCharCode(w); }
+var STAR_BOLD_ON = ESC + "\x45";
+var STAR_BOLD_OFF = ESC + "\x46";
+var STAR_CUT = ESC + "\x64\x33";
+
+/** チビ伝1枚分のバイト列を組み立てる (感熱ロール紙想定。style未指定は従来相当) */
 function buildEscPos(job) {
   var st = job.style || STYLE_DEFAULTS;
   var parts = [];
   parts.push(ctl(ESC + "@"));                                              // 初期化
 
   if (st.storeShow && job.store) {
-    parts.push(ctl(ESC + "\x61\x01"));                                     // 中央寄せ
+    parts.push(ctl(starAlign("center")));
     parts.push(sjis(job.store + "\n"));
-    parts.push(ctl(ESC + "\x61\x00"));
+    parts.push(ctl(starAlign("left")));
   }
 
-  var tableScale = st.tableSize >= 40 ? "\x11" : "\x00";                   // 2倍角 or 等倍
-  parts.push(ctl(ESC + "\x61\x01" + GS + "\x21" + tableScale + (st.tableBold ? ESC + "\x45\x01" : "")));
+  var tableBig = st.tableSize >= 40 ? 1 : 0;                               // 2倍角 or 等倍
+  parts.push(ctl(starAlign("center") + starScale(tableBig, tableBig) + (st.tableBold ? STAR_BOLD_ON : "")));
   parts.push(sjis("卓  " + job.table + "\n"));
-  parts.push(ctl(ESC + "\x45\x00" + GS + "\x21\x00" + ESC + "\x61\x00"));   // 太字・拡大・寄せ 解除
+  parts.push(ctl(STAR_BOLD_OFF + starScale(0, 0) + starAlign("left")));    // 太字・拡大・寄せ 解除
 
   if (st.metaShow && job.meta) parts.push(sjis(job.meta + "\n"));
   var top = sepLine(st.sepTop, st.paperWidth);
   if (top) parts.push(ctl(top));
 
-  var itemScale = st.itemSize >= 22 ? "\x01" : "\x00";                     // 横2倍 or 等倍
+  var itemWide = st.itemSize >= 22 ? 1 : 0;                                // 横2倍 or 等倍
   job.items.forEach(function (it) {
-    parts.push(ctl(GS + "\x21" + itemScale + (st.itemBold ? ESC + "\x45\x01" : "")));
+    parts.push(ctl(starScale(itemWide, 0) + (st.itemBold ? STAR_BOLD_ON : "")));
     parts.push(sjis(it.name + "\n"));
-    parts.push(ctl(ESC + "\x45\x00" + GS + "\x21\x00"));                   // 太字・拡大 解除
+    parts.push(ctl(STAR_BOLD_OFF + starScale(0, 0)));                      // 太字・拡大 解除
     parts.push(sjis(qtyText(st.qtyFormat, it.qty) + "\n"));
     if (st.noteShow && it.note) parts.push(sjis("  ※ " + it.note + "\n"));
     parts.push(ctl("\n"));
@@ -145,8 +159,9 @@ function buildEscPos(job) {
   var bottom = sepLine(st.sepBottom, st.paperWidth);
   if (bottom) parts.push(ctl(bottom));
 
-  if (st.feedLines > 0) parts.push(ctl(ESC + "\x64" + String.fromCharCode(st.feedLines)));  // 紙送り
-  parts.push(ctl(ESC + "\x64\x02" + ESC + "\x6d"));      // カット
+  // 紙送りは LF の連続にする。ESC d n は Star ではカット命令なので流用できない
+  if (st.feedLines > 0) parts.push(ctl(new Array(st.feedLines + 1).join("\n")));
+  parts.push(ctl(STAR_CUT));
   return Buffer.concat(parts);
 }
 
