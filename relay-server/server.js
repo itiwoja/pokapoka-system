@@ -158,7 +158,7 @@ function createRelay(options) {
        エンコードするURLは「今この端末が実際に他端末から見えるアドレス」を使う:
        LAN IPで待ち受けていればそのIP、127.0.0.1待ち受けならLAN IPを検出して案内する */
     if (url.pathname === "/qr") {
-      return handleQrPage(res, config);
+      return handleQrPage(res, config, req.headers && req.headers.host);
     }
 
     var rel;
@@ -424,11 +424,26 @@ function afterMutation(res, payload, reservationSync) {
 }
 
 /** GET /qr — iPadでKDS/スタイル設定を開くQRコードのページ (#144追補) */
-function handleQrPage(res, config) {
-  var isLoopback = config.host === "127.0.0.1" || config.host === "localhost";
-  var lanIp = isLoopback ? detectLanIp() : config.host;
-  var reachable = !isLoopback && lanIp;   // 127.0.0.1待ち受けでは他端末から届かない
-  var base = "http://" + (lanIp || "127.0.0.1") + ":" + config.port;
+function handleQrPage(res, config, hostHeader) {
+  // このページを開いた端末が実際に到達したアドレス(Hostヘッダ)を最優先で使う。
+  // PCが有線とWi-Fiの両方に繋がっていると、待ち受けアドレス(config.host)を埋めた場合に
+  // 「iPadからは届かない側のIP」が載ったQRになる。0.0.0.0待ち受けではURLごと壊れる
+  var fromHeader = typeof hostHeader === "string" ? hostHeader.trim() : "";
+  var usable = fromHeader &&
+    !/^(0\.0\.0\.0|\[?::\]?)(:\d+)?$/.test(fromHeader) &&
+    !/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(fromHeader);
+
+  var base, reachable;
+  if (usable) {
+    base = "http://" + fromHeader;                  // Hostヘッダはポートを含む
+    reachable = true;
+  } else {
+    var isLoopback = config.host === "127.0.0.1" || config.host === "localhost";
+    var lanIp = isLoopback ? detectLanIp() : config.host;
+    if (lanIp === "0.0.0.0" || lanIp === "::") lanIp = detectLanIp();
+    reachable = !!lanIp && lanIp !== "127.0.0.1";   // 127.0.0.1待ち受けでは他端末から届かない
+    base = "http://" + (lanIp || "127.0.0.1") + ":" + config.port;
+  }
   var kdsUrl = base + "/";
   var styleUrl = base + "/slip-style-designer.html";
   Promise.all([
