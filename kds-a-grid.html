@@ -1999,6 +1999,14 @@
     }
 
     /* ===================== レンダリング ===================== */
+    /* 注文フィードが一度でも届いたタブか (#133)。
+       「未接続 (undefined) = まだ知らない」と「接続済みで空配列 = 全部消えた」は意味が違う。
+       未接続のまま掃除 (prune) を走らせると、他タブが保持しているコンロ/完了/並び順を
+       LS 越しに全消去してしまうため、掃除系はこの関数が true のタブだけが行う。 */
+    function hasOrderFeed() {
+      return Array.isArray(window.KDS_ORDERS);
+    }
+
     function getOrders() {
       var src = window.KDS_ORDERS;
       if (!Array.isArray(src)) return [];
@@ -2311,23 +2319,27 @@
         if (!seen[id]) removeCard(id, /*fade*/ false);
       });
 
-      // 生存している注文 id を集め、消えた注文のコンロ状態を掃除
-      // (完了取り消しの猶予中はその注文のコンロ状態を残す)
-      if (undoInfo && !seen[undoInfo.id]) {
-        var keep = {};
-        Object.keys(seen).forEach(function (k) { keep[k] = true; });
-        keep[undoInfo.id] = true;
-        pruneKonro(keep);
-      } else {
-        pruneKonro(seen);
-      }
+      // 掃除系は注文フィードが届いているタブだけが実行する。未接続タブが走らせると
+      // 他タブのコンロ/完了/ロック状態を LS 越しに全消去してしまう (#133)
+      if (hasOrderFeed()) {
+        // 生存している注文 id を集め、消えた注文のコンロ状態を掃除
+        // (完了取り消しの猶予中はその注文のコンロ状態を残す)
+        if (undoInfo && !seen[undoInfo.id]) {
+          var keep = {};
+          Object.keys(seen).forEach(function (k) { keep[k] = true; });
+          keep[undoInfo.id] = true;
+          pruneKonro(keep);
+        } else {
+          pruneKonro(seen);
+        }
 
-      // doneMap / lockedTimers はフィード全体を生存基準に掃除 (#64)
-      var feedIds = {};
-      orders.forEach(function (o) { feedIds[String(o.id)] = true; });
-      if (undoInfo) feedIds[undoInfo.id] = true;
-      pruneDone(feedIds);
-      pruneLocked(feedIds);
+        // doneMap / lockedTimers はフィード全体を生存基準に掃除 (#64)
+        var feedIds = {};
+        orders.forEach(function (o) { feedIds[String(o.id)] = true; });
+        if (undoInfo) feedIds[undoInfo.id] = true;
+        pruneDone(feedIds);
+        pruneLocked(feedIds);
+      }
 
       // コンロ掃除後に全カードのロックを再計算 (占有カードが消えた番号を解錠する) (#114)
       refreshAllKonro();
@@ -2345,9 +2357,10 @@
     /* orderSeq を生存注文に同期。新着は末尾へ。並べ替え中は触らない */
     function reconcileOrderSeq(seen, added) {
       if (isReordering) return;
+      var canPrune = hasOrderFeed();   // 未接続タブは他タブの並び順を削らない (#133)
       var changed = false;
       var next = orderSeq.filter(function (id) {
-        if (seen[id]) return true;
+        if (seen[id] || !canPrune) return true;
         changed = true; return false;
       });
       added.forEach(function (id) {
@@ -3190,7 +3203,8 @@
     }
     /* フィード(生データ)から居なくなった削除済みIDは掃除する (POSが再送し続ける間だけ保持) */
     function pruneDeleted() {
-      var src = Array.isArray(window.KDS_ORDERS) ? window.KDS_ORDERS : [];
+      if (!hasOrderFeed()) return;   // 未接続タブが他タブのトゥームストーンを消さない (#133)
+      var src = window.KDS_ORDERS;
       var live = {};
       src.forEach(function (o) { if (o && o.id != null) live[String(o.id)] = true; });
       var changed = false;
