@@ -2,7 +2,9 @@
 
 TableCheck の予約(メニュー・人数等)を取得し、KDS の予約ストックに流し込むためのサーバー。
 6/18 議事録の「ファイルを置くだけの見かけ上のサーバー」役と、TableCheck 取込役の2役を1プロセスで担う。
-**依存パッケージゼロ・Node 18+ のみで動作**(本体リポジトリの単一HTML主義に合わせた設計)。
+**依存パッケージはほぼゼロ・Node 18+ で動作**(本体リポジトリの単一HTML主義に合わせた設計)。
+唯一の例外は `printer.js` の日本語ESC/POS印字用 `iconv-lite`(Node標準にShift_JIS変換が無いため。#144)。
+初回のみ `cd relay-server && npm install` が必要。
 
 ```
 【クラウド】               【店内ミニPC = このサーバー】          【KDS端末】
@@ -131,6 +133,18 @@ WiFi越しに初めて繋ぐときは、設定以外の次の点も確認する(
 | `POST /api/mock/reservations` | (MOCK限定) 予約作成。body は TableCheck Reservation 形 |
 | `PATCH /api/mock/reservations/{id}` | (MOCK限定) 予約変更(人数・メニュー等) |
 | `DELETE /api/mock/reservations/{id}` | (MOCK限定) 予約キャンセル(status=cancelled) |
+| `POST /api/print` | チビ伝を実機プリンターへ印字(#144)。body は `{ip, table, meta, items:[{name,qty,note}]}`。`ip` は店内LAN想定のプライベートIPv4のみ許可(10/8・172.16-31/12・192.168/16)。ポート9100固定のESC/POS RAWへ生ソケットで送信 |
+
+### チビ伝の実機印刷(#144)
+
+KDS 画面の「印刷」ボタンは、プリンターIP未設定時は従来どおり `window.print()`(ブラウザ手動印刷)。
+実機で印字するには:
+
+1. KDS ヘッダーの「プリンター設定」ボタンでプリンター(例: Star mC-Print3)のIPアドレスを登録する
+   (`localStorage` に端末ごと保存。店舗ネットワーク依存のためコードへの固定埋め込みはしない)
+2. 以降は「印刷」ボタン押下で `POST /api/print` → このサーバーが生ソケットでプリンターの
+   RAWポート(9100)へESC/POSバイト列を送信する(ブラウザは生TCPソケットを開けないため中継が必要)
+3. 実機送信に失敗(未設定・接続不可・タイムアウト)した場合は自動で `window.print()` にフォールバックする
 
 ### KDS への接続(kds-bridge.js)
 
@@ -156,7 +170,8 @@ KDS 本体は無改修。**このサーバー経由で `/` を開くと、配信
 ```sh
 node relay-server/tablecheck-sync.test.js
 node --test relay-server/booking-resync.test.js relay-server/server.test.js \
-  relay-server/seat-occupancy.test.js relay-server/load-config.test.js
+  relay-server/seat-occupancy.test.js relay-server/load-config.test.js \
+  relay-server/printer.test.js
 ```
 
 正規化(スキーマ候補キー・pax→adults フォールバック)、memo パーサ、
