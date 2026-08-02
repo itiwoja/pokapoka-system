@@ -24,6 +24,7 @@ var fs = require("fs");
 var os = require("os");
 var path = require("path");
 var seats = require("./seat-occupancy");
+var kitchen = require("./kitchen-state");
 var booking = require("./booking-resync");
 var loadConfig = require("./load-config");
 var printer = require("./printer");
@@ -59,6 +60,9 @@ function createRelay(options) {
   var timers = [];
   var inFlight = new Set();
   var walkins = new Map();
+  // 厨房状態の共有 (#132)。sessionId は relay 再起動を端末側が検出するための識別子で、
+  // 再起動すると rev が 0 に戻るため、これが無いと端末が「取込済み」と誤認する
+  var kitchenState = kitchen.createState(options.sessionId || String(Date.now().toString(36)));
   var started = false;
   var initialSync = Promise.resolve();
   var slipStyle = createSlipStyleStore(options.slipStylePath || path.join(root, "config", "slip-style.json"), printerModule, log);
@@ -106,6 +110,10 @@ function createRelay(options) {
         beforeMin: config.seatBeforeMin,
         afterMin: config.seatAfterMin,
       });
+    }
+
+    if (url.pathname === "/api/kitchen-state") {
+      return handleKitchenState(req, res, { state: kitchenState, ttlMs: config.kitchenTtlMs });
     }
 
     if (url.pathname === "/api/print" && req.method === "POST") {
@@ -245,6 +253,7 @@ function createRelay(options) {
     config: config,
     server: server,
     sync: reservationSync,
+    kitchenState: kitchenState,
     start: start,
     stop: stop,
     pollTick: pollTick,
@@ -277,6 +286,9 @@ function createConfig(env, options) {
     requestTimeoutMs: normalizeInterval(src.TABLECHECK_TIMEOUT_MS, 15000, 1000, 120000),
     seatBeforeMin: Math.max(Number(src.SEAT_BEFORE_MIN) || 30, 0),
     seatAfterMin: Math.max(Number(src.SEAT_AFTER_MIN) || 120, 0),
+    // 厨房状態(#132)を最後の更新から何分保持するか。常駐プロセスなので、
+    // 掃除しないと前日の完了・コンロ状態が翌日へ持ち越される (#115)
+    kitchenTtlMs: normalizeInterval(src.KITCHEN_TTL_MIN, 720, 1, 1440) * 60000,
   };
 }
 
@@ -549,6 +561,27 @@ function handleSeats(req, res, url, context) {
     if (!seats.releaseWalkin(context.walkins, table)) return json(res, { ok: false, error: "seat not found" }, 404);
     res.writeHead(204, { "Cache-Control": "no-store" });
     return res.end();
+  }
+  return json(res, { ok: false, error: "method not allowed" }, 405);
+}
+
+/**
+ * 厨房状態の端末間共有 (#132)。
+ * 端末は「自分が起こした変更イベント」を POST し、「全体のスナップショット」を GET で取り込む。
+ * 差分ではなく畳み込み済みの状態を返すので、遅れて起動した端末も1回の取得で追いつける。
+ */
+function handleKitchenState(req, res, context) {
+  if (req.method === "GET") {
+    kitchen.purgeStale(context.state, Date.now(), context.ttlMs);
+    return json(res, kitchen.snapshot(context.state));
+  }
+  if (req.method === "POST") {
+    return readJson(req, res, function (body) {
+      kitchen.purgeStale(context.state, Date.now(), context.ttlMs);
+      var result = kitchen.applyEvents(context.state, body && body.events, Date.now());
+      if (result.error) return json(res, { ok: false, error: result.error }, 400);
+      return json(res, { ok: true, rev: result.rev, sessionId: context.state.sessionId });
+    });
   }
   return json(res, { ok: false, error: "method not allowed" }, 405);
 }

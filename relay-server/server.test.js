@@ -143,6 +143,65 @@ test("初回失敗中の30秒tickは全件リシンクを再試行する", async
   assert.deepEqual(await requestJson(relay.server, "/api/stock"), { status: 200, body: [] });
 });
 
+test("厨房状態APIはイベントを畳み込み、別端末が1回の取得で追いつける", async function (t) {
+  var resolveReservations;
+  var relay = createTestRelay({
+    listReservations: function () {
+      return new Promise(function (resolve) { resolveReservations = resolve; });
+    },
+    listSyncEvents: async function () { return []; },
+    getReservation: async function () { return null; },
+  }, []);
+  t.after(function () { return relay.stop(); });
+  relay.start();
+  await events.once(relay.server, "listening");
+
+  function push(payload) {
+    return requestRaw(relay.server, "/api/kitchen-state", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  function snapshot() {
+    return requestRaw(relay.server, "/api/kitchen-state").then(function (res) { return JSON.parse(res.text); });
+  }
+
+  var empty = await snapshot();
+  assert.equal(empty.rev, 0);
+  assert.ok(empty.sessionId, "再起動検出用の sessionId を返す");
+
+  // 端末A: コンロ2口 + 品目完了 + 並べ替え
+  var pushed = await push({ events: [
+    { type: "konro", id: "o-1", num: 1, state: "white" },
+    { type: "konro", id: "o-1", num: 3, state: "red" },
+    { type: "toggle", id: "o-1", index: 0, doneCount: 2 },
+    { type: "order", seq: ["o-1", "o-2"] },
+  ] });
+  assert.equal(pushed.status, 200);
+  assert.equal(JSON.parse(pushed.text).rev, 1);
+
+  // 端末B: 1回の取得で全部そろう (差分ではなく畳み込み済みの状態を返すため)
+  var shared = await snapshot();
+  assert.equal(shared.rev, 1);
+  assert.deepEqual(shared.konro, { "o-1": { "1": "white", "3": "red" } });
+  assert.deepEqual(shared.done, { "o-1": [2] });
+  assert.deepEqual(shared.seq, ["o-1", "o-2"]);
+
+  // 解除も共有される
+  await push({ events: [{ type: "konro", id: "o-1", num: 1, state: "skeleton" }] });
+  assert.deepEqual((await snapshot()).konro, { "o-1": { "3": "red" } });
+
+  var invalid = await push({ events: [{ type: "konro", id: "o-1", num: 0, state: "white" }] });
+  assert.equal(invalid.status, 400);
+  assert.match(JSON.parse(invalid.text).error, /konro\.num/);
+
+  assert.equal((await requestRaw(relay.server, "/api/kitchen-state", { method: "DELETE" })).status, 405);
+
+  resolveReservations([]);
+  await relay.whenInitialSync();
+});
+
 test("座席APIは初回同期前503で、同期後もwalk-in操作を維持する", async function (t) {
   var resolveReservations;
   var relay = createTestRelay({
