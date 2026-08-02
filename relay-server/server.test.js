@@ -223,6 +223,89 @@ test("POST /api/print はプライベートIP検証・正規化を行い、送�
   assert.equal(JSON.parse(fail.text).ok, false);
 });
 
+test("GET/POST /api/slip-style はスタイルを保存・配信し、印刷のstyle未指定時に使う(#144追補)", async function (t) {
+  var os2 = require("os");
+  var path2 = require("path");
+  var stylePath = path2.join(os2.tmpdir(), "slip-style-test-" + process.pid + "-" + Date.now() + ".json");
+  var printerIpPath = path2.join(os2.tmpdir(), "printer-ip-test-" + process.pid + "-" + Date.now() + ".json");
+  var built = [];
+  var relay = serverModule.createRelay({
+    port: 0,
+    env: { MOCK: "1", POLL_MS: "3000", RESYNC_MS: "900000" },
+    slipStylePath: stylePath,
+    printerIpPath: printerIpPath,
+    source: {
+      listReservations: async function () { return []; },
+      listSyncEvents: async function () { return []; },
+      getReservation: async function () { return null; },
+    },
+    mockSource: {},
+    log: function () {},
+    setInterval: function () { return 1; },
+    clearInterval: function () {},
+    printer: Object.assign({}, printerModule, {
+      buildEscPos: function (job) { built.push(job); return Buffer.from("x"); },
+      sendToPrinter: function () { return Promise.resolve(); },
+    }),
+  });
+  t.after(function () {
+    try { require("fs").unlinkSync(stylePath); } catch (e) {}
+    try { require("fs").unlinkSync(printerIpPath); } catch (e) {}
+    return relay.stop();
+  });
+  relay.start();
+  await events.once(relay.server, "listening");
+  await relay.whenInitialSync();
+
+  // 未設定時は空オブジェクト
+  var empty = await requestRaw(relay.server, "/api/slip-style");
+  assert.equal(empty.status, 200);
+  assert.deepEqual(JSON.parse(empty.text), {});
+
+  // 保存すると許容値へ丸めた結果が返り、以後のGETで配信される
+  var saved = await requestRaw(relay.server, "/api/slip-style", {
+    method: "POST",
+    body: JSON.stringify({ qtyFormat: "kosuu", paperWidth: 9999 }),
+    headers: { "Content-Type": "application/json" },
+  });
+  assert.equal(saved.status, 200);
+  var savedStyle = JSON.parse(saved.text).style;
+  assert.equal(savedStyle.qtyFormat, "kosuu");
+  assert.equal(savedStyle.paperWidth, 80);   // 不正値は既定値へ
+  var got = JSON.parse((await requestRaw(relay.server, "/api/slip-style")).text);
+  assert.equal(got.qtyFormat, "kosuu");
+
+  // style未指定の印刷はサーバー保存スタイルで印字される
+  await requestRaw(relay.server, "/api/print", {
+    method: "POST",
+    body: JSON.stringify({ ip: "192.168.1.50", table: "A3", items: [] }),
+    headers: { "Content-Type": "application/json" },
+  });
+  assert.equal(built.length, 1);
+  assert.equal(built[0].style.qtyFormat, "kosuu");
+
+  // プリンターIPもサーバー保存でき、ip未指定の印刷に使われる(iPad等の未登録端末対応)
+  var badIp = await requestRaw(relay.server, "/api/printer", {
+    method: "POST",
+    body: JSON.stringify({ ip: "8.8.8.8" }),
+    headers: { "Content-Type": "application/json" },
+  });
+  assert.equal(badIp.status, 400);
+  await requestRaw(relay.server, "/api/printer", {
+    method: "POST",
+    body: JSON.stringify({ ip: "192.168.1.60" }),
+    headers: { "Content-Type": "application/json" },
+  });
+  assert.deepEqual(JSON.parse((await requestRaw(relay.server, "/api/printer")).text), { ip: "192.168.1.60" });
+  var noIpPrint = await requestRaw(relay.server, "/api/print", {
+    method: "POST",
+    body: JSON.stringify({ table: "B1", items: [] }),
+    headers: { "Content-Type": "application/json" },
+  });
+  assert.equal(noIpPrint.status, 200);
+  assert.equal(built.length, 2);
+});
+
 test("LIVE adapterはBooking v1の全ページへshop_idsとBearerを付ける", async function () {
   var calls = [];
   var source = serverModule.createTableCheckSource({

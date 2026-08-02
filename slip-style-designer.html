@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>チビ伝 印刷スタイル設定</title>
+<style>
+  :root {
+    --bg: #f4f1ec;
+    --panel: #fff;
+    --ink: #1a1612;
+    --sub: #6b6258;
+    --line: #ddd6cc;
+    --accent: #1a1612;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", "Segoe UI", sans-serif;
+  }
+  .layout {
+    display: flex; flex-wrap: wrap; gap: 24px;
+    max-width: 1200px; margin: 0 auto; padding: 20px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .lead { font-size: 12px; color: var(--sub); margin: 0 0 20px; }
+
+  .controls { flex: 1 1 420px; min-width: 320px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  .panel h2 {
+    font-size: 13px; font-weight: 700; margin: 0 0 12px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--line);
+    letter-spacing: .04em;
+  }
+  .row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .row:last-child { margin-bottom: 0; }
+  .row label.name { flex: 0 0 128px; font-size: 12px; color: var(--sub); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button {
+    border: none; background: #fff; color: var(--ink); font-size: 13px;
+    padding: 6px 14px; cursor: pointer; border-right: 1px solid var(--line);
+    min-height: 44px; min-width: 44px; /* タップ下限 44px (KDS #58 に合わせる) */
+  }
+  .seg button:last-child { border-right: none; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .toggle {
+    display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    font-size: 12px; user-select: none; min-height: 44px;
+  }
+  .toggle input { width: 20px; height: 20px; }
+  input[type="range"] { flex: 1 1 auto; min-width: 90px; min-height: 44px; }
+  input[type="text"], input[type="number"] {
+    border: 1px solid var(--line); border-radius: 4px; padding: 5px 7px; font-size: 13px;
+    min-height: 44px;
+  }
+  .range-val { font-size: 11px; color: var(--sub); min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+
+  table.items { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.items th { text-align: left; color: var(--sub); font-weight: 500; padding: 4px 4px; font-size: 11px; }
+  table.items td { padding: 3px 4px; }
+  table.items input[type="text"] { width: 100%; }
+  table.items input.qty { width: 48px; }
+  .item-del {
+    border: 1px solid var(--line); background: #fff; border-radius: 4px;
+    width: 44px; height: 44px; cursor: pointer; color: #a33; font-size: 16px; line-height: 1;
+  }
+  .add-item {
+    margin-top: 8px; border: 1px dashed var(--line); background: #fff; border-radius: 6px;
+    padding: 6px 14px; font-size: 12px; cursor: pointer; color: var(--sub); min-height: 44px;
+  }
+  .inline-confirm { display: none; gap: 8px; align-items: center; margin-top: 10px; font-size: 12px; }
+  .inline-confirm.show { display: flex; flex-wrap: wrap; }
+  .inline-confirm button { min-height: 44px; padding: 0 14px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 700; }
+  .inline-confirm .yes { border: 1px solid #a33; background: #a33; color: #fff; }
+  .inline-confirm .no { border: 1px solid var(--line); background: #fff; color: var(--ink); }
+  .notice { display: none; margin-top: 10px; font-size: 12px; padding: 8px 10px; border-radius: 6px; }
+  .notice.show { display: block; }
+  .notice.err { background: #fbeaea; color: #7a1f1f; border: 1px solid #e3b8b8; }
+  .notice.ok { background: #eaf3ea; color: #2a5a2a; border: 1px solid #bcd8bc; }
+
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .actions button {
+    flex: 1 1 auto; min-height: 40px; border-radius: 6px; font-size: 13px; font-weight: 700;
+    cursor: pointer; border: 1px solid var(--accent);
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-ghost { background: #fff; color: var(--accent); }
+  .file-input { display: none; }
+
+  .preview-col { flex: 0 0 340px; position: sticky; top: 20px; align-self: flex-start; }
+  .paper-wrap {
+    background: repeating-linear-gradient(45deg, #e9e4da, #e9e4da 8px, #e2ddd2 8px, #e2ddd2 16px);
+    border-radius: 8px; padding: 20px 0; display: flex; justify-content: center;
+  }
+  /* プレビューは実機(ESC/POS感熱)の印字を再現する:
+     等幅フォント・「卓 12」表記・数量は品名の下の行・罫線は実機と同じ文字数。
+     ここで見えるものがそのまま紙に出る(等倍/2倍の2段階しかないのも実機仕様) */
+  #slip {
+    background: #fff; color: #111;
+    box-shadow: 0 2px 10px rgba(0,0,0,.18);
+    padding: 14px 10px;
+    font-family: "MS Gothic", "Osaka-Mono", "Courier New", monospace;
+    font-size: 14px; line-height: 1.4;
+    white-space: pre-wrap; overflow: hidden;
+  }
+  #slip .r-center { text-align: center; }
+  #slip .r-sep { white-space: nowrap; overflow: hidden; }
+  #slip .r-item-name { display: inline-block; transform-origin: left center; }
+  .hint { font-size: 11px; color: var(--sub); margin-top: 10px; line-height: 1.6; }
+
+  @media print {
+    body * { visibility: hidden !important; }
+    #slip, #slip * { visibility: visible !important; }
+    #slip {
+      position: fixed; left: 0; top: 0; box-shadow: none;
+    }
+    .paper-wrap, .layout > *:not(.preview-col) { display: none !important; }
+  }
+  @media (max-width: 760px) {
+    .preview-col { position: static; flex-basis: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <div class="controls">
+    <h1>チビ伝 印刷スタイル設定</h1>
+    <p class="lead">右側のプレビューは<strong>実機プリンターの印字そのまま</strong>です。設定は自動でサーバーに保存され、全端末のKDS印刷に反映されます。</p>
+
+    <div class="panel">
+      <h2>用紙</h2>
+      <div class="row">
+        <label class="name">用紙幅</label>
+        <div class="seg" data-group="paperWidth">
+          <button data-val="58">58mm</button>
+          <button data-val="80">80mm</button>
+        </div>
+      </div>
+      <div class="row">
+        <label class="name">下端の送り行数</label>
+        <input type="range" min="0" max="8" step="1" data-key="feedLines" aria-label="下端の送り行数">
+        <span class="range-val" data-valfor="feedLines"></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>店名・受付時刻</h2>
+      <div class="row">
+        <label class="toggle"><input type="checkbox" data-key="storeShow"> 店名を印字する</label>
+      </div>
+      <div class="row">
+        <label class="toggle"><input type="checkbox" data-key="metaShow"> 受付時刻を印字する</label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>卓番</h2>
+      <div class="row">
+        <label class="name">文字の大きさ</label>
+        <div class="seg" data-group="tableSize">
+          <button data-val="32">等倍</button>
+          <button data-val="40">2倍角</button>
+        </div>
+      </div>
+      <div class="row">
+        <label class="toggle"><input type="checkbox" data-key="tableBold"> 太字</label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>品目</h2>
+      <div class="row">
+        <label class="name">品名の大きさ</label>
+        <div class="seg" data-group="itemSize">
+          <button data-val="18">等倍</button>
+          <button data-val="22">横2倍</button>
+        </div>
+      </div>
+      <div class="row">
+        <label class="toggle"><input type="checkbox" data-key="itemBold"> 品名を太字</label>
+      </div>
+      <div class="row">
+        <label class="name">数量の表記</label>
+        <div class="seg" data-group="qtyFormat">
+          <button data-val="x">x 2</button>
+          <button data-val="times">× 2</button>
+          <button data-val="kosuu">2 個</button>
+        </div>
+      </div>
+      <div class="row">
+        <label class="toggle"><input type="checkbox" data-key="noteShow"> 備考(※)を印字する</label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>区切り線</h2>
+      <div class="row">
+        <label class="name">品目リストの上罫線</label>
+        <div class="seg" data-group="sepTop">
+          <button data-val="dashed">破線</button>
+          <button data-val="solid">実線</button>
+          <button data-val="none">なし</button>
+        </div>
+      </div>
+      <div class="row">
+        <label class="name">品目リストの下罫線</label>
+        <div class="seg" data-group="sepBottom">
+          <button data-val="dashed">破線</button>
+          <button data-val="solid">実線</button>
+          <button data-val="none">なし</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>プレビュー用サンプル注文</h2>
+      <div class="row">
+        <label class="name" for="sampleTable">卓番</label>
+        <input type="text" id="sampleTable">
+        <label class="name" style="flex-basis:auto;" for="sampleMeta">受付</label>
+        <input type="text" id="sampleMeta">
+      </div>
+      <table class="items" id="sampleItems">
+        <thead><tr><th>品名</th><th style="width:56px;">数量</th><th>備考</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <button type="button" class="add-item" id="addItem">＋ 品目を追加</button>
+    </div>
+
+    <div class="panel">
+      <h2>テスト印刷・保存</h2>
+      <div class="row">
+        <label class="name" for="printerIpInput">プリンターIP</label>
+        <input type="text" id="printerIpInput" placeholder="例: 192.168.244.41" style="flex:1 1 140px;">
+      </div>
+      <div class="actions">
+        <button type="button" class="btn-primary" id="btnPrintReal">実機にテスト印刷</button>
+        <button type="button" class="btn-ghost" id="btnPrint">ブラウザで印刷</button>
+        <button type="button" class="btn-ghost" id="btnExport">設定をJSONで書き出す</button>
+        <button type="button" class="btn-ghost" id="btnImport">JSONから読み込む</button>
+        <button type="button" class="btn-ghost" id="btnReset">既定値に戻す</button>
+      </div>
+      <input type="file" id="fileInput" class="file-input" accept="application/json">
+      <div class="inline-confirm" id="resetConfirm" role="alertdialog" aria-label="リセットの確認">
+        <span>スタイル設定を既定値に戻しますか？</span>
+        <button type="button" class="yes" id="resetYes">戻す</button>
+        <button type="button" class="no" id="resetNo">やめる</button>
+      </div>
+      <div class="notice" id="notice" role="status" aria-live="polite"></div>
+      <p class="hint">
+        設定は自動保存され、サーバー経由で開いていれば**全端末のKDS印刷に反映**されます(どの端末で設定してもOK)。JSON書き出し/読み込みはバックアップ・別店舗への持ち出し用です。<br>
+        右のプレビューは実機プリンターの印字を再現しています(文字の並び・大きさ・罫線とも同じ)。「実機にテスト印刷」でそのまま紙で確認できます。
+      </p>
+    </div>
+  </div>
+
+  <div class="preview-col">
+    <div class="paper-wrap">
+      <div id="slip">
+        <div class="r-center" id="pStore">土鍋飯ぽかぽか</div>
+        <div class="r-center" id="pTable">卓  12</div>
+        <div id="pMeta">受付 12:34</div>
+        <div class="r-sep" id="pSepTop"></div>
+        <div id="pItems"></div>
+        <div class="r-sep" id="pSepBottom"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var DEFAULTS = {
+    paperWidth: 80,
+    feedLines: 5,
+    storeShow: true,
+    tableSize: 40,     // 40=2倍角 / 32=等倍 (relay-server printer.js の閾値と対応)
+    tableBold: true,
+    metaShow: true,
+    itemSize: 18,      // 22=横2倍 / 18=等倍 (同上)
+    itemBold: true,
+    qtyFormat: "x",
+    noteShow: true,
+    sepTop: "dashed",
+    sepBottom: "none"
+  };
+  /* 各キーの許容値。JSON読み込みやlocalStorage改変で不正値が入っても
+     printer.js の normalizeJob と同じ発想で既定値へ丸める */
+  var ALLOWED = {
+    paperWidth: [58, 80],
+    feedLines: { min: 0, max: 8 },
+    storeShow: "bool",
+    tableSize: [32, 40],
+    tableBold: "bool",
+    metaShow: "bool",
+    itemSize: [18, 22],
+    itemBold: "bool",
+    qtyFormat: ["x", "times", "kosuu"],
+    noteShow: "bool",
+    sepTop: ["dashed", "solid", "none"],
+    sepBottom: ["dashed", "solid", "none"]
+  };
+  var LS_KEY = "slip_style_designer_v1";
+  var LS_SAMPLE_KEY = "slip_style_designer_sample_v1";
+
+  var SAMPLE_DEFAULT = {
+    table: "12",
+    meta: "12:34",
+    items: [
+      { name: "特上土鍋ご飯", qty: 1, note: "固め" },
+      { name: "だし巻き玉子", qty: 2, note: "" },
+      { name: "本日の味噌汁", qty: 1, note: "" }
+    ]
+  };
+
+  /* 不正なキー・値を既定値へ丸めた新しい state を返す */
+  function normalizeState(parsed) {
+    var out = Object.assign({}, DEFAULTS);
+    if (!parsed || typeof parsed !== "object") return out;
+    Object.keys(DEFAULTS).forEach(function (key) {
+      var rule = ALLOWED[key];
+      var val = parsed[key];
+      if (val == null) return;
+      if (rule === "bool") { out[key] = !!val; return; }
+      if (Array.isArray(rule)) { if (rule.indexOf(val) !== -1) out[key] = val; return; }
+      var n = Number(val);
+      if (!isNaN(n)) out[key] = Math.min(rule.max, Math.max(rule.min, Math.round(n)));
+    });
+    return out;
+  }
+
+  var state = loadState();
+  var sample = loadSample();
+
+  function loadState() {
+    try {
+      var raw = localStorage.getItem(LS_KEY);
+      if (!raw) return Object.assign({}, DEFAULTS);
+      return normalizeState(JSON.parse(raw));
+    } catch (e) { return Object.assign({}, DEFAULTS); }
+  }
+  function saveState() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
+    // サーバーにも保存(/api/slip-style)。KDSを開いている全端末(PC/iPad)に反映される。
+    // relay-server経由でなく file:// で開いているときは失敗するが、localStorageで動き続ける
+    if (typeof fetch === "function") {
+      fetch("/api/slip-style", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(state),
+      }).catch(function () {});
+    }
+  }
+
+  /* 起動時にサーバー保存のスタイルを取得。あればそちらを正として画面へ反映する */
+  function pullServerState() {
+    if (typeof fetch !== "function") return;
+    fetch("/api/slip-style").then(function (res) {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    }).then(function (st) {
+      if (!st || typeof st !== "object" || Object.keys(st).length === 0) return;
+      state = normalizeState(st);
+      try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
+      syncControls(); render();
+    }).catch(function () {});
+  }
+  function defaultSample() { return JSON.parse(JSON.stringify(SAMPLE_DEFAULT)); }
+  function loadSample() {
+    try {
+      var raw = localStorage.getItem(LS_SAMPLE_KEY);
+      if (!raw) return defaultSample();
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.items)) return defaultSample();
+      return parsed;
+    } catch (e) { return defaultSample(); }
+  }
+  function saveSample() {
+    try { localStorage.setItem(LS_SAMPLE_KEY, JSON.stringify(sample)); } catch (e) {}
+  }
+
+  /* ---- コントロールの描画・同期 ---- */
+  function syncSegGroups() {
+    document.querySelectorAll(".seg[data-group]").forEach(function (seg) {
+      var key = seg.getAttribute("data-group");
+      seg.querySelectorAll("button").forEach(function (btn) {
+        var match = String(state[key]) === btn.getAttribute("data-val");
+        btn.classList.toggle("on", match);
+        btn.setAttribute("aria-pressed", match ? "true" : "false");
+      });
+    });
+  }
+  function syncRanges() {
+    document.querySelectorAll("input[type=range][data-key]").forEach(function (input) {
+      var key = input.getAttribute("data-key");
+      input.value = state[key];
+      var out = document.querySelector("[data-valfor='" + key + "']");
+      if (out) out.textContent = state[key];
+    });
+  }
+  function syncToggles() {
+    document.querySelectorAll("input[type=checkbox][data-key]").forEach(function (input) {
+      var key = input.getAttribute("data-key");
+      input.checked = !!state[key];
+    });
+  }
+  function syncControls() { syncSegGroups(); syncRanges(); syncToggles(); }
+
+  document.querySelectorAll(".seg[data-group]").forEach(function (seg) {
+    var key = seg.getAttribute("data-group");
+    seg.querySelectorAll("button").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var raw = btn.getAttribute("data-val");
+        state[key] = isNaN(Number(raw)) ? raw : Number(raw);
+        syncControls(); render(); saveState();
+      });
+    });
+  });
+  document.querySelectorAll("input[type=range][data-key]").forEach(function (input) {
+    input.addEventListener("input", function () {
+      var key = input.getAttribute("data-key");
+      state[key] = Number(input.value);
+      syncControls(); render(); saveState();
+    });
+  });
+  document.querySelectorAll("input[type=checkbox][data-key]").forEach(function (input) {
+    input.addEventListener("change", function () {
+      var key = input.getAttribute("data-key");
+      state[key] = input.checked;
+      syncControls(); render(); saveState();
+    });
+  });
+
+  /* ---- サンプル注文の編集 ---- */
+  var sampleTableEl = document.getElementById("sampleTable");
+  var sampleMetaEl = document.getElementById("sampleMeta");
+  var itemsBody = document.querySelector("#sampleItems tbody");
+  sampleTableEl.value = sample.table;
+  sampleMetaEl.value = sample.meta;
+
+  sampleTableEl.addEventListener("input", function () {
+    sample.table = sampleTableEl.value; saveSample(); render();
+  });
+  sampleMetaEl.addEventListener("input", function () {
+    sample.meta = sampleMetaEl.value; saveSample(); render();
+  });
+
+  function renderItemRows() {
+    itemsBody.innerHTML = "";
+    sample.items.forEach(function (it, idx) {
+      var tr = document.createElement("tr");
+
+      var tdName = document.createElement("td");
+      var name = document.createElement("input");
+      name.type = "text"; name.value = it.name;
+      name.addEventListener("input", function () { sample.items[idx].name = name.value; saveSample(); render(); });
+      tdName.appendChild(name);
+
+      var tdQty = document.createElement("td");
+      var qty = document.createElement("input");
+      qty.type = "number"; qty.className = "qty"; qty.min = "1"; qty.value = it.qty;
+      qty.addEventListener("input", function () {
+        sample.items[idx].qty = Math.max(1, Number(qty.value) || 1); saveSample(); render();
+      });
+      tdQty.appendChild(qty);
+
+      var tdNote = document.createElement("td");
+      var note = document.createElement("input");
+      note.type = "text"; note.value = it.note || "";
+      note.addEventListener("input", function () { sample.items[idx].note = note.value; saveSample(); render(); });
+      tdNote.appendChild(note);
+
+      var tdDel = document.createElement("td");
+      var del = document.createElement("button");
+      del.type = "button"; del.className = "item-del"; del.textContent = "×";
+      del.addEventListener("click", function () {
+        sample.items.splice(idx, 1); saveSample(); renderItemRows(); render();
+      });
+      tdDel.appendChild(del);
+
+      tr.appendChild(tdName); tr.appendChild(tdQty); tr.appendChild(tdNote); tr.appendChild(tdDel);
+      itemsBody.appendChild(tr);
+    });
+  }
+  document.getElementById("addItem").addEventListener("click", function () {
+    sample.items.push({ name: "新しい品目", qty: 1, note: "" });
+    saveSample(); renderItemRows(); render();
+  });
+
+  /* ---- プレビュー描画 ---- */
+  var slipEl = document.getElementById("slip");
+  var pStore = document.getElementById("pStore");
+  var pTable = document.getElementById("pTable");
+  var pMeta = document.getElementById("pMeta");
+  var pSepTop = document.getElementById("pSepTop");
+  var pSepBottom = document.getElementById("pSepBottom");
+  var pItems = document.getElementById("pItems");
+
+  function mmToPx(mm) { return Math.round(mm * 96 / 25.4); }   /* 96dpi の実寸換算 */
+
+  /* 実機(relay-server/printer.js qtyText)と同一の数量表記 */
+  function fmtQty(n) {
+    if (state.qtyFormat === "times") return "  × " + n;
+    if (state.qtyFormat === "kosuu") return "  " + n + " 個";
+    return "  x " + n;
+  }
+  /* 実機(printer.js sepLine)と同一の区切り線: 58mm=24桁 / 80mm=32桁 */
+  function sepText(kind) {
+    if (kind === "none") return "";
+    var cols = state.paperWidth === 58 ? 24 : 32;
+    return new Array(cols + 1).join(kind === "solid" ? "=" : "-");
+  }
+
+  /* 用紙幅に応じた @page サイズ(印刷プレビュー用)。render() から毎回更新する */
+  var pageStyleTag = document.createElement("style");
+  document.head.appendChild(pageStyleTag);
+
+  var BASE_PX = 14;   // 実機フォント等倍のプレビュー上のサイズ
+
+  function render() {
+    pageStyleTag.textContent = "@page { size: " + state.paperWidth + "mm auto; margin: 0; }";
+    slipEl.style.width = mmToPx(state.paperWidth) + "px";
+
+    pStore.style.display = state.storeShow ? "" : "none";
+
+    // 実機は「卓  12」を中央寄せで印字。2倍角=縦横2倍
+    pTable.textContent = "卓  " + (sample.table || "--");
+    pTable.style.fontSize = (state.tableSize >= 40 ? BASE_PX * 2 : BASE_PX) + "px";
+    pTable.style.fontWeight = state.tableBold ? "700" : "400";
+
+    // 実機は受付時刻を左寄せ・等倍で印字
+    pMeta.style.display = state.metaShow ? "" : "none";
+    pMeta.textContent = "受付 " + (sample.meta || "");
+
+    pSepTop.textContent = sepText(state.sepTop);
+    pSepTop.style.display = state.sepTop === "none" ? "none" : "";
+    pSepBottom.textContent = sepText(state.sepBottom);
+    pSepBottom.style.display = state.sepBottom === "none" ? "none" : "";
+
+    // 実機の印字順を再現: 品名 → 数量行 → 備考行 → 空行
+    pItems.innerHTML = "";
+    sample.items.forEach(function (it) {
+      var block = document.createElement("div");
+      block.style.marginBottom = "1.4em";   // 実機の品目間の空行1行ぶん
+
+      var nameDiv = document.createElement("div");
+      var nameSpan = document.createElement("span");
+      nameSpan.className = "r-item-name";
+      nameSpan.textContent = it.name;
+      nameSpan.style.fontWeight = state.itemBold ? "700" : "400";
+      nameSpan.style.transform = state.itemSize >= 22 ? "scaleX(2)" : "";   // 横2倍
+      nameDiv.appendChild(nameSpan);
+      block.appendChild(nameDiv);
+
+      var qtyDiv = document.createElement("div");
+      qtyDiv.textContent = fmtQty(it.qty);
+      block.appendChild(qtyDiv);
+
+      if (state.noteShow && it.note) {
+        var noteDiv = document.createElement("div");
+        noteDiv.textContent = "  ※ " + it.note;
+        block.appendChild(noteDiv);
+      }
+      pItems.appendChild(block);
+    });
+
+    // 実機のカット前の紙送り行数ぶんの余白
+    slipEl.style.paddingBottom = (14 + state.feedLines * BASE_PX * 1.4) + "px";
+  }
+
+  /* ---- テスト印刷・保存・書き出し・読み込み・リセット ---- */
+  document.getElementById("btnPrint").addEventListener("click", function () {
+    window.print();
+  });
+
+  /* 実機テスト印刷: 今画面にあるスタイル+サンプル注文をそのまま /api/print へ送る。
+     プリンターIPはサーバー保存(/api/printer)で全端末と共有。localStorageはオフライン用の控え */
+  var LS_PRINTER_IP = "kds_printer_ip_v1";
+  var printerIpInput = document.getElementById("printerIpInput");
+  try { printerIpInput.value = localStorage.getItem(LS_PRINTER_IP) || ""; } catch (e) {}
+  if (typeof fetch === "function") {
+    fetch("/api/printer").then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        if (data && data.ip) {
+          printerIpInput.value = data.ip;
+          try { localStorage.setItem(LS_PRINTER_IP, data.ip); } catch (e) {}
+        }
+      }).catch(function () {});
+  }
+  printerIpInput.addEventListener("input", function () {
+    var ip = printerIpInput.value.trim();
+    try { localStorage.setItem(LS_PRINTER_IP, ip); } catch (e) {}
+    if (typeof fetch === "function" && (/^(\d{1,3}\.){3}\d{1,3}$/.test(ip) || ip === "")) {
+      fetch("/api/printer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ip: ip }),
+      }).catch(function () {});
+    }
+  });
+
+  document.getElementById("btnPrintReal").addEventListener("click", function () {
+    var ip = printerIpInput.value.trim();
+    if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
+      showNotice("err", "プリンターIPを入力してください (例: 192.168.244.41)");
+      return;
+    }
+    showNotice("ok", "印刷データを送信中…");
+    fetch("/api/print", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ip: ip,
+        table: sample.table || "--",
+        meta: "受付 " + (sample.meta || ""),
+        store: "土鍋飯ぽかぽか",
+        style: state,   // 保存を待たず、いま画面にあるスタイルで印字する
+        items: sample.items.map(function (it) {
+          return { name: it.name, qty: it.qty, note: it.note || "" };
+        }),
+      }),
+    }).then(function (res) { return res.json().catch(function () { return { ok: false, error: "HTTP " + res.status }; }); })
+      .then(function (data) {
+        if (data && data.ok) showNotice("ok", "実機へ印刷しました。紙を確認してください。");
+        else showNotice("err", "実機印刷に失敗: " + ((data && data.error) || "不明なエラー") + " (IP・LAN接続・電源を確認)");
+      })
+      .catch(function (err) {
+        showNotice("err", "実機印刷に失敗: " + err.message + " (このページをサーバー経由で開いているか確認)");
+      });
+  });
+  document.getElementById("btnExport").addEventListener("click", function () {
+    var blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = "slip-style.json";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+  document.getElementById("btnImport").addEventListener("click", function () {
+    document.getElementById("fileInput").click();
+  });
+  /* alert/confirm はブラウザ全体をブロックするため使わず、インライン表示で代替 */
+  var noticeEl = document.getElementById("notice");
+  var noticeTimer = null;
+  function showNotice(kind, message) {
+    noticeEl.className = "notice show " + kind;
+    noticeEl.textContent = message;
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(function () { noticeEl.className = "notice"; }, 5000);
+  }
+
+  document.getElementById("fileInput").addEventListener("change", function (e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        state = normalizeState(JSON.parse(String(reader.result)));
+        syncControls(); render(); saveState();
+        showNotice("ok", "設定を読み込みました。");
+      } catch (err) {
+        showNotice("err", "JSONの読み込みに失敗しました: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  });
+
+  var resetConfirmEl = document.getElementById("resetConfirm");
+  document.getElementById("btnReset").addEventListener("click", function () {
+    resetConfirmEl.classList.add("show");
+  });
+  document.getElementById("resetNo").addEventListener("click", function () {
+    resetConfirmEl.classList.remove("show");
+  });
+  document.getElementById("resetYes").addEventListener("click", function () {
+    resetConfirmEl.classList.remove("show");
+    state = Object.assign({}, DEFAULTS);
+    syncControls(); render(); saveState();
+    showNotice("ok", "既定値に戻しました。");
+  });
+
+  syncControls();
+  renderItemRows();
+  render();
+  pullServerState();
+})();
+</script>
+</body>
+</html>
