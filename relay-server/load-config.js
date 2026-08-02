@@ -27,6 +27,7 @@ var KEY_TO_ENV = {
   "tablecheck.allowCustomBase": "TABLECHECK_ALLOW_CUSTOM_BASE",
   "seat.beforeMin": "SEAT_BEFORE_MIN",
   "seat.afterMin": "SEAT_AFTER_MIN",
+  "order.ttlMin": "ORDER_TTL_MIN",
 };
 
 // 秘密情報は config.json に置かせない。黙って無視すると「キーを書いたのに MOCK のまま」という
