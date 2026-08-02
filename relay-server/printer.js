@@ -111,32 +111,46 @@ function sepLine(kind, paperWidth) {
   return new Array(cols + 1).join(ch) + "\n";
 }
 
-/** チビ伝1枚分のESC/POSバイト列を組み立てる (感熱ロール紙想定。style未指定は従来相当) */
+/* Star系(StarPRNT)の文字装飾コマンド。
+   本番機 Star mC-Print3 で1コマンドずつ実機印字して効くことを確認した組み合わせ:
+     ESC GS a n   : 寄せ (0=左 1=中央 2=右)   … ESC/POS の ESC a は効かない
+     ESC i n1 n2  : 縦横の倍率 (0=等倍 1=2倍) … ESC/POS の GS ! は効かない
+     ESC E / ESC F: 太字 オン/オフ
+     ESC d 3      : 紙送り付きパーシャルカット
+   以前は ESC/POS のコマンドを送っていたため、卓番が拡大も中央寄せもされていなかった。 */
+var STAR_ALIGN = { left: "\x00", center: "\x01", right: "\x02" };
+function starAlign(kind) { return ESC + GS + "\x61" + (STAR_ALIGN[kind] || "\x00"); }
+function starScale(w, h) { return ESC + "\x69" + String.fromCharCode(h) + String.fromCharCode(w); }
+var STAR_BOLD_ON = ESC + "\x45";
+var STAR_BOLD_OFF = ESC + "\x46";
+var STAR_CUT = ESC + "\x64\x33";
+
+/** チビ伝1枚分のバイト列を組み立てる (感熱ロール紙想定。style未指定は従来相当) */
 function buildEscPos(job) {
   var st = job.style || STYLE_DEFAULTS;
   var parts = [];
   parts.push(ctl(ESC + "@"));                                              // 初期化
 
   if (st.storeShow && job.store) {
-    parts.push(ctl(ESC + "\x61\x01"));                                     // 中央寄せ
+    parts.push(ctl(starAlign("center")));
     parts.push(sjis(job.store + "\n"));
-    parts.push(ctl(ESC + "\x61\x00"));
+    parts.push(ctl(starAlign("left")));
   }
 
-  var tableScale = st.tableSize >= 40 ? "\x11" : "\x00";                   // 2倍角 or 等倍
-  parts.push(ctl(ESC + "\x61\x01" + GS + "\x21" + tableScale + (st.tableBold ? ESC + "\x45\x01" : "")));
+  var tableBig = st.tableSize >= 40 ? 1 : 0;                               // 2倍角 or 等倍
+  parts.push(ctl(starAlign("center") + starScale(tableBig, tableBig) + (st.tableBold ? STAR_BOLD_ON : "")));
   parts.push(sjis("卓  " + job.table + "\n"));
-  parts.push(ctl(ESC + "\x45\x00" + GS + "\x21\x00" + ESC + "\x61\x00"));   // 太字・拡大・寄せ 解除
+  parts.push(ctl(STAR_BOLD_OFF + starScale(0, 0) + starAlign("left")));    // 太字・拡大・寄せ 解除
 
   if (st.metaShow && job.meta) parts.push(sjis(job.meta + "\n"));
   var top = sepLine(st.sepTop, st.paperWidth);
   if (top) parts.push(ctl(top));
 
-  var itemScale = st.itemSize >= 22 ? "\x01" : "\x00";                     // 横2倍 or 等倍
+  var itemWide = st.itemSize >= 22 ? 1 : 0;                                // 横2倍 or 等倍
   job.items.forEach(function (it) {
-    parts.push(ctl(GS + "\x21" + itemScale + (st.itemBold ? ESC + "\x45\x01" : "")));
+    parts.push(ctl(starScale(itemWide, 0) + (st.itemBold ? STAR_BOLD_ON : "")));
     parts.push(sjis(it.name + "\n"));
-    parts.push(ctl(ESC + "\x45\x00" + GS + "\x21\x00"));                   // 太字・拡大 解除
+    parts.push(ctl(STAR_BOLD_OFF + starScale(0, 0)));                      // 太字・拡大 解除
     parts.push(sjis(qtyText(st.qtyFormat, it.qty) + "\n"));
     if (st.noteShow && it.note) parts.push(sjis("  ※ " + it.note + "\n"));
     parts.push(ctl("\n"));
@@ -145,9 +159,120 @@ function buildEscPos(job) {
   var bottom = sepLine(st.sepBottom, st.paperWidth);
   if (bottom) parts.push(ctl(bottom));
 
-  if (st.feedLines > 0) parts.push(ctl(ESC + "\x64" + String.fromCharCode(st.feedLines)));  // 紙送り
-  parts.push(ctl(ESC + "\x64\x02" + ESC + "\x6d"));      // カット
+  // 紙送りは LF の連続にする。ESC d n は Star ではカット命令なので流用できない
+  if (st.feedLines > 0) parts.push(ctl(new Array(st.feedLines + 1).join("\n")));
+  parts.push(ctl(STAR_CUT));
   return Buffer.concat(parts);
+}
+
+/* ===== ラスター(画像)印字 =====
+ *
+ * 伝票を「好きな書体で好きな位置に」置けるようにするため、レイアウトはブラウザ側で
+ * 1bitビットマップに描いてもらい、ここではそれをプリンターのコマンドに載せるだけにする。
+ * (内蔵フォントのテキスト印字は等倍/2倍・書体固定という制約から逃れられないため)
+ *
+ * 重要: 画像印字のコマンドはプリンターのコマンド体系(エミュレーション)ごとに全く別物で、
+ * 互換性が無い。素のテキストはどの体系でも印字できてしまうため、テキスト印字が
+ * 成功していても体系の判別にはならない。体系が違うまま画像を送ると、画像データが
+ * そのまま文字として解釈され「文字化け + データ中の 0x0A で行送りが延々続く」壊れ方をする。
+ *
+ * 本番機の Star mC-Print3 は **StarPRNT 専用**(ESC/POS モードも Star Line モードも持たず、
+ * 切り替えるスイッチも存在しない)。したがって既定は starprnt = ESC GS S。
+ * 出典: Star 製品仕様書 mC-Print3 REV 1.22 §2.1(10)/§15.1、StarPRNT Command
+ * Specifications Rev 4.01、Star「Command Emulator on SMCS」の機種別エミュレーション表。
+ * (2026-07 の実機テストで画像が文字化けしたのは、GS v 0 を送っていたためと考えられる)
+ *
+ * 他機種へ載せ替えたときのために、他の2体系も残して emulation で選べるようにしてある:
+ *   - "starprnt" (既定): ESC GS S           … StarPRNT (mC-Print3 等)
+ *   - "starline"       : ESC * r A … b …   … Star Line Mode (TSP650II/TSP700II 等)
+ *   - "escpos"         : GS v 0             … ESC/POS 系
+ */
+var MAX_RASTER_WIDTH = 576;     // 80mm・203dpi の印字可能幅ドット数 (58mm は 384)
+var MAX_RASTER_HEIGHT = 2400;   // 約30cm。暴走ジョブでロール紙を使い切らせない
+var RASTER_BAND_ROWS = 128;     // ESC/POS は受信バッファが小さい機種があるため帯に分けて送る
+
+/** body.raster {width,height,data(base64)} を検証する。不正なら null */
+function normalizeRaster(body) {
+  var r = body && body.raster;
+  if (!r || typeof r !== "object") return null;
+  var width = Math.round(Number(r.width));
+  var height = Math.round(Number(r.height));
+  if (!width || !height || width < 8 || height < 1) return null;
+  if (width > MAX_RASTER_WIDTH || height > MAX_RASTER_HEIGHT) return null;
+  var bits;
+  try { bits = Buffer.from(String(r.data || ""), "base64"); } catch (e) { return null; }
+  var widthBytes = Math.ceil(width / 8);
+  // 寸法とデータ長が食い違うと印字が斜めにずれる。黙って印字せず拒否する
+  if (bits.length !== widthBytes * height) return null;
+  return { widthBytes: widthBytes, height: height, bits: bits };
+}
+
+/** ESC/POS: GS v 0 (ラスタービットイメージ) で1枚印字する */
+function buildRasterEscPos(raster, feedLines) {
+  var parts = [ctl(ESC + "@")];
+  for (var top = 0; top < raster.height; top += RASTER_BAND_ROWS) {
+    var rows = Math.min(RASTER_BAND_ROWS, raster.height - top);
+    parts.push(ctl(GS + "\x76\x30\x00" +
+      String.fromCharCode(raster.widthBytes & 0xff) + String.fromCharCode((raster.widthBytes >> 8) & 0xff) +
+      String.fromCharCode(rows & 0xff) + String.fromCharCode((rows >> 8) & 0xff)));
+    parts.push(raster.bits.subarray(top * raster.widthBytes, (top + rows) * raster.widthBytes));
+  }
+  if (feedLines > 0) parts.push(ctl(ESC + "\x64" + String.fromCharCode(feedLines)));  // 紙送り
+  parts.push(ctl(ESC + "\x64\x02" + ESC + "\x6d"));                                   // カット
+  return Buffer.concat(parts);
+}
+
+/** Star のカット。n はASCIIの '3' (0x33) = 紙送り付きパーシャルカット */
+var STAR_CUT = ESC + "\x64\x33";
+
+/**
+ * StarPRNT: ESC GS S でラスタービットイメージを1コマンドで送る (mC-Print3 の本線)。
+ *   1B 1D 53 01 xL xH yL yH 00 <データ>
+ *   n1=01(ラスター) / x=幅[バイト] (128以下) / y=高さ[ドット] / n2=00
+ */
+function buildRasterStarPrnt(raster, feedLines) {
+  var parts = [ctl(ESC + "@")];
+  parts.push(ctl(ESC + GS + "\x53\x01" +
+    String.fromCharCode(raster.widthBytes & 0xff) + String.fromCharCode((raster.widthBytes >> 8) & 0xff) +
+    String.fromCharCode(raster.height & 0xff) + String.fromCharCode((raster.height >> 8) & 0xff) +
+    "\x00"));
+  parts.push(raster.bits);
+  if (feedLines > 0) parts.push(ctl(new Array(feedLines + 1).join("\n")));
+  parts.push(ctl(STAR_CUT));
+  return Buffer.concat(parts);
+}
+
+/** Star Line Mode: ラスターモードへ入り、b コマンドで1行ずつ送る (TSP650II 等の互換用) */
+function buildRasterStarLine(raster, feedLines) {
+  var parts = [ctl(ESC + "@")];
+  parts.push(ctl(ESC + "\x2a\x72\x41"));            // ESC * r A  ラスターモード開始
+  parts.push(ctl(ESC + "\x2a\x72\x50\x30\x00"));    // ESC * r P 0 NUL  ページ長=連続紙
+  for (var y = 0; y < raster.height; y++) {
+    parts.push(ctl("\x62" +                          // b n1 n2 : 1行ぶんのラスターデータ
+      String.fromCharCode(raster.widthBytes & 0xff) + String.fromCharCode((raster.widthBytes >> 8) & 0xff)));
+    parts.push(raster.bits.subarray(y * raster.widthBytes, (y + 1) * raster.widthBytes));
+  }
+  parts.push(ctl(ESC + "\x0c\x00"));                // ESC FF NUL  ページを印字して排出
+  parts.push(ctl(ESC + "\x2a\x72\x42"));            // ESC * r B  ラスターモード終了
+  if (feedLines > 0) parts.push(ctl(new Array(feedLines + 1).join("\n")));
+  parts.push(ctl(STAR_CUT));
+  return Buffer.concat(parts);
+}
+
+var RASTER_BUILDERS = {
+  starprnt: buildRasterStarPrnt,
+  starline: buildRasterStarLine,
+  escpos: buildRasterEscPos,
+};
+
+/** ラスター1枚分のバイト列。emulation は "starprnt"(既定) / "starline" / "escpos" */
+function buildRaster(raster, options) {
+  options = options || {};
+  var feed = Math.round(Number(options.feedLines));
+  if (isNaN(feed)) feed = 5;
+  feed = Math.min(8, Math.max(0, feed));
+  var build = RASTER_BUILDERS[options.emulation] || buildRasterStarPrnt;
+  return build(raster, feed);
 }
 
 /** 店内LAN想定のプライベートIPv4のみ許可する (印刷経由での外部/任意ホストへの送信を防ぐ) */
@@ -183,16 +308,20 @@ function sendToPrinter(ip, buffer, options) {
     socket.setTimeout(timeoutMs);
     socket.on("timeout", function () { finish(new Error("printer timeout: " + ip + ":" + port)); });
     socket.on("error", finish);
-    socket.on("connect", function () {
-      socket.end(buffer, function () { finish(); });
-    });
+    // プリンターが読み切る前に destroy すると RST になり、ジョブごと捨てられることがある。
+    // FIN を送って相手が閉じる(close)のを待ってから解決する。ラスター画像は数十KBあり、
+    // 「書き込み完了 = プリンターが受け取った」ではないため、ここを急いではいけない
+    socket.on("close", function () { finish(); });
+    socket.on("connect", function () { socket.end(buffer); });
   });
 }
 
 module.exports = {
   normalizeJob: normalizeJob,
   normalizeStyle: normalizeStyle,
+  normalizeRaster: normalizeRaster,
   buildEscPos: buildEscPos,
+  buildRaster: buildRaster,
   isPrivateIPv4: isPrivateIPv4,
   sendToPrinter: sendToPrinter,
   PRINT_PORT: PRINT_PORT,
