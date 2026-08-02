@@ -18,6 +18,7 @@
 (function () {
   "use strict";
   var API = "/api/stock";
+  var API_SEATS = "/api/seats";
   var LS_STOCK = "kds_stock_v1";
   var LS_BRIDGE_SEEN = "kds_bridge_seen_v1"; // 一度取り込んだ rid (着手/削除後の復活防止)
   var BC_NAME = "kds_sync";
@@ -39,6 +40,12 @@
       incoming = await res.json();
       if (!Array.isArray(incoming)) return;
     } catch (e) { return; }                  // 通信断: 直前の表示を保持 (6/18 方針)
+
+    // 着席時に「誰が座っているか」を座席占有へ載せるため、rid → 予約者名を控えておく。
+    // 着席の合図(BroadcastChannel)にはストックから消えた後の配列しか乗らないので、ここで拾う
+    incoming.forEach(function (r) {
+      if (r && r.rid != null && r.name) nameByRid[String(r.rid)] = String(r.name);
+    });
 
     var stock = load(LS_STOCK, []);
     var seen = load(LS_BRIDGE_SEEN, {});
@@ -79,7 +86,44 @@
     // (kds-a-grid.html に <script src> で読み込ませた場合、別タブ・別端末には即時反映される)
   }
 
+  /* ===================== 座席占有の登録 (#123) =====================
+     卓番は「予約をどの席に案内したか」をスタッフが KDS で決めるローカルデータで、
+     TableCheck 側には無い(あっても希望席種まで)。ここが唯一の正本になるので、
+     着席の操作をそのまま relay の座席占有ビューへ流す。
+
+     KDS 本体は着席時に BroadcastChannel へ {type:"moveToMain", order} を流している。
+     order.id は "res-<rid>"、order.table が案内した卓番。KDS 本体は無改修のまま拾える。 */
+  var nameByRid = {};   // rid → 予約者名 (/api/stock の取込時に控える)
+
+  async function registerSeat(table, rid) {
+    if (!table) return;
+    var payload = { table: String(table) };
+    if (rid) {
+      payload.rid = String(rid);
+      if (nameByRid[String(rid)]) payload.name = nameByRid[String(rid)];
+    }
+    try {
+      await fetch(API_SEATS, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch (e) {
+      // 登録できなくても着席の操作自体は成立している。座席占有は補助情報なので黙って諦める
+    }
+  }
+
+  if (bc) {
+    bc.onmessage = function (ev) {
+      var msg = ev && ev.data;
+      if (!msg || msg.type !== "moveToMain" || !msg.order) return;
+      var id = String(msg.order.id || "");
+      registerSeat(msg.order.table, id.indexOf("res-") === 0 ? id.slice(4) : "");
+    };
+  }
+
   tickOnce();
   setInterval(tickOnce, POLL_MS);
-  console.log("[kds-bridge] 予約ストック取込を開始 (" + API + " を " + POLL_MS / 1000 + "秒間隔)");
+  console.log("[kds-bridge] 予約ストック取込を開始 (" + API + " を " + POLL_MS / 1000 + "秒間隔) / " +
+    "着席時に座席占有を登録 (" + API_SEATS + ")");
 })();
