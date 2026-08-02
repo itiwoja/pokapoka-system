@@ -125,11 +125,17 @@ var STAR_BOLD_ON = ESC + "\x45";
 var STAR_BOLD_OFF = ESC + "\x46";
 var STAR_CUT = ESC + "\x64\x33";
 
+/* 初期化に ESC @ は使わない。仕様書には載っているが本番機では解釈されず、
+   1行目に "@" がそのまま印字された (2026-07-31 実機確認)。
+   代わりに、こちらが触る属性(寄せ・拡大・強調)だけを明示的に既定へ戻す。
+   前のジョブが途中で切れて属性が残っていても、これで巻き込まれない。 */
+function starReset() { return starAlign("left") + starScale(0, 0) + STAR_BOLD_OFF; }
+
 /** チビ伝1枚分のバイト列を組み立てる (感熱ロール紙想定。style未指定は従来相当) */
 function buildEscPos(job) {
   var st = job.style || STYLE_DEFAULTS;
   var parts = [];
-  parts.push(ctl(ESC + "@"));                                              // 初期化
+  parts.push(ctl(starReset()));                                            // 属性を既定へ戻す
 
   if (st.storeShow && job.store) {
     parts.push(ctl(starAlign("center")));
@@ -231,7 +237,7 @@ var STAR_CUT = ESC + "\x64\x33";
  *   n1=01(ラスター) / x=幅[バイト] (128以下) / y=高さ[ドット] / n2=00
  */
 function buildRasterStarPrnt(raster, feedLines) {
-  var parts = [ctl(ESC + "@")];
+  var parts = [ctl(starReset())];
   parts.push(ctl(ESC + GS + "\x53\x01" +
     String.fromCharCode(raster.widthBytes & 0xff) + String.fromCharCode((raster.widthBytes >> 8) & 0xff) +
     String.fromCharCode(raster.height & 0xff) + String.fromCharCode((raster.height >> 8) & 0xff) +
@@ -244,7 +250,7 @@ function buildRasterStarPrnt(raster, feedLines) {
 
 /** Star Line Mode: ラスターモードへ入り、b コマンドで1行ずつ送る (TSP650II 等の互換用) */
 function buildRasterStarLine(raster, feedLines) {
-  var parts = [ctl(ESC + "@")];
+  var parts = [ctl(starReset())];
   parts.push(ctl(ESC + "\x2a\x72\x41"));            // ESC * r A  ラスターモード開始
   parts.push(ctl(ESC + "\x2a\x72\x50\x30\x00"));    // ESC * r P 0 NUL  ページ長=連続紙
   for (var y = 0; y < raster.height; y++) {
