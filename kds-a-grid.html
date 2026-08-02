@@ -1172,6 +1172,12 @@
   .slip li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; font-size: 22px; line-height: 1.3; font-weight: 700; padding: 5px 0; }   /* 品名22px+ (#11 のAA基準に合わせる) */
   .slip li .o { flex-basis: 100%; font-size: 13px; font-weight: 500; color: #333; }
   .slip li .q { font-family: var(--font-num); }
+  /* レイアウト設定(自由配置)がある場合はこの印字イメージだけを見せる。
+     感熱ヘッドのドットをそのまま拡大表示したいので補間しない */
+  .slip-canvas { display: none; width: 100%; height: auto; image-rendering: pixelated; }
+  body.slip-tpl .slip-canvas { display: block; }
+  body.slip-tpl #slipDom { display: none; }
+  body.slip-tpl .slip { padding: 10px; }
   .slip-actions { display: flex; gap: 10px; margin-top: 14px; }
   .slip-actions button { flex: 1 1 0; min-height: 48px; border-radius: 0; font-size: 15px; font-weight: 900; cursor: pointer; }
   .slip-print { border: 2px solid #1A1612; background: #1A1612; color: #fff; }
@@ -1193,6 +1199,8 @@
     .slip li .o { color: #000; }
     .slip-actions { display: none !important; }
     .slip-backdrop { background: #fff; }
+    /* レイアウト設定がある場合は印字イメージだけを紙いっぱいに出す */
+    body.slip-tpl .slip { padding: 0; }
   }
 
   .sr-only {
@@ -1426,10 +1434,15 @@
   <!-- チビ伝印刷プレビュー -->
   <div class="slip-backdrop" id="slipBackdrop">
     <div class="slip" id="slip" role="dialog" aria-modal="true" aria-label="伝票プレビュー">
-      <div class="slip-store" id="slipStore">土鍋飯ぽかぽか</div>
-      <div class="slip-table" id="slipTable">--</div>
-      <div class="slip-meta" id="slipMeta"></div>
-      <ul id="slipItems"></ul>
+      <!-- レイアウト設定(自由配置)があれば、このcanvasが実際の印字画像そのものになる。
+           設定が無い場合は従来のDOMプレビュー(#slipDom)を表示する -->
+      <canvas class="slip-canvas" id="slipCanvas" aria-label="伝票の印字イメージ"></canvas>
+      <div id="slipDom">
+        <div class="slip-store" id="slipStore">土鍋飯ぽかぽか</div>
+        <div class="slip-table" id="slipTable">--</div>
+        <div class="slip-meta" id="slipMeta"></div>
+        <ul id="slipItems"></ul>
+      </div>
       <div class="slip-actions">
         <button type="button" class="slip-print" id="slipPrint">印刷</button>
         <button type="button" class="slip-close" id="slipClose">閉じる</button>
@@ -1469,6 +1482,10 @@
     </div>
   </div>
 
+  <!-- 伝票レイアウトの描画エンジン。フォーマッターと同じコードで描くことで
+       「プレビュー = 実際の印字」を保証する。読み込めない場合(file://で単体を開いた等)は
+       従来のDOMプレビューにフォールバックするので、KDS本体は単体でも動作する -->
+  <script src="slip-renderer.js"></script>
   <script>
   "use strict";
   (function () {
@@ -1596,6 +1613,7 @@
     var slipMetaEl = document.getElementById("slipMeta");
     var slipItemsEl = document.getElementById("slipItems");
     var slipStoreEl = document.getElementById("slipStore");
+    var slipCanvasEl = document.getElementById("slipCanvas");   // 自由配置レイアウトの印字イメージ
     var slipPageStyleEl = document.createElement("style");   // 用紙幅に応じた @page 上書き (スタイル設定 #144追補)
     document.head.appendChild(slipPageStyleEl);
     var slipPrintBtn = document.getElementById("slipPrint");
@@ -3147,9 +3165,55 @@
         "@media print { .slip { width: " + w + "mm !important; } }";
     }
 
+    /* 自由配置レイアウトの描画エンジンが使えるか (slip-renderer.js を読めていて、
+       かつ保存されている設定が v3 レイアウトのとき)。旧設定・単体起動では null */
+    function slipTemplate() {
+      if (!window.SlipRenderer) return null;
+      var st = loadSlipStyle();
+      return window.SlipRenderer.isTemplate(st) ? window.SlipRenderer.normalizeTemplate(st) : null;
+    }
+
+    /* KDSの注文 → 描画エンジンが受け取る注文オブジェクト (差込フィールドの実データ) */
+    function slipOrderData(order) {
+      var now = new Date();
+      var pad = function (n) { return (n < 10 ? "0" : "") + n; };
+      return {
+        store: slipStoreEl.textContent,
+        table: order.table != null ? String(order.table) : "--",
+        meta: hhmm(order.start),
+        metaDate: (function () {                       // 受付「日」。日を跨いだ卓かどうかが伝票で分かるように
+          var d = new Date(order.start);
+          return isNaN(d.getTime()) ? "" : (d.getMonth() + 1) + "/" + d.getDate();
+        })(),
+        people: order.people != null ? String(order.people) : "",
+        kind: order.type === "reserved" ? t("reserved") : t("new"),
+        orderNo: order.id != null ? String(order.id) : "",
+        date: now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate()),
+        time: pad(now.getHours()) + ":" + pad(now.getMinutes()),
+        items: (order.items || []).map(function (it) {
+          return { name: it.name, qty: Number(it.qty) || 1, note: itemNotesText(it) };
+        }),
+      };
+    }
+
     function openSlip(order) {
       currentSlipOrder = order;
       refreshSlipStyleFromServer();   // 最新のサーバー保存スタイルを取得(到着したら開いたまま再適用)
+
+      // 自由配置レイアウトがあるときは、印字画像そのものをプレビューする
+      // (フォーマッターの見た目・KDSのプレビュー・実際の紙の3つが必ず一致する)
+      var tpl = slipTemplate();
+      document.body.classList.toggle("slip-tpl", !!tpl);
+      if (tpl) {
+        var w = tpl.paperWidth === 58 ? 58 : 80;
+        slipPageStyleEl.textContent =
+          "@page { size: " + w + "mm auto; margin: 0; }\n" +
+          "@media print { .slip { width: " + w + "mm !important; } }";
+        window.SlipRenderer.renderToCanvas(slipCanvasEl, tpl, slipOrderData(order));
+        document.body.classList.add("slip-open");
+        return;
+      }
+
       var st = loadSlipStyle();
       applySlipStyle(st);
       slipTableEl.textContent = order.table != null ? String(order.table) : "--";
@@ -3179,6 +3243,15 @@
       document.body.classList.add("slip-open");
     }
     function closeSlip() { document.body.classList.remove("slip-open"); }
+
+    /* 画像印字のコマンド体系。機種と合っていないと文字化け+行送りだけが延々出る。
+       本番機の Star mC-Print3 は StarPRNT 専用。フォーマッターの「印字方式」で切り替える */
+    function loadPrinterEmulation() {
+      try {
+        var saved = localStorage.getItem("kds_printer_emulation_v1");
+        return ["starprnt", "starline", "escpos"].indexOf(saved) !== -1 ? saved : "starprnt";
+      } catch (e) { return "starprnt"; }
+    }
 
     function loadPrinterIp() {
       try { printerIp = localStorage.getItem(LS_PRINTER_IP) || ""; }
@@ -3220,16 +3293,30 @@
     function printSlip() {
       var order = currentSlipOrder;
       if (!order) { window.print(); return; }
-      var job = {
-        ip: printerIp || undefined,   // 未設定ならサーバー保存のIPに委ねる
-        table: slipTableEl.textContent,
-        meta: slipMetaEl.textContent,
-        store: slipStoreEl.textContent,
-        style: loadSlipStyle() || undefined,   // 設定ツールのスタイルを実機印字にも反映 (relay側で許容値へ丸める)
-        items: (order.items || []).map(function (it) {
-          return { name: it.name, qty: Number(it.qty) || 1, note: itemNotesText(it) };
-        }),
-      };
+      var tpl = slipTemplate();
+      var job;
+      if (tpl) {
+        // 自由配置レイアウト: 画面に出ているのと同じ絵を1bit画像にして送る。
+        // プリンター内蔵フォントを使わないため、書体・大きさ・位置が紙にそのまま出る
+        window.SlipRenderer.renderToCanvas(slipCanvasEl, tpl, slipOrderData(order));
+        job = {
+          ip: printerIp || undefined,
+          raster: window.SlipRenderer.canvasToRaster(slipCanvasEl),
+          feedLines: tpl.feedLines,
+          emulation: loadPrinterEmulation(),
+        };
+      } else {
+        job = {
+          ip: printerIp || undefined,   // 未設定ならサーバー保存のIPに委ねる
+          table: slipTableEl.textContent,
+          meta: slipMetaEl.textContent,
+          store: slipStoreEl.textContent,
+          style: loadSlipStyle() || undefined,   // 設定ツールのスタイルを実機印字にも反映 (relay側で許容値へ丸める)
+          items: (order.items || []).map(function (it) {
+            return { name: it.name, qty: Number(it.qty) || 1, note: itemNotesText(it) };
+          }),
+        };
+      }
       fetch("/api/print", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

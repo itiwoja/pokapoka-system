@@ -54,6 +54,7 @@ function createRelay(options) {
   var allowedStaticFiles = [
     "kds-a-grid.html",
     "slip-style-designer.html",   // 印刷スタイル設定ツール。KDSと同一オリジンで配信しlocalStorageを共有する
+    "slip-renderer.js",           // 伝票レイアウトの描画エンジン。フォーマッターとKDSで同じ絵を出すため共有する
     path.join("relay-server", "kds-bridge.js"),
   ];
   var timers = [];
@@ -157,7 +158,7 @@ function createRelay(options) {
        エンコードするURLは「今この端末が実際に他端末から見えるアドレス」を使う:
        LAN IPで待ち受けていればそのIP、127.0.0.1待ち受けならLAN IPを検出して案内する */
     if (url.pathname === "/qr") {
-      return handleQrPage(res, config);
+      return handleQrPage(res, config, req.headers && req.headers.host);
     }
 
     var rel;
@@ -423,11 +424,26 @@ function afterMutation(res, payload, reservationSync) {
 }
 
 /** GET /qr — iPadでKDS/スタイル設定を開くQRコードのページ (#144追補) */
-function handleQrPage(res, config) {
-  var isLoopback = config.host === "127.0.0.1" || config.host === "localhost";
-  var lanIp = isLoopback ? detectLanIp() : config.host;
-  var reachable = !isLoopback && lanIp;   // 127.0.0.1待ち受けでは他端末から届かない
-  var base = "http://" + (lanIp || "127.0.0.1") + ":" + config.port;
+function handleQrPage(res, config, hostHeader) {
+  // このページを開いた端末が実際に到達したアドレス(Hostヘッダ)を最優先で使う。
+  // PCが有線とWi-Fiの両方に繋がっていると、待ち受けアドレス(config.host)を埋めた場合に
+  // 「iPadからは届かない側のIP」が載ったQRになる。0.0.0.0待ち受けではURLごと壊れる
+  var fromHeader = typeof hostHeader === "string" ? hostHeader.trim() : "";
+  var usable = fromHeader &&
+    !/^(0\.0\.0\.0|\[?::\]?)(:\d+)?$/.test(fromHeader) &&
+    !/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(fromHeader);
+
+  var base, reachable;
+  if (usable) {
+    base = "http://" + fromHeader;                  // Hostヘッダはポートを含む
+    reachable = true;
+  } else {
+    var isLoopback = config.host === "127.0.0.1" || config.host === "localhost";
+    var lanIp = isLoopback ? detectLanIp() : config.host;
+    if (lanIp === "0.0.0.0" || lanIp === "::") lanIp = detectLanIp();
+    reachable = !!lanIp && lanIp !== "127.0.0.1";   // 127.0.0.1待ち受けでは他端末から届かない
+    base = "http://" + (lanIp || "127.0.0.1") + ":" + config.port;
+  }
   var kdsUrl = base + "/";
   var styleUrl = base + "/slip-style-designer.html";
   Promise.all([
@@ -466,14 +482,32 @@ function handleQrPage(res, config) {
  * 残るようにするためで、環境ごとに値が違うので git 管理しない。
  */
 function createSlipStyleStore(filePath, printerModule, log) {
+  var MAX_TEMPLATE_BYTES = 50000;
+
+  /* 自由配置レイアウト(elements[])は描画がブラウザ側なので、サーバーは中身を解釈しない。
+     形(配列であること)とサイズだけ検査してそのまま預かる。旧テキスト型は従来どおり丸める */
+  function accept(raw) {
+    if (raw && typeof raw === "object" && Array.isArray(raw.elements)) {
+      var json = JSON.stringify(raw);
+      if (json.length > MAX_TEMPLATE_BYTES) {
+        log("slip-style: レイアウトが大きすぎるため保存しません (" + json.length + " bytes)");
+        return null;
+      }
+      return JSON.parse(json);
+    }
+    return printerModule.normalizeStyle(raw);
+  }
+
   var current = null;
   try {
-    current = printerModule.normalizeStyle(JSON.parse(fs.readFileSync(filePath, "utf8")));
+    current = accept(JSON.parse(fs.readFileSync(filePath, "utf8")));
   } catch (e) { current = null; }  // 無い・壊れているときは未設定扱い
   return {
     get: function () { return current || {}; },
     set: function (body) {
-      current = printerModule.normalizeStyle(body);
+      var next = accept(body);
+      if (!next) return current || {};   // 上限超過。既存の設定は壊さない
+      current = next;
       try { fs.writeFileSync(filePath, JSON.stringify(current, null, 2) + "\n", "utf8"); }
       catch (err) { log("slip-style の保存に失敗(メモリ上は反映済み): " + err.message); }
       return current;
@@ -506,12 +540,33 @@ function handlePrint(req, res, printerModule, slipStyle, printerIp) {
     if (!printerModule.isPrivateIPv4(ip)) {
       return json(res, { ok: false, error: "printer ip must be a private LAN IPv4 address" }, 400);
     }
-    // style未指定はサーバー保存のスタイル(/api/slip-style)を使う。どの端末から印刷しても同じ見た目になる
-    if (body && body.style == null && slipStyle) body.style = slipStyle.get();
-    var job = printerModule.normalizeJob(body);
     var buffer;
-    try { buffer = printerModule.buildEscPos(job); }
-    catch (err) { return json(res, { ok: false, error: "failed to build print job: " + err.message }, 500); }
+    // ラスター(画像)が付いていれば画像として印字する。自由配置レイアウトの経路で、
+    // プリンター内蔵フォントを使わないぶん書体・位置の制限が無い
+    var raster = printerModule.normalizeRaster(body);
+    if (raster) {
+      try {
+        buffer = printerModule.buildRaster(raster, {
+          feedLines: body && body.feedLines,
+          emulation: body && body.emulation,
+        });
+      } catch (err) {
+        return json(res, { ok: false, error: "failed to build raster job: " + err.message }, 500);
+      }
+    } else {
+      if (body && body.raster) {
+        // 寸法とデータ長が食い違うラスターは、黙ってテキスト印字に落ちると
+        // 「何か出たが別物」になって原因が分かりにくい。ここで明示的に弾く
+        return json(res, { ok: false, error: "invalid raster (width/height and data length do not match)" }, 400);
+      }
+      // style未指定はサーバー保存のスタイル(/api/slip-style)を使う。どの端末から印刷しても同じ見た目になる。
+      // ただし保存されているのが自由配置レイアウトの場合、テキスト印字では解釈できないので使わない
+      var saved = slipStyle ? slipStyle.get() : null;
+      if (body && body.style == null && saved && !Array.isArray(saved.elements)) body.style = saved;
+      var job = printerModule.normalizeJob(body);
+      try { buffer = printerModule.buildEscPos(job); }
+      catch (err) { return json(res, { ok: false, error: "failed to build print job: " + err.message }, 500); }
+    }
     printerModule.sendToPrinter(ip, buffer).then(function () {
       json(res, { ok: true });
     }).catch(function (err) {
