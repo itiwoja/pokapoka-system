@@ -24,6 +24,7 @@ var fs = require("fs");
 var os = require("os");
 var path = require("path");
 var seats = require("./seat-occupancy");
+var auth = require("./auth");
 var booking = require("./booking-resync");
 var loadConfig = require("./load-config");
 var printer = require("./printer");
@@ -87,6 +88,17 @@ function createRelay(options) {
     var url;
     try { url = new URL(req.url, "http://localhost"); }
     catch (err) { res.writeHead(400); return res.end("bad request"); }
+
+    /* 共有トークン認証 (#174)。未設定なら素通し = 従来どおりの挙動。
+       ページもAPIもまとめて守る: ページだけ素通しにするとトークンを読み出されて意味がない */
+    var allowed = auth.check(req, url, config.authToken,
+      req.socket && req.socket.remoteAddress, config.authTrustLoopback);
+    if (!allowed.ok) {
+      res.writeHead(401, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+      return res.end(JSON.stringify({ ok: false, error: "unauthorized: " + allowed.reason }));
+    }
+    // QR経由(?token=)で来た端末には Cookie を渡す。以後はURLにトークンが要らない
+    if (allowed.setCookie) res.setHeader("Set-Cookie", auth.cookieHeader(config.authToken));
 
     if (url.pathname === "/api/stock") {
       var stock = reservationSync.stockResponse(Date.now());
@@ -219,6 +231,13 @@ function createRelay(options) {
         log("デモ操作コンソール: http://127.0.0.1:" + listenPort + "/demo");
       }
       log("KDS(デシャップ): http://127.0.0.1:" + listenPort + "/  / 予約: /api/stock / 状態: /api/health");
+      if (config.authToken) {
+        log("認証: 有効 (他端末は /qr のQR経由で開く。ミニPC自身は" +
+          (config.authTrustLoopback ? "認証なしで開ける" : "トークンが必要") + ")");
+      } else {
+        log("認証: 無効 — 到達できる端末なら誰でも操作できます。" +
+          "店内Wi-Fiを客と共用しているなら config.json の auth.token を設定してください (#174)");
+      }
 
       initialSync = resyncThenPoll();
       timers = [
@@ -278,6 +297,11 @@ function createConfig(env, options) {
     requestTimeoutMs: normalizeInterval(src.TABLECHECK_TIMEOUT_MS, 15000, 1000, 120000),
     seatBeforeMin: Math.max(Number(src.SEAT_BEFORE_MIN) || 30, 0),
     seatAfterMin: Math.max(Number(src.SEAT_AFTER_MIN) || 120, 0),
+    // 未設定なら認証なし (従来どおり)。店内Wi-Fiを客と共用する場合に設定する (#174)
+    authToken: auth.normalizeToken(src.RELAY_TOKEN),
+    // ミニPC自身(ループバック)を信頼するか。既定は信頼する — QRでトークンを配る導線が
+    // ミニPC上の /qr から始まるため。ミニPCを他人が触る運用なら 0 にする
+    authTrustLoopback: src.RELAY_TRUST_LOOPBACK !== "0",
   };
 }
 
@@ -444,8 +468,10 @@ function handleQrPage(res, config, hostHeader) {
     reachable = !!lanIp && lanIp !== "127.0.0.1";   // 127.0.0.1待ち受けでは他端末から届かない
     base = "http://" + (lanIp || "127.0.0.1") + ":" + config.port;
   }
-  var kdsUrl = base + "/";
-  var styleUrl = base + "/slip-style-designer.html";
+  // 認証有効時は QR にトークンを載せる。iPad は1回読めば Cookie が入り、以後は不要 (#174)
+  var tokenQuery = config.authToken ? "?token=" + encodeURIComponent(config.authToken) : "";
+  var kdsUrl = base + "/" + tokenQuery;
+  var styleUrl = base + "/slip-style-designer.html" + tokenQuery;
   Promise.all([
     QRCode.toDataURL(kdsUrl, { width: 420, margin: 2 }),
     QRCode.toDataURL(styleUrl, { width: 420, margin: 2 }),
