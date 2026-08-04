@@ -3,8 +3,18 @@
 TableCheck の予約(メニュー・人数等)を取得し、KDS の予約ストックに流し込むためのサーバー。
 6/18 議事録の「ファイルを置くだけの見かけ上のサーバー」役と、TableCheck 取込役の2役を1プロセスで担う。
 **依存パッケージはほぼゼロ・Node 18+ で動作**(本体リポジトリの単一HTML主義に合わせた設計)。
-唯一の例外は `printer.js` の日本語ESC/POS印字用 `iconv-lite`(Node標準にShift_JIS変換が無いため。#144)。
-初回のみ `cd relay-server && npm install` が必要。
+例外は**印刷まわりの2つだけ**:
+
+| パッケージ | 使う場所 | 無いとどうなるか |
+|---|---|---|
+| `iconv-lite` | `printer.js` の日本語ESC/POS印字(Node標準にShift_JIS変換が無いため #144) | `POST /api/print` が 503。KDS は `window.print()` にフォールバック |
+| `qrcode` | `/qr` の接続QRページ(#144追補) | `/qr` が 503(接続先URLは本文に出る) |
+
+印刷を使うなら初回に `cd relay-server && npm install` を実行する。
+
+**どちらも遅延読込(lazy require)なので、未インストールでもサーバーは起動する**(#173)。
+`npm install` 漏れやオフラインのミニPCでも、**予約取込・`/api/stock`・KDS配信は通常どおり動く**。
+欠けている場合は起動ログに理由と対処が出る。
 
 ```
 【クラウド】               【店内ミニPC = このサーバー】          【KDS端末】
