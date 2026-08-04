@@ -132,6 +132,7 @@ function createRelay(options) {
         walkins: walkins,
         beforeMin: config.seatBeforeMin,
         afterMin: config.seatAfterMin,
+        walkinTtlMs: config.seatWalkinTtlMs,
       });
     }
 
@@ -328,6 +329,9 @@ function createConfig(env, options) {
     requestTimeoutMs: normalizeInterval(src.TABLECHECK_TIMEOUT_MS, 15000, 1000, 120000),
     seatBeforeMin: Math.max(Number(src.SEAT_BEFORE_MIN) || 30, 0),
     seatAfterMin: Math.max(Number(src.SEAT_AFTER_MIN) || 120, 0),
+    // ローカル登録した占有をいつ諦めるか。POS連携が無く「退店した」というイベントが
+    // 存在しないため、解除し忘れた席が永久に埋まったままにならないよう時間で切る (#123)
+    seatWalkinTtlMs: normalizeInterval(src.SEAT_WALKIN_TTL_MIN, 120, 1, 1440) * 60000,
     // 厨房状態(#132)を最後の更新から何分保持するか。常駐プロセスなので、
     // 掃除しないと前日の完了・コンロ状態が翌日へ持ち越される (#115)
     kitchenTtlMs: normalizeInterval(src.KITCHEN_TTL_MIN, 720, 1, 1440) * 60000,
@@ -661,12 +665,15 @@ function handleSeats(req, res, url, context) {
       context.walkins,
       Date.now(),
       context.beforeMin,
-      context.afterMin
+      context.afterMin,
+      context.walkinTtlMs
     ));
   }
   if (url.pathname === "/api/seats" && req.method === "POST") {
     return readJson(req, res, function (body) {
-      var occupancy = seats.registerWalkin(context.walkins, body && body.table, Date.now());
+      // rid があれば「予約の着席」。卓番はスタッフが KDS で割り当てるローカルデータで、
+      // TableCheck 側には無い(あっても希望席種まで)ため、ここが唯一の正本になる
+      var occupancy = seats.registerWalkin(context.walkins, body && body.table, Date.now(), body);
       if (!occupancy) return json(res, { ok: false, error: "table must be a non-empty string of at most 6 characters" }, 400);
       json(res, occupancy, 201);
     });

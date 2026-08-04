@@ -114,6 +114,7 @@ cp config/config.example.json config/config.json
 | `tablecheck.base` | `TABLECHECK_BASE` | api.tablecheck.com | 旧 tablesolution.com は2026年廃止のため使わない |
 | `tablecheck.allowCustomBase` | `TABLECHECK_ALLOW_CUSTOM_BASE` | 0 | 公式以外のHTTPS接続先を明示許可する場合のみ |
 | `seat.beforeMin` / `seat.afterMin` | `SEAT_BEFORE_MIN` / `SEAT_AFTER_MIN` | 30 / 120 | 予約時刻の前後どこまでを在席とみなすか |
+| `seat.walkinTtlMin` | `SEAT_WALKIN_TTL_MIN` | 120 | ローカル登録した占有をいつ諦めるか(1〜1440分)。退店イベントが無いため時間で切る #123 |
 | `kitchen.ttlMin` | `KITCHEN_TTL_MIN` | 720 | 厨房状態(#132)を最後の更新から何分保持するか(1〜1440分) |
 | `order.ttlMin` | `ORDER_TTL_MIN` | 720 | 注文(`/api/orders`)の保持時間(1〜1440分)。日跨ぎで前日分が残らないための上限 |
 | `auth.token` | `RELAY_TOKEN` | — | **共有トークン**(8文字以上)。設定すると他端末はトークン必須になる。未設定なら認証なし(従来どおり) #174 |
@@ -209,8 +210,8 @@ cd relay-server && npm run preflight
 | `GET /api/orders` | KDS 注文フィード(注文端末由来)。→「注文端末との契約」 |
 | `POST /api/orders` | 注文の投入。`orderId` で冪等 |
 | `DELETE /api/orders/{orderId}` | 注文の取消 |
-| `GET /api/seats` | 当日の座席占有 `[{table,source,rid?,name?,since}]`。初回全件リシンク成功までは503 |
-| `POST /api/seats` | walk-in 占有の登録 `{table:"5"}` |
+| `GET /api/seats` | 当日の座席占有 `[{table,source:"walkin"\|"reservation",rid?,name?,since}]`。初回全件リシンク成功までは503。→「座席占有」 |
+| `POST /api/seats` | 占有の登録 `{table:"5"}`。`{table:"3",rid:"r-1",name:"山田様"}` なら予約の着席として扱う |
 | `DELETE /api/seats/{table}` | 占有の解除 |
 | `GET /api/mock/reservations` | (MOCK限定) 上流の生予約一覧(本物スキーマ) |
 | `POST /api/mock/reservations` | (MOCK限定) 予約作成。body は TableCheck Reservation 形 |
@@ -263,6 +264,36 @@ KDS 画面の「印刷」ボタンは、プリンターIP未設定時は従来�
 2. 以降は「印刷」ボタン押下で `POST /api/print` → このサーバーが生ソケットでプリンターの
    RAWポート(9100)へコマンドバイト列を送信する(ブラウザは生TCPソケットを開けないため中継が必要)
 3. 実機送信に失敗(未設定・接続不可・タイムアウト)した場合は自動で `window.print()` にフォールバックする
+
+### 座席占有(#123)
+
+運用上の本題は**座席バッティング** — 新規客(ウォークイン)が、この後来店する予約の席を
+先に埋めてしまう問題。**TableCheck では防げない**: 新規客の卓番は店内で発生するローカルデータで、
+クラウドは「新規客が5番卓に座った」ことを知り得ない。店内で塞ぐしかない。
+
+```
+TableCheck ──pull──▶ relay(store) ─┬─ /api/stock ──▶ KDS 予約ストック
+                                   └─ /api/seats ──▶ 卓番選択UI(#118)・注文端末
+KDS(着席操作) ── POST /api/seats ──▶ relay(ローカル占有: メモリMap)
+```
+
+占有は2つの源をマージして返す:
+
+| source | どこから | 備考 |
+|---|---|---|
+| `walkin` | `POST /api/seats {table}` | 新規客。注文端末/KDSから登録 |
+| `reservation` | `POST /api/seats {table,rid,name}` | **予約の着席**。卓番はKDSでスタッフが決めるので、ここが唯一の正本 |
+| `reservation` | store から時間窓で導出 | 予約に確定卓番が乗る場合のみ(`seat.beforeMin`〜`seat.afterMin`)。予約の変更・キャンセルに自動追随する |
+
+- **着席の登録は KDS 本体を改修せずに行う**。KDS は着席時に `BroadcastChannel` へ
+  `{type:"moveToMain", order}` を流しており、ブリッジがそれを拾って `POST /api/seats` する
+  (`order.id` が `res-<rid>`、`order.table` が案内した卓番)
+- **解除は手動 + TTL**(`seat.walkinTtlMin`、既定120分)。POS連携が無く「退店した」という
+  イベントが存在しないため、解除し忘れた席が永久に埋まったままにならないよう時間で諦める
+- 保存はしない(#115)。当日メモリのみ
+
+**未決**: TableCheck の予約に確定卓番が乗るかは未確認(#74)。乗らない場合でも、
+着席時のローカル登録があるので占有ビュー自体は成立する(予約の「事前」占有だけが作れない)。
 
 ### 厨房状態の端末間同期(#132)
 

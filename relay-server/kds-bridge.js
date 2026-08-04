@@ -26,6 +26,7 @@
 (function () {
   "use strict";
   var API = "/api/stock";
+  var API_SEATS = "/api/seats";
   var API_ORDERS = "/api/orders";
   var API_KITCHEN = "/api/kitchen-state";
   var LS_STOCK = "kds_stock_v1";
@@ -104,6 +105,12 @@
       if (!Array.isArray(incoming)) return;
     } catch (e) { return; }                  // 通信断: 直前の表示を保持 (6/18 方針)
 
+    // 着席時に「誰が座っているか」を座席占有へ載せるため、rid → 予約者名を控えておく。
+    // 着席の合図(BroadcastChannel)にはストックから消えた後の配列しか乗らないので、ここで拾う (#123)
+    incoming.forEach(function (r) {
+      if (r && r.rid != null && r.name) nameByRid[String(r.rid)] = String(r.name);
+    });
+
     var seen = load(LS_BRIDGE_SEEN, {});
     var merged = mergeStock(load(LS_STOCK, []), seen, incoming);
     // 取込実績は stock が変わっていない tick でも保存する。
@@ -115,6 +122,42 @@
     // 同一タブへの反映: KDS は storage イベント/BC を購読しているが、自タブには BC が届かないため
     // ページ側の再描画フックが無い場合に備え、控えめにリロードは行わず storage 書換のみとする。
     // (kds-a-grid.html に <script src> で読み込ませた場合、別タブ・別端末には即時反映される)
+  }
+
+  /* ===================== 座席占有の登録 (#123) =====================
+     卓番は「予約をどの席に案内したか」をスタッフが KDS で決めるローカルデータで、
+     TableCheck 側には無い(あっても希望席種まで)。ここが唯一の正本になるので、
+     着席の操作をそのまま relay の座席占有ビューへ流す。
+
+     KDS 本体は着席時に BroadcastChannel へ {type:"moveToMain", order} を流している。
+     order.id は "res-<rid>"、order.table が案内した卓番。KDS 本体は無改修のまま拾える。 */
+  var nameByRid = {};   // rid → 予約者名 (/api/stock の取込時に控える)
+
+  async function registerSeat(table, rid) {
+    if (!table) return;
+    var payload = { table: String(table) };
+    if (rid) {
+      payload.rid = String(rid);
+      if (nameByRid[String(rid)]) payload.name = nameByRid[String(rid)];
+    }
+    try {
+      await fetch(API_SEATS, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch (e) {
+      // 登録できなくても着席の操作自体は成立している。座席占有は補助情報なので黙って諦める
+    }
+  }
+
+  /* 着席の合図を拾って座席占有へ載せる (#123)。
+     BroadcastChannel のハンドラは #132 の厨房状態同期と共用するため、
+     ここでは代入せず関数として置き、末尾のハンドラから両方を呼ぶ */
+  function onSeatBroadcast(msg) {
+    if (!msg || msg.type !== "moveToMain" || !msg.order) return;
+    var id = String(msg.order.id || "");
+    registerSeat(msg.order.table, id.indexOf("res-") === 0 ? id.slice(4) : "");
   }
 
   /* ===================== 厨房状態の端末間同期 (#132) =====================
@@ -269,7 +312,11 @@
     if (bc) {
       // KDS 本体が同一コンテキストで postMessage したものも、別の BroadcastChannel オブジェクトである
       // こちらには届く。つまり自タブ・他タブ・他端末のどの操作もここで拾える (#132)
-      bc.onmessage = function (ev) { onLocalKitchenEvent(ev && ev.data); };
+      bc.onmessage = function (ev) {
+        var msg = ev && ev.data;
+        onLocalKitchenEvent(msg);   // 厨房状態を relay へ送る (#132)
+        onSeatBroadcast(msg);       // 着席なら座席占有へ登録する (#123)
+      };
     }
     tickOnce();
     setInterval(tickOnce, POLL_MS);
@@ -279,6 +326,7 @@
     setInterval(tickKitchen, KITCHEN_POLL_MS);
     console.log("[kds-bridge] 予約ストック取込を開始 (" + API + " を " + POLL_MS / 1000 + "秒間隔) / " +
       "注文取込 (" + API_ORDERS + " を " + ORDER_POLL_MS / 1000 + "秒間隔) / " +
-      "厨房状態の端末間同期 (" + API_KITCHEN + " を " + KITCHEN_POLL_MS / 1000 + "秒間隔)");
+      "厨房状態の端末間同期 (" + API_KITCHEN + " を " + KITCHEN_POLL_MS / 1000 + "秒間隔) / " +
+      "着席時に座席占有を登録 (" + API_SEATS + ")");
   }
 })();

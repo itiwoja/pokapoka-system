@@ -28,5 +28,31 @@ eq("merge reservations and prefer reservation", seats.toOccupiedSeats(reservatio
   { table: "2", source: "reservation", rid: "nearer", name: "予約直近", since: Date.parse("2026-07-16T18:05:00+09:00") },
   { table: "9", source: "walkin", since: 600 },
 ]);
+
+/* --- 着席の登録 (#123): 卓番はスタッフがKDSで決めるローカルデータで、TableCheck側には無い --- */
+var seated = new Map();
+eq("register seated reservation", seats.registerWalkin(seated, "3", 1000, { rid: "r-1", name: "山田様" }),
+  { table: "3", source: "reservation", since: 1000, rid: "r-1", name: "山田様" });
+eq("register walkin keeps walkin source", seats.registerWalkin(seated, "4", 1000, {}),
+  { table: "4", source: "walkin", since: 1000 });
+eq("seated occupancy is exposed as-is", seats.toOccupiedSeats(new Map(), seated, 1000, 30, 120), [
+  { table: "3", source: "reservation", since: 1000, rid: "r-1", name: "山田様" },
+  { table: "4", source: "walkin", since: 1000 },
+]);
+// 同じ卓の再登録は上書き (卓を付け替えたときに古い方が残らない)
+eq("re-register overwrites", seats.registerWalkin(seated, "3", 2000, { rid: "r-2", name: "田中様" }),
+  { table: "3", source: "reservation", since: 2000, rid: "r-2", name: "田中様" });
+
+/* --- TTL (#123 未決事項2): 退店イベントが無いので、解除し忘れは時間で諦める --- */
+var stale = new Map();
+seats.registerWalkin(stale, "1", 0);
+seats.registerWalkin(stale, "2", 60 * 60 * 1000);        // 1時間後に登録
+eq("ttl keeps fresh entries", seats.toOccupiedSeats(new Map(), stale, 90 * 60 * 1000, 30, 120, 120 * 60 * 1000)
+  .map(function (s) { return s.table; }), ["1", "2"]);
+eq("ttl drops expired entries", seats.toOccupiedSeats(new Map(), stale, 150 * 60 * 1000, 30, 120, 120 * 60 * 1000)
+  .map(function (s) { return s.table; }), ["2"]);
+eq("ttl removes from the store, not just the view", stale.size, 1);
+eq("no ttl means no purge", seats.purgeExpired(new Map([["9", { table: "9", source: "walkin", since: 0 }]]), 1e12, 0), 0);
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

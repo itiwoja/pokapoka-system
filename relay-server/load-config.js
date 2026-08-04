@@ -27,6 +27,7 @@ var KEY_TO_ENV = {
   "tablecheck.allowCustomBase": "TABLECHECK_ALLOW_CUSTOM_BASE",
   "seat.beforeMin": "SEAT_BEFORE_MIN",
   "seat.afterMin": "SEAT_AFTER_MIN",
+  "seat.walkinTtlMin": "SEAT_WALKIN_TTL_MIN",
   "kitchen.ttlMin": "KITCHEN_TTL_MIN",
   "order.ttlMin": "ORDER_TTL_MIN",
   // 店内LAN内でだけ使う共有トークン。クラウドのAPIキーと違い店ごとに書き換える設定値なので

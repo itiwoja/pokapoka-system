@@ -355,6 +355,23 @@ test("座席APIは初回同期前503で、同期後もwalk-in操作を維持す�
   var occupied = JSON.parse((await requestRaw(relay.server, "/api/seats")).text);
   assert.equal(occupied.some(function (seat) { return seat.table === "5" && seat.source === "walkin"; }), true);
   assert.equal((await requestRaw(relay.server, "/api/seats/5", { method: "DELETE" })).status, 204);
+
+  // 予約の着席 (#123): 卓番はKDSでスタッフが決めるローカルデータなので、rid付きで登録する
+  var seated = await requestRaw(relay.server, "/api/seats", {
+    method: "POST",
+    body: JSON.stringify({ table: "3", rid: "r-1", name: "山田様" }),
+    headers: { "Content-Type": "application/json" },
+  });
+  assert.equal(seated.status, 201);
+  var seatedBody = JSON.parse(seated.text);
+  assert.equal(seatedBody.source, "reservation");
+  assert.equal(seatedBody.rid, "r-1");
+  assert.equal(seatedBody.name, "山田様");
+
+  var withSeated = JSON.parse((await requestRaw(relay.server, "/api/seats")).text);
+  assert.equal(withSeated.some(function (seat) {
+    return seat.table === "3" && seat.source === "reservation" && seat.rid === "r-1";
+  }), true, "着席した予約が占有ビューに出ていない");
 });
 
 test("注文APIは投入・配信・再送・取消をこなし、予約同期の完了を待たない", async function (t) {
