@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>チビ伝 印刷スタイル設定</title>
+<title>チビ伝 レイアウト設定</title>
 <style>
   :root {
     --bg: #f4f1ec;
@@ -12,6 +12,7 @@
     --sub: #6b6258;
     --line: #ddd6cc;
     --accent: #1a1612;
+    --sel: #2f6fd0;
   }
   * { box-sizing: border-box; }
   html, body {
@@ -20,212 +21,183 @@
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", "Segoe UI", sans-serif;
   }
   .layout {
-    display: flex; flex-wrap: wrap; gap: 24px;
-    max-width: 1200px; margin: 0 auto; padding: 20px;
+    display: flex; flex-wrap: wrap; gap: 20px;
+    max-width: 1360px; margin: 0 auto; padding: 20px;
+    align-items: flex-start;
   }
   h1 { font-size: 18px; margin: 0 0 4px; }
-  .lead { font-size: 12px; color: var(--sub); margin: 0 0 20px; }
+  .lead { font-size: 12px; color: var(--sub); margin: 0 0 16px; line-height: 1.6; }
+  .head { flex: 1 1 100%; }
 
-  .controls { flex: 1 1 420px; min-width: 320px; }
   .panel {
     background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
-    padding: 16px; margin-bottom: 16px;
+    padding: 14px; margin-bottom: 14px;
   }
   .panel h2 {
-    font-size: 13px; font-weight: 700; margin: 0 0 12px;
-    padding-bottom: 8px; border-bottom: 1px solid var(--line);
-    letter-spacing: .04em;
+    font-size: 13px; font-weight: 700; margin: 0 0 10px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--line); letter-spacing: .04em;
   }
-  .row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
   .row:last-child { margin-bottom: 0; }
-  .row label.name { flex: 0 0 128px; font-size: 12px; color: var(--sub); }
+  .row .name { flex: 0 0 84px; font-size: 12px; color: var(--sub); }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
   .seg button {
-    border: none; background: #fff; color: var(--ink); font-size: 13px;
-    padding: 6px 14px; cursor: pointer; border-right: 1px solid var(--line);
-    min-height: 44px; min-width: 44px; /* タップ下限 44px (KDS #58 に合わせる) */
+    border: none; background: #fff; color: var(--ink); font-size: 12px;
+    padding: 4px 12px; cursor: pointer; border-right: 1px solid var(--line); min-height: 40px;
   }
   .seg button:last-child { border-right: none; }
   .seg button.on { background: var(--accent); color: #fff; }
   .toggle {
     display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-    font-size: 12px; user-select: none; min-height: 44px;
+    font-size: 12px; user-select: none; min-height: 40px;
   }
-  .toggle input { width: 20px; height: 20px; }
-  input[type="range"] { flex: 1 1 auto; min-width: 90px; min-height: 44px; }
-  input[type="text"], input[type="number"] {
+  .toggle input { width: 18px; height: 18px; }
+  input[type="text"], input[type="number"], select, textarea {
     border: 1px solid var(--line); border-radius: 4px; padding: 5px 7px; font-size: 13px;
-    min-height: 44px;
+    min-height: 40px; background: #fff; color: var(--ink); font-family: inherit;
   }
-  .range-val { font-size: 11px; color: var(--sub); min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+  input[type="number"] { width: 78px; }
+  textarea { min-height: 62px; width: 100%; resize: vertical; }
+  input[type="range"] { flex: 1 1 auto; min-width: 90px; min-height: 40px; }
+  .range-val { font-size: 11px; color: var(--sub); min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* ---- 用紙(キャンバス) ---- */
+  .paper-col { flex: 0 0 auto; }
+  .paper-wrap {
+    position: relative; display: inline-block; line-height: 0;
+    background: repeating-linear-gradient(45deg, #e9e4da, #e9e4da 8px, #e2ddd2 8px, #e2ddd2 16px);
+    padding: 14px; border-radius: 8px;
+  }
+  .paper-stack { position: relative; display: inline-block; line-height: 0; }
+  #paper { background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.18); display: block; }
+  #overlay { position: absolute; left: 0; top: 0; touch-action: none; cursor: default; }
+  .paper-note { font-size: 11px; color: var(--sub); margin-top: 8px; line-height: 1.6; max-width: 380px; }
+
+  /* ---- 要素リスト ---- */
+  .el-list { display: flex; flex-direction: column; gap: 4px; }
+  .el-item {
+    display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+    border: 1px solid var(--line); border-radius: 6px; background: #fff;
+    font-size: 12px; cursor: pointer; min-height: 40px;
+  }
+  .el-item.on { border-color: var(--sel); box-shadow: 0 0 0 1px var(--sel); }
+  .el-item .kind { color: var(--sub); font-size: 11px; flex: 0 0 auto; }
+  .el-item .label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .el-item button {
+    border: 1px solid var(--line); background: #fff; border-radius: 4px;
+    min-width: 32px; min-height: 32px; cursor: pointer; font-size: 12px; padding: 0;
+  }
+  .add-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .add-row button {
+    border: 1px dashed var(--line); background: #fff; border-radius: 6px;
+    padding: 6px 12px; font-size: 12px; cursor: pointer; color: var(--sub); min-height: 40px;
+  }
+  .field-chips { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+  .field-chips button {
+    border: 1px solid var(--line); background: #faf8f4; border-radius: 999px;
+    padding: 4px 10px; font-size: 11px; cursor: pointer; color: var(--sub); min-height: 32px;
+  }
 
   table.items { width: 100%; border-collapse: collapse; font-size: 12px; }
-  table.items th { text-align: left; color: var(--sub); font-weight: 500; padding: 4px 4px; font-size: 11px; }
+  table.items th { text-align: left; color: var(--sub); font-weight: 500; padding: 4px; font-size: 11px; }
   table.items td { padding: 3px 4px; }
   table.items input[type="text"] { width: 100%; }
-  table.items input.qty { width: 48px; }
+  table.items input.qty { width: 54px; }
   .item-del {
     border: 1px solid var(--line); background: #fff; border-radius: 4px;
-    width: 44px; height: 44px; cursor: pointer; color: #a33; font-size: 16px; line-height: 1;
+    width: 40px; height: 40px; cursor: pointer; color: #a33; font-size: 15px; line-height: 1;
   }
   .add-item {
     margin-top: 8px; border: 1px dashed var(--line); background: #fff; border-radius: 6px;
-    padding: 6px 14px; font-size: 12px; cursor: pointer; color: var(--sub); min-height: 44px;
+    padding: 6px 12px; font-size: 12px; cursor: pointer; color: var(--sub); min-height: 40px;
   }
-  .inline-confirm { display: none; gap: 8px; align-items: center; margin-top: 10px; font-size: 12px; }
-  .inline-confirm.show { display: flex; flex-wrap: wrap; }
-  .inline-confirm button { min-height: 44px; padding: 0 14px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 700; }
-  .inline-confirm .yes { border: 1px solid #a33; background: #a33; color: #fff; }
-  .inline-confirm .no { border: 1px solid var(--line); background: #fff; color: var(--ink); }
-  .notice { display: none; margin-top: 10px; font-size: 12px; padding: 8px 10px; border-radius: 6px; }
-  .notice.show { display: block; }
-  .notice.err { background: #fbeaea; color: #7a1f1f; border: 1px solid #e3b8b8; }
-  .notice.ok { background: #eaf3ea; color: #2a5a2a; border: 1px solid #bcd8bc; }
 
   .actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .actions button {
-    flex: 1 1 auto; min-height: 40px; border-radius: 6px; font-size: 13px; font-weight: 700;
+    flex: 1 1 auto; min-height: 44px; border-radius: 6px; font-size: 13px; font-weight: 700;
     cursor: pointer; border: 1px solid var(--accent);
   }
   .btn-primary { background: var(--accent); color: #fff; }
   .btn-ghost { background: #fff; color: var(--accent); }
   .file-input { display: none; }
-
-  .preview-col { flex: 0 0 340px; position: sticky; top: 20px; align-self: flex-start; }
-  .paper-wrap {
-    background: repeating-linear-gradient(45deg, #e9e4da, #e9e4da 8px, #e2ddd2 8px, #e2ddd2 16px);
-    border-radius: 8px; padding: 20px 0; display: flex; justify-content: center;
-  }
-  /* プレビューは実機(ESC/POS感熱)の印字を再現する:
-     等幅フォント・「卓 12」表記・数量は品名の下の行・罫線は実機と同じ文字数。
-     ここで見えるものがそのまま紙に出る(等倍/2倍の2段階しかないのも実機仕様) */
-  #slip {
-    background: #fff; color: #111;
-    box-shadow: 0 2px 10px rgba(0,0,0,.18);
-    padding: 14px 10px;
-    font-family: "MS Gothic", "Osaka-Mono", "Courier New", monospace;
-    font-size: 14px; line-height: 1.4;
-    white-space: pre-wrap; overflow: hidden;
-  }
-  #slip .r-center { text-align: center; }
-  #slip .r-sep { white-space: nowrap; overflow: hidden; }
-  #slip .r-item-name { display: inline-block; transform-origin: left center; }
-  .hint { font-size: 11px; color: var(--sub); margin-top: 10px; line-height: 1.6; }
-
-  @media print {
-    body * { visibility: hidden !important; }
-    #slip, #slip * { visibility: visible !important; }
-    #slip {
-      position: fixed; left: 0; top: 0; box-shadow: none;
-    }
-    .paper-wrap, .layout > *:not(.preview-col) { display: none !important; }
-  }
-  @media (max-width: 760px) {
-    .preview-col { position: static; flex-basis: 100%; }
-  }
+  .inline-confirm { display: none; gap: 8px; align-items: center; margin-top: 10px; font-size: 12px; }
+  .inline-confirm.show { display: flex; flex-wrap: wrap; }
+  .inline-confirm button { min-height: 44px; padding: 0 14px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 700; }
+  .inline-confirm .yes { border: 1px solid #a33; background: #a33; color: #fff; }
+  .inline-confirm .no { border: 1px solid var(--line); background: #fff; color: var(--ink); }
+  .notice { display: none; margin-top: 10px; font-size: 12px; padding: 8px 10px; border-radius: 6px; line-height: 1.6; }
+  .notice.show { display: block; }
+  .notice.err { background: #fbeaea; color: #7a1f1f; border: 1px solid #e3b8b8; }
+  .notice.ok { background: #eaf3ea; color: #2a5a2a; border: 1px solid #bcd8bc; }
+  .hint { font-size: 11px; color: var(--sub); margin-top: 8px; line-height: 1.7; }
+  .side { flex: 1 1 320px; min-width: 300px; }
+  .empty { font-size: 12px; color: var(--sub); }
 </style>
 </head>
 <body>
 <div class="layout">
-  <div class="controls">
-    <h1>チビ伝 印刷スタイル設定</h1>
-    <p class="lead">右側のプレビューは<strong>実機プリンターの印字そのまま</strong>です。設定は自動でサーバーに保存され、全端末のKDS印刷に反映されます。</p>
+  <div class="head">
+    <h1>チビ伝 レイアウト設定</h1>
+    <p class="lead">
+      用紙の上で要素を<strong>ドラッグして好きな位置に置けます</strong>。左右の端をつまむと幅が変わります。
+      表示されている絵が<strong>そのまま紙に印字されます</strong>(画像として送るため、書体・大きさ・位置に制限がありません)。
+    </p>
+  </div>
 
+  <div class="paper-col">
+    <div class="paper-wrap">
+      <div class="paper-stack">
+        <canvas id="paper" width="576" height="400"></canvas>
+        <canvas id="overlay" width="576" height="400"></canvas>
+      </div>
+    </div>
+    <p class="paper-note">
+      ドラッグ=移動 / 端をつまむ=幅 / 矢印キー=1ドット移動(Shiftで8) / Delete=削除 / Shift+ドラッグ=グリッド無視<br>
+      点線の枠は選択中の要素、青い横線は<strong>品目リストの下端</strong>です。「Yの基準」を「品目リストの下から」にした要素は、品数が増えるとこの線と一緒に押し下がります。
+    </p>
+  </div>
+
+  <div class="side">
     <div class="panel">
       <h2>用紙</h2>
       <div class="row">
-        <label class="name">用紙幅</label>
+        <span class="name">用紙幅</span>
         <div class="seg" data-group="paperWidth">
           <button data-val="58">58mm</button>
           <button data-val="80">80mm</button>
         </div>
       </div>
       <div class="row">
-        <label class="name">下端の送り行数</label>
-        <input type="range" min="0" max="8" step="1" data-key="feedLines" aria-label="下端の送り行数">
-        <span class="range-val" data-valfor="feedLines"></span>
+        <label class="name" for="feedLines">下端の送り</label>
+        <input type="range" min="0" max="8" step="1" id="feedLines">
+        <span class="range-val" id="feedLinesVal"></span>
       </div>
     </div>
 
     <div class="panel">
-      <h2>店名・受付時刻</h2>
-      <div class="row">
-        <label class="toggle"><input type="checkbox" data-key="storeShow"> 店名を印字する</label>
-      </div>
-      <div class="row">
-        <label class="toggle"><input type="checkbox" data-key="metaShow"> 受付時刻を印字する</label>
-      </div>
+      <h2>要素</h2>
+      <div class="el-list" id="elList"></div>
+      <p class="hint" style="margin-bottom:4px;">押すと、書式と差込フィールドが入った状態で用紙の下端に追加されます。</p>
+      <div class="add-row" id="partList"></div>
     </div>
 
-    <div class="panel">
-      <h2>卓番</h2>
-      <div class="row">
-        <label class="name">文字の大きさ</label>
-        <div class="seg" data-group="tableSize">
-          <button data-val="32">等倍</button>
-          <button data-val="40">2倍角</button>
-        </div>
-      </div>
-      <div class="row">
-        <label class="toggle"><input type="checkbox" data-key="tableBold"> 太字</label>
-      </div>
-    </div>
-
-    <div class="panel">
-      <h2>品目</h2>
-      <div class="row">
-        <label class="name">品名の大きさ</label>
-        <div class="seg" data-group="itemSize">
-          <button data-val="18">等倍</button>
-          <button data-val="22">横2倍</button>
-        </div>
-      </div>
-      <div class="row">
-        <label class="toggle"><input type="checkbox" data-key="itemBold"> 品名を太字</label>
-      </div>
-      <div class="row">
-        <label class="name">数量の表記</label>
-        <div class="seg" data-group="qtyFormat">
-          <button data-val="x">x 2</button>
-          <button data-val="times">× 2</button>
-          <button data-val="kosuu">2 個</button>
-        </div>
-      </div>
-      <div class="row">
-        <label class="toggle"><input type="checkbox" data-key="noteShow"> 備考(※)を印字する</label>
-      </div>
-    </div>
-
-    <div class="panel">
-      <h2>区切り線</h2>
-      <div class="row">
-        <label class="name">品目リストの上罫線</label>
-        <div class="seg" data-group="sepTop">
-          <button data-val="dashed">破線</button>
-          <button data-val="solid">実線</button>
-          <button data-val="none">なし</button>
-        </div>
-      </div>
-      <div class="row">
-        <label class="name">品目リストの下罫線</label>
-        <div class="seg" data-group="sepBottom">
-          <button data-val="dashed">破線</button>
-          <button data-val="solid">実線</button>
-          <button data-val="none">なし</button>
-        </div>
-      </div>
+    <div class="panel" id="propPanel">
+      <h2>選択中の要素</h2>
+      <div id="propBody"><p class="empty">用紙の上で要素をクリックすると、ここで細かく設定できます。</p></div>
     </div>
 
     <div class="panel">
       <h2>プレビュー用サンプル注文</h2>
       <div class="row">
         <label class="name" for="sampleTable">卓番</label>
-        <input type="text" id="sampleTable">
+        <input type="text" id="sampleTable" style="width:80px;">
         <label class="name" style="flex-basis:auto;" for="sampleMeta">受付</label>
-        <input type="text" id="sampleMeta">
+        <input type="text" id="sampleMeta" style="width:80px;">
+        <label class="name" style="flex-basis:auto;" for="samplePeople">人数</label>
+        <input type="number" id="samplePeople" min="1" style="width:64px;">
       </div>
       <table class="items" id="sampleItems">
-        <thead><tr><th>品名</th><th style="width:56px;">数量</th><th>備考</th><th></th></tr></thead>
+        <thead><tr><th>品名</th><th style="width:58px;">数量</th><th>備考</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
       <button type="button" class="add-item" id="addItem">＋ 品目を追加</button>
@@ -237,254 +209,628 @@
         <label class="name" for="printerIpInput">プリンターIP</label>
         <input type="text" id="printerIpInput" placeholder="例: 192.168.244.41" style="flex:1 1 140px;">
       </div>
+      <div class="row">
+        <span class="name">印字方式</span>
+        <div class="seg" data-group="emulation">
+          <button data-val="starprnt">StarPRNT</button>
+          <button data-val="starline">Star Line</button>
+          <button data-val="escpos">ESC/POS</button>
+        </div>
+      </div>
+      <p class="hint" style="margin-top:0;">
+        店のプリンター(Star mC-Print3)は <strong>StarPRNT</strong> のままで正しく、通常は触る必要がありません。
+        他機種に入れ替えたときだけ切り替えてください。<strong>試し刷りが文字化けしたり行送りだけが延々続く場合は、印字方式が機種と合っていません。</strong>
+      </p>
       <div class="actions">
         <button type="button" class="btn-primary" id="btnPrintReal">実機にテスト印刷</button>
-        <button type="button" class="btn-ghost" id="btnPrint">ブラウザで印刷</button>
-        <button type="button" class="btn-ghost" id="btnExport">設定をJSONで書き出す</button>
-        <button type="button" class="btn-ghost" id="btnImport">JSONから読み込む</button>
-        <button type="button" class="btn-ghost" id="btnReset">既定値に戻す</button>
+        <button type="button" class="btn-ghost" id="btnExport">レイアウトを書き出す</button>
+        <button type="button" class="btn-ghost" id="btnImport">読み込む</button>
+        <button type="button" class="btn-ghost" id="btnReset">既定に戻す</button>
       </div>
       <input type="file" id="fileInput" class="file-input" accept="application/json">
       <div class="inline-confirm" id="resetConfirm" role="alertdialog" aria-label="リセットの確認">
-        <span>スタイル設定を既定値に戻しますか？</span>
+        <span>レイアウトを既定に戻しますか？</span>
         <button type="button" class="yes" id="resetYes">戻す</button>
         <button type="button" class="no" id="resetNo">やめる</button>
       </div>
       <div class="notice" id="notice" role="status" aria-live="polite"></div>
       <p class="hint">
-        設定は自動保存され、サーバー経由で開いていれば**全端末のKDS印刷に反映**されます(どの端末で設定してもOK)。JSON書き出し/読み込みはバックアップ・別店舗への持ち出し用です。<br>
-        右のプレビューは実機プリンターの印字を再現しています(文字の並び・大きさ・罫線とも同じ)。「実機にテスト印刷」でそのまま紙で確認できます。
+        変更は自動保存され、サーバー経由で開いていれば<strong>全端末のKDSの伝票プレビューと実機印刷に反映</strong>されます。<br>
+        書体は「印刷ボタンを押した端末」のものが使われます。行書体・ポップ体は Windows のみのため、iPad から印刷するとゴシックになります。
       </p>
-    </div>
-  </div>
-
-  <div class="preview-col">
-    <div class="paper-wrap">
-      <div id="slip">
-        <div class="r-center" id="pStore">土鍋飯ぽかぽか</div>
-        <div class="r-center" id="pTable">卓  12</div>
-        <div id="pMeta">受付 12:34</div>
-        <div class="r-sep" id="pSepTop"></div>
-        <div id="pItems"></div>
-        <div class="r-sep" id="pSepBottom"></div>
-      </div>
     </div>
   </div>
 </div>
 
+<script src="slip-renderer.js"></script>
 <script>
 (function () {
   "use strict";
 
-  var DEFAULTS = {
-    paperWidth: 80,
-    feedLines: 5,
-    storeShow: true,
-    tableSize: 40,     // 40=2倍角 / 32=等倍 (relay-server printer.js の閾値と対応)
-    tableBold: true,
-    metaShow: true,
-    itemSize: 18,      // 22=横2倍 / 18=等倍 (同上)
-    itemBold: true,
-    qtyFormat: "x",
-    noteShow: true,
-    sepTop: "dashed",
-    sepBottom: "none"
-  };
-  /* 各キーの許容値。JSON読み込みやlocalStorage改変で不正値が入っても
-     printer.js の normalizeJob と同じ発想で既定値へ丸める */
-  var ALLOWED = {
-    paperWidth: [58, 80],
-    feedLines: { min: 0, max: 8 },
-    storeShow: "bool",
-    tableSize: [32, 40],
-    tableBold: "bool",
-    metaShow: "bool",
-    itemSize: [18, 22],
-    itemBold: "bool",
-    qtyFormat: ["x", "times", "kosuu"],
-    noteShow: "bool",
-    sepTop: ["dashed", "solid", "none"],
-    sepBottom: ["dashed", "solid", "none"]
-  };
-  var LS_KEY = "slip_style_designer_v1";
+  var R = window.SlipRenderer;
+  var LS_KEY = "slip_style_designer_v1";       // KDSと共有(kds-a-grid.html の LS_SLIP_STYLE と同一キー)
   var LS_SAMPLE_KEY = "slip_style_designer_sample_v1";
+  var LS_PRINTER_IP = "kds_printer_ip_v1";
+  var LS_EMULATION = "kds_printer_emulation_v1";
+  var GRID = 4;                                 // 吸着グリッド(ドット)
+  var HANDLE = 10;                              // 幅つまみの当たり判定(ドット)
+  var SCALE = 0.62;                             // 画面表示倍率。印字データはフル解像度のまま
 
   var SAMPLE_DEFAULT = {
-    table: "12",
-    meta: "12:34",
+    table: "A1", meta: "12:34", people: 2,
     items: [
       { name: "特上土鍋ご飯", qty: 1, note: "固め" },
       { name: "だし巻き玉子", qty: 2, note: "" },
-      { name: "本日の味噌汁", qty: 1, note: "" }
+      { name: "本日の味噌汁", qty: 1, note: "ねぎ抜き" }
     ]
   };
 
-  /* 不正なキー・値を既定値へ丸めた新しい state を返す */
-  function normalizeState(parsed) {
-    var out = Object.assign({}, DEFAULTS);
-    if (!parsed || typeof parsed !== "object") return out;
-    Object.keys(DEFAULTS).forEach(function (key) {
-      var rule = ALLOWED[key];
-      var val = parsed[key];
-      if (val == null) return;
-      if (rule === "bool") { out[key] = !!val; return; }
-      if (Array.isArray(rule)) { if (rule.indexOf(val) !== -1) out[key] = val; return; }
-      var n = Number(val);
-      if (!isNaN(n)) out[key] = Math.min(rule.max, Math.max(rule.min, Math.round(n)));
-    });
-    return out;
-  }
-
-  var state = loadState();
+  var tpl = loadTemplate();
   var sample = loadSample();
+  var selectedId = null;
+  var emulation = loadEmulation();
 
-  function loadState() {
+  var paper = document.getElementById("paper");
+  var overlay = document.getElementById("overlay");
+  var lastLayout = null;
+
+  /* ===== 保存・読み込み ===== */
+  function loadTemplate() {
     try {
       var raw = localStorage.getItem(LS_KEY);
-      if (!raw) return Object.assign({}, DEFAULTS);
-      return normalizeState(JSON.parse(raw));
-    } catch (e) { return Object.assign({}, DEFAULTS); }
+      if (!raw) return R.defaultTemplate();
+      var parsed = JSON.parse(raw);
+      // 旧フォーム式スタイル(elements を持たない)は既定レイアウトから始める
+      return R.isTemplate(parsed) ? R.normalizeTemplate(parsed) : R.defaultTemplate();
+    } catch (e) { return R.defaultTemplate(); }
   }
-  function saveState() {
-    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
-    // サーバーにも保存(/api/slip-style)。KDSを開いている全端末(PC/iPad)に反映される。
-    // relay-server経由でなく file:// で開いているときは失敗するが、localStorageで動き続ける
+  function saveTemplate() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(tpl)); } catch (e) {}
+    // サーバーにも保存。KDSを開いている全端末(PC/iPad)へ反映される。
+    // file:// で開いている場合は失敗するが、localStorage だけで動き続ける
     if (typeof fetch === "function") {
       fetch("/api/slip-style", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(state),
+        body: JSON.stringify(tpl),
       }).catch(function () {});
     }
   }
-
-  /* 起動時にサーバー保存のスタイルを取得。あればそちらを正として画面へ反映する */
-  function pullServerState() {
+  function pullServerTemplate() {
     if (typeof fetch !== "function") return;
     fetch("/api/slip-style").then(function (res) {
       if (!res.ok) throw new Error("HTTP " + res.status);
       return res.json();
     }).then(function (st) {
-      if (!st || typeof st !== "object" || Object.keys(st).length === 0) return;
-      state = normalizeState(st);
-      try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
-      syncControls(); render();
+      if (!R.isTemplate(st)) return;             // 未設定・旧形式なら手元のものを使い続ける
+      tpl = R.normalizeTemplate(st);
+      try { localStorage.setItem(LS_KEY, JSON.stringify(tpl)); } catch (e) {}
+      syncAll();
     }).catch(function () {});
   }
-  function defaultSample() { return JSON.parse(JSON.stringify(SAMPLE_DEFAULT)); }
   function loadSample() {
     try {
-      var raw = localStorage.getItem(LS_SAMPLE_KEY);
-      if (!raw) return defaultSample();
-      var parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.items)) return defaultSample();
+      var parsed = JSON.parse(localStorage.getItem(LS_SAMPLE_KEY));
+      if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.items)) throw new Error("bad");
       return parsed;
-    } catch (e) { return defaultSample(); }
+    } catch (e) { return JSON.parse(JSON.stringify(SAMPLE_DEFAULT)); }
   }
   function saveSample() {
     try { localStorage.setItem(LS_SAMPLE_KEY, JSON.stringify(sample)); } catch (e) {}
   }
+  /* 画像印字のコマンド体系。本番機の Star mC-Print3 は StarPRNT 専用なのでそれを既定にする */
+  var EMULATIONS = ["starprnt", "starline", "escpos"];
+  function loadEmulation() {
+    try {
+      var saved = localStorage.getItem(LS_EMULATION);
+      return EMULATIONS.indexOf(saved) !== -1 ? saved : "starprnt";
+    } catch (e) { return "starprnt"; }
+  }
 
-  /* ---- コントロールの描画・同期 ---- */
+  /* サンプル注文 → 描画エンジンが受け取る注文オブジェクト */
+  function sampleOrder() {
+    var now = new Date();
+    var pad = function (n) { return (n < 10 ? "0" : "") + n; };
+    return {
+      store: "土鍋飯ぽかぽか",
+      table: sample.table || "--",
+      meta: sample.meta || "",
+      metaDate: (now.getMonth() + 1) + "/" + now.getDate(),
+      people: sample.people || "",
+      kind: "予約",
+      orderNo: "1042",
+      date: now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate()),
+      time: pad(now.getHours()) + ":" + pad(now.getMinutes()),
+      items: sample.items.map(function (it) {
+        return { name: it.name, qty: it.qty, note: it.note || "" };
+      }),
+    };
+  }
+
+  /* ===== 描画 =====
+     ドラッグ中はポインタが動くたびに呼ばれるため、実際の再描画は1フレームに1回へ間引く。
+     (毎回 canvas を作り直して全要素を測り直すので、素直に呼ぶと店のPCでは重い) */
+  var pendingFrame = null;
+  function scheduleRender() {
+    if (pendingFrame != null) return;
+    pendingFrame = requestAnimationFrame(function () { pendingFrame = null; render(); });
+  }
+
+  function render() {
+    var res = R.renderToCanvas(paper, tpl, sampleOrder());
+    lastLayout = res;
+    var cssW = Math.round(res.width * SCALE);
+    var cssH = Math.round(res.height * SCALE);
+    paper.style.width = cssW + "px";
+    paper.style.height = cssH + "px";
+    overlay.width = res.width;
+    overlay.height = res.height;
+    overlay.style.width = cssW + "px";
+    overlay.style.height = cssH + "px";
+    drawOverlay();
+  }
+
+  /* 選択枠・つまみ・品目リスト下端のガイド (この canvas は印字されない) */
+  function drawOverlay() {
+    var ctx = overlay.getContext("2d");
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+    if (!lastLayout) return;
+
+    if (lastLayout.itemsBottom > 0) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(47,111,208,.55)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.moveTo(0, lastLayout.itemsBottom);
+      ctx.lineTo(overlay.width, lastLayout.itemsBottom);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    lastLayout.placed.forEach(function (p) {
+      if (p.el.id !== selectedId) return;
+      var h = Math.max(p.h, 6);
+      ctx.save();
+      ctx.strokeStyle = "#2f6fd0";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 4]);
+      ctx.strokeRect(p.x, p.y, p.el.w, h);
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#2f6fd0";
+      ctx.fillRect(p.x - 3, p.y + h / 2 - 12, 6, 24);                 // 左つまみ
+      ctx.fillRect(p.x + p.el.w - 3, p.y + h / 2 - 12, 6, 24);        // 右つまみ
+      ctx.restore();
+    });
+  }
+
+  /* ===== ヒットテスト・ドラッグ ===== */
+  function eventDot(e) {
+    var rect = overlay.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) / rect.width * overlay.width,
+      y: (e.clientY - rect.top) / rect.height * overlay.height,
+    };
+  }
+  /** 重なっている場合はリストの後ろ(=手前に描かれた要素)を優先して掴む */
+  function hitTest(pt) {
+    if (!lastLayout) return null;
+    for (var i = lastLayout.placed.length - 1; i >= 0; i--) {
+      var p = lastLayout.placed[i];
+      var h = Math.max(p.h, 10);
+      if (pt.x >= p.x - HANDLE && pt.x <= p.x + p.el.w + HANDLE && pt.y >= p.y - 4 && pt.y <= p.y + h + 4) return p;
+    }
+    return null;
+  }
+
+  var drag = null;
+  overlay.addEventListener("pointerdown", function (e) {
+    var pt = eventDot(e);
+    var hit = hitTest(pt);
+    if (!hit) { selectedId = null; renderProps(); renderElList(); drawOverlay(); return; }
+    selectedId = hit.el.id;
+    var mode = "move";
+    if (Math.abs(pt.x - hit.x) <= HANDLE) mode = "left";
+    else if (Math.abs(pt.x - (hit.x + hit.el.w)) <= HANDLE) mode = "right";
+    drag = { mode: mode, id: hit.el.id, startX: pt.x, startY: pt.y, origX: hit.el.x, origY: hit.el.y, origW: hit.el.w };
+    overlay.setPointerCapture(e.pointerId);
+    renderProps(); renderElList(); drawOverlay();
+    e.preventDefault();
+  });
+  overlay.addEventListener("pointermove", function (e) {
+    if (!drag) {
+      overlay.style.cursor = hitTest(eventDot(e)) ? "move" : "default";
+      return;
+    }
+    var pt = eventDot(e);
+    var el = findEl(drag.id);
+    if (!el) return;
+    var snap = function (v) { return e.shiftKey ? Math.round(v) : Math.round(v / GRID) * GRID; };
+    var dots = R.DOTS[tpl.paperWidth];
+    if (drag.mode === "move") {
+      el.x = Math.max(-40, Math.min(dots - 8, snap(drag.origX + (pt.x - drag.startX))));
+      el.y = Math.max(0, snap(drag.origY + (pt.y - drag.startY)));
+    } else if (drag.mode === "right") {
+      el.w = Math.max(16, Math.min(dots - el.x, snap(drag.origW + (pt.x - drag.startX))));
+    } else {
+      var nx = Math.max(0, Math.min(drag.origX + drag.origW - 16, snap(drag.origX + (pt.x - drag.startX))));
+      el.w = drag.origX + drag.origW - nx;
+      el.x = nx;
+    }
+    // プロパティ欄のDOM作り直しはドラッグ終了までまとめる(移動中は用紙だけ追従すればよい)
+    scheduleRender();
+  });
+  function endDrag(e) {
+    if (!drag) return;
+    drag = null;
+    if (e && e.pointerId != null && overlay.hasPointerCapture(e.pointerId)) overlay.releasePointerCapture(e.pointerId);
+    render(); renderProps(); saveTemplate();
+  }
+  overlay.addEventListener("pointerup", endDrag);
+  overlay.addEventListener("pointercancel", endDrag);
+
+  document.addEventListener("keydown", function (e) {
+    if (!selectedId) return;
+    var tag = (e.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return;
+    var el = findEl(selectedId);
+    if (!el) return;
+    var step = e.shiftKey ? 8 : 1;
+    if (e.key === "ArrowLeft") el.x -= step;
+    else if (e.key === "ArrowRight") el.x += step;
+    else if (e.key === "ArrowUp") el.y -= step;
+    else if (e.key === "ArrowDown") el.y += step;
+    else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); removeEl(selectedId); return; }
+    else return;
+    el.y = Math.max(0, el.y);
+    e.preventDefault();
+    render(); renderProps(); saveTemplate();
+  });
+
+  /* ===== 要素の操作 ===== */
+  function findEl(id) {
+    for (var i = 0; i < tpl.elements.length; i++) if (tpl.elements[i].id === id) return tpl.elements[i];
+    return null;
+  }
+  function newId() { return "e" + Date.now().toString(36) + Math.round(Math.random() * 1e4).toString(36); }
+  function elLabel(el) {
+    if (el.type === "text") return el.text || "(空のテキスト)";
+    if (el.type === "line") return el.style === "dashed" ? "破線" : (el.style === "double" ? "二重線" : "実線");
+    return "品目リスト";
+  }
+  /* 部品を用紙の下端へ追加する。中身と書式は slip-renderer.js の PARTS が持っている */
+  function addPart(key) {
+    var el = R.makePart(key, tpl.paperWidth);
+    el.id = newId();
+    el.anchor = "top";
+    el.font = el.font || "gothic";
+    el.lineHeight = el.lineHeight || 1.25;
+    // いま一番下にある要素の下へ置く。既存の要素に重ならないので、置いた瞬間に見える
+    el.y = lastLayout ? Math.min(R.MAX_HEIGHT - 60, Math.round(lastLayout.height)) : 200;
+    tpl.elements.push(el);
+    selectedId = el.id;
+    syncAll(); saveTemplate();
+  }
+  function removeEl(id) {
+    tpl.elements = tpl.elements.filter(function (el) { return el.id !== id; });
+    if (!tpl.elements.length) tpl = R.defaultTemplate();
+    if (selectedId === id) selectedId = null;
+    syncAll(); saveTemplate();
+  }
+  function moveEl(id, dir) {
+    var i = -1;
+    tpl.elements.forEach(function (el, idx) { if (el.id === id) i = idx; });
+    var j = i + dir;
+    if (i < 0 || j < 0 || j >= tpl.elements.length) return;
+    var tmp = tpl.elements[i];
+    tpl.elements[i] = tpl.elements[j];
+    tpl.elements[j] = tmp;
+    syncAll(); saveTemplate();
+  }
+
+  /* ===== 要素リスト ===== */
+  var elListEl = document.getElementById("elList");
+  function renderElList() {
+    elListEl.innerHTML = "";
+    tpl.elements.forEach(function (el, idx) {
+      var row = document.createElement("div");
+      row.className = "el-item" + (el.id === selectedId ? " on" : "");
+      row.addEventListener("click", function (e) {
+        if (e.target.tagName === "BUTTON") return;
+        selectedId = el.id; renderElList(); renderProps(); drawOverlay();
+      });
+
+      var kind = document.createElement("span");
+      kind.className = "kind";
+      kind.textContent = el.type === "text" ? "文字" : (el.type === "line" ? "罫線" : "品目");
+      var label = document.createElement("span");
+      label.className = "label";
+      label.textContent = elLabel(el);
+
+      var up = document.createElement("button");
+      up.type = "button"; up.textContent = "▲"; up.title = "背面へ";
+      up.setAttribute("aria-label", elLabel(el) + " を背面へ");
+      up.disabled = idx === 0;
+      up.addEventListener("click", function () { moveEl(el.id, -1); });
+
+      var down = document.createElement("button");
+      down.type = "button"; down.textContent = "▼"; down.title = "前面へ";
+      down.setAttribute("aria-label", elLabel(el) + " を前面へ");
+      down.disabled = idx === tpl.elements.length - 1;
+      down.addEventListener("click", function () { moveEl(el.id, 1); });
+
+      var del = document.createElement("button");
+      del.type = "button"; del.textContent = "×"; del.title = "削除";
+      del.setAttribute("aria-label", elLabel(el) + " を削除");
+      del.style.color = "#a33";
+      del.addEventListener("click", function () { removeEl(el.id); });
+
+      row.appendChild(kind); row.appendChild(label);
+      row.appendChild(up); row.appendChild(down); row.appendChild(del);
+      elListEl.appendChild(row);
+    });
+  }
+  var partListEl = document.getElementById("partList");
+  R.PARTS.forEach(function (part) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "＋ " + part.label;
+    btn.addEventListener("click", function () { addPart(part.key); });
+    partListEl.appendChild(btn);
+  });
+
+  /* ===== プロパティパネル ===== */
+  var propBody = document.getElementById("propBody");
+
+  function fieldRow(labelText, node) {
+    var row = document.createElement("div");
+    row.className = "row";
+    var lb = document.createElement("span");
+    lb.className = "name";
+    lb.textContent = labelText;
+    row.appendChild(lb);
+    if (Array.isArray(node)) node.forEach(function (n) { row.appendChild(n); });
+    else row.appendChild(node);
+    return row;
+  }
+  function numberInput(el, key, min, max, ariaLabel, onDone) {
+    var inp = document.createElement("input");
+    inp.type = "number"; inp.min = min; inp.max = max; inp.value = el[key];
+    inp.setAttribute("aria-label", ariaLabel);
+    inp.addEventListener("input", function () {
+      var v = Math.round(Number(inp.value));
+      if (isNaN(v)) return;
+      el[key] = Math.min(max, Math.max(min, v));
+      render(); saveTemplate();
+      if (onDone) onDone();
+    });
+    return inp;
+  }
+  function selectInput(el, key, options, ariaLabel, onDone) {
+    var sel = document.createElement("select");
+    sel.setAttribute("aria-label", ariaLabel);
+    options.forEach(function (o) {
+      var opt = document.createElement("option");
+      opt.value = o.value; opt.textContent = o.label;
+      if (String(el[key]) === String(o.value)) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener("change", function () {
+      el[key] = sel.value;
+      render(); saveTemplate();
+      if (onDone) onDone();
+    });
+    return sel;
+  }
+  function checkInput(el, key, labelText) {
+    var lb = document.createElement("label");
+    lb.className = "toggle";
+    var inp = document.createElement("input");
+    inp.type = "checkbox"; inp.checked = !!el[key];
+    inp.addEventListener("change", function () { el[key] = inp.checked; render(); saveTemplate(); });
+    lb.appendChild(inp);
+    lb.appendChild(document.createTextNode(labelText));
+    return lb;
+  }
+
+  function renderProps() {
+    propBody.innerHTML = "";
+    var el = selectedId ? findEl(selectedId) : null;
+    if (!el) {
+      var p = document.createElement("p");
+      p.className = "empty";
+      p.textContent = "用紙の上で要素をクリックすると、ここで細かく設定できます。";
+      propBody.appendChild(p);
+      return;
+    }
+    var dots = R.DOTS[tpl.paperWidth];
+
+    propBody.appendChild(fieldRow("位置 X / Y", [
+      numberInput(el, "x", -40, dots, "位置X"),
+      numberInput(el, "y", 0, R.MAX_HEIGHT, "位置Y"),
+    ]));
+    propBody.appendChild(fieldRow("幅", [
+      numberInput(el, "w", 16, dots, "幅"),
+      (function () {
+        var b = document.createElement("button");
+        b.type = "button"; b.className = "add-item"; b.style.marginTop = "0";
+        b.textContent = "紙幅いっぱい";
+        b.addEventListener("click", function () { el.x = 0; el.w = dots; render(); renderProps(); saveTemplate(); });
+        return b;
+      })(),
+    ]));
+    propBody.appendChild(fieldRow("Yの基準", selectInput(el, "anchor", [
+      { value: "top", label: "用紙の上端から" },
+      { value: "items", label: "品目リストの下から" },
+    ], "Yの基準")));
+
+    if (el.type === "line") {
+      propBody.appendChild(fieldRow("太さ", numberInput(el, "thickness", 1, 12, "罫線の太さ")));
+      propBody.appendChild(fieldRow("種類", selectInput(el, "style", [
+        { value: "solid", label: "実線" },
+        { value: "dashed", label: "破線" },
+        { value: "double", label: "二重線" },
+      ], "罫線の種類", renderElList)));
+      return;
+    }
+
+    var fontOpts = Object.keys(R.FONTS).map(function (k) { return { value: k, label: R.FONTS[k].label }; });
+    propBody.appendChild(fieldRow("寄せ", selectInput(el, "align", [
+      { value: "left", label: "左" }, { value: "center", label: "中央" }, { value: "right", label: "右" },
+    ], "文字寄せ")));
+    propBody.appendChild(fieldRow("書体", selectInput(el, "font", fontOpts, "書体")));
+    propBody.appendChild(fieldRow("行間", (function () {
+      var inp = document.createElement("input");
+      inp.type = "range"; inp.min = "0.9"; inp.max = "2.4"; inp.step = "0.05"; inp.value = el.lineHeight;
+      inp.setAttribute("aria-label", "行間");
+      inp.addEventListener("input", function () { el.lineHeight = Number(inp.value); render(); saveTemplate(); });
+      return inp;
+    })()));
+
+    if (el.type === "text") {
+      var ta = document.createElement("textarea");
+      ta.value = el.text;
+      ta.setAttribute("aria-label", "表示する文字");
+      ta.addEventListener("input", function () {
+        el.text = ta.value.slice(0, 200); render(); renderElList(); saveTemplate();
+      });
+      propBody.appendChild(fieldRow("文字", ta));
+
+      var chips = document.createElement("div");
+      chips.className = "field-chips";
+      R.FIELDS.forEach(function (f) {
+        var b = document.createElement("button");
+        b.type = "button"; b.textContent = f.label;
+        b.title = f.key + " を挿入";
+        b.addEventListener("click", function () {
+          var start = ta.selectionStart == null ? ta.value.length : ta.selectionStart;
+          var end = ta.selectionEnd == null ? start : ta.selectionEnd;
+          ta.value = ta.value.slice(0, start) + f.key + ta.value.slice(end);
+          el.text = ta.value.slice(0, 200);
+          ta.focus();
+          ta.selectionStart = ta.selectionEnd = start + f.key.length;
+          render(); renderElList(); saveTemplate();
+        });
+        chips.appendChild(b);
+      });
+      propBody.appendChild(chips);
+
+      propBody.appendChild(fieldRow("大きさ", [numberInput(el, "size", 10, 120, "文字の大きさ"), checkInput(el, "bold", "太字")]));
+      return;
+    }
+
+    // 品目リスト
+    propBody.appendChild(fieldRow("品名", [numberInput(el, "size", 10, 120, "品名の大きさ"), checkInput(el, "bold", "太字")]));
+    propBody.appendChild(fieldRow("行の間隔", numberInput(el, "rowGap", 0, 120, "品目どうしの間隔")));
+    propBody.appendChild(fieldRow("数量", [
+      checkInput(el, "qtyShow", "印字する"),
+      selectInput(el, "qtyFormat", [
+        { value: "x", label: "x 2" }, { value: "times", label: "× 2" },
+        { value: "kake", label: "×2" }, { value: "kosuu", label: "2 個" },
+      ], "数量の表記"),
+    ]));
+    propBody.appendChild(fieldRow("数量の位置", [
+      selectInput(el, "qtyPos", [
+        { value: "inline", label: "品名の右端" }, { value: "below", label: "品名の下" },
+      ], "数量の位置"),
+      numberInput(el, "qtySize", 10, 120, "数量の大きさ"),
+    ]));
+    propBody.appendChild(fieldRow("備考(※)", [
+      checkInput(el, "noteShow", "印字する"),
+      numberInput(el, "noteSize", 10, 120, "備考の大きさ"),
+    ]));
+    propBody.appendChild(fieldRow("備考の字下げ", numberInput(el, "noteIndent", 0, 200, "備考の字下げ")));
+  }
+
+  /* ===== 用紙・送り・印字方式 ===== */
   function syncSegGroups() {
     document.querySelectorAll(".seg[data-group]").forEach(function (seg) {
       var key = seg.getAttribute("data-group");
+      var val = key === "emulation" ? emulation : tpl[key];
       seg.querySelectorAll("button").forEach(function (btn) {
-        var match = String(state[key]) === btn.getAttribute("data-val");
+        var match = String(val) === btn.getAttribute("data-val");
         btn.classList.toggle("on", match);
         btn.setAttribute("aria-pressed", match ? "true" : "false");
       });
     });
   }
-  function syncRanges() {
-    document.querySelectorAll("input[type=range][data-key]").forEach(function (input) {
-      var key = input.getAttribute("data-key");
-      input.value = state[key];
-      var out = document.querySelector("[data-valfor='" + key + "']");
-      if (out) out.textContent = state[key];
-    });
-  }
-  function syncToggles() {
-    document.querySelectorAll("input[type=checkbox][data-key]").forEach(function (input) {
-      var key = input.getAttribute("data-key");
-      input.checked = !!state[key];
-    });
-  }
-  function syncControls() { syncSegGroups(); syncRanges(); syncToggles(); }
-
   document.querySelectorAll(".seg[data-group]").forEach(function (seg) {
     var key = seg.getAttribute("data-group");
     seg.querySelectorAll("button").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var raw = btn.getAttribute("data-val");
-        state[key] = isNaN(Number(raw)) ? raw : Number(raw);
-        syncControls(); render(); saveState();
+        if (key === "emulation") {
+          emulation = raw;
+          try { localStorage.setItem(LS_EMULATION, emulation); } catch (e) {}
+          syncSegGroups();
+          return;
+        }
+        var next = Number(raw);
+        if (next !== tpl.paperWidth) {
+          // 紙幅を変えると印字可能ドット数が変わる。はみ出す要素を紙内に収め直す
+          var dots = R.DOTS[next];
+          tpl.paperWidth = next;
+          tpl.elements.forEach(function (el) {
+            el.w = Math.min(el.w, dots);
+            el.x = Math.max(0, Math.min(el.x, dots - el.w));
+          });
+        }
+        syncAll(); saveTemplate();
       });
     });
   });
-  document.querySelectorAll("input[type=range][data-key]").forEach(function (input) {
-    input.addEventListener("input", function () {
-      var key = input.getAttribute("data-key");
-      state[key] = Number(input.value);
-      syncControls(); render(); saveState();
-    });
-  });
-  document.querySelectorAll("input[type=checkbox][data-key]").forEach(function (input) {
-    input.addEventListener("change", function () {
-      var key = input.getAttribute("data-key");
-      state[key] = input.checked;
-      syncControls(); render(); saveState();
-    });
+
+  var feedEl = document.getElementById("feedLines");
+  var feedValEl = document.getElementById("feedLinesVal");
+  feedEl.addEventListener("input", function () {
+    tpl.feedLines = Number(feedEl.value);
+    feedValEl.textContent = tpl.feedLines;
+    saveTemplate();
   });
 
-  /* ---- サンプル注文の編集 ---- */
+  /* ===== サンプル注文 ===== */
   var sampleTableEl = document.getElementById("sampleTable");
   var sampleMetaEl = document.getElementById("sampleMeta");
+  var samplePeopleEl = document.getElementById("samplePeople");
   var itemsBody = document.querySelector("#sampleItems tbody");
+
   sampleTableEl.value = sample.table;
   sampleMetaEl.value = sample.meta;
-
-  sampleTableEl.addEventListener("input", function () {
-    sample.table = sampleTableEl.value; saveSample(); render();
-  });
-  sampleMetaEl.addEventListener("input", function () {
-    sample.meta = sampleMetaEl.value; saveSample(); render();
+  samplePeopleEl.value = sample.people || 1;
+  sampleTableEl.addEventListener("input", function () { sample.table = sampleTableEl.value; saveSample(); render(); });
+  sampleMetaEl.addEventListener("input", function () { sample.meta = sampleMetaEl.value; saveSample(); render(); });
+  samplePeopleEl.addEventListener("input", function () {
+    sample.people = Math.max(1, Number(samplePeopleEl.value) || 1); saveSample(); render();
   });
 
   function renderItemRows() {
     itemsBody.innerHTML = "";
     sample.items.forEach(function (it, idx) {
       var tr = document.createElement("tr");
-
-      var tdName = document.createElement("td");
-      var name = document.createElement("input");
-      name.type = "text"; name.value = it.name;
-      name.addEventListener("input", function () { sample.items[idx].name = name.value; saveSample(); render(); });
-      tdName.appendChild(name);
-
-      var tdQty = document.createElement("td");
-      var qty = document.createElement("input");
-      qty.type = "number"; qty.className = "qty"; qty.min = "1"; qty.value = it.qty;
-      qty.addEventListener("input", function () {
-        sample.items[idx].qty = Math.max(1, Number(qty.value) || 1); saveSample(); render();
-      });
-      tdQty.appendChild(qty);
-
-      var tdNote = document.createElement("td");
-      var note = document.createElement("input");
-      note.type = "text"; note.value = it.note || "";
-      note.addEventListener("input", function () { sample.items[idx].note = note.value; saveSample(); render(); });
-      tdNote.appendChild(note);
+      var mk = function (type, val, cls, aria, on) {
+        var td = document.createElement("td");
+        var inp = document.createElement("input");
+        inp.type = type; inp.value = val;
+        inp.setAttribute("aria-label", aria);
+        if (cls) inp.className = cls;
+        if (type === "number") inp.min = "1";
+        inp.addEventListener("input", function () { on(inp.value); saveSample(); render(); });
+        td.appendChild(inp);
+        return td;
+      };
+      tr.appendChild(mk("text", it.name, null, "品名", function (v) { sample.items[idx].name = v; }));
+      tr.appendChild(mk("number", it.qty, "qty", "数量", function (v) { sample.items[idx].qty = Math.max(1, Number(v) || 1); }));
+      tr.appendChild(mk("text", it.note || "", null, "備考", function (v) { sample.items[idx].note = v; }));
 
       var tdDel = document.createElement("td");
       var del = document.createElement("button");
       del.type = "button"; del.className = "item-del"; del.textContent = "×";
+      del.setAttribute("aria-label", (it.name || "品目") + " を削除");
       del.addEventListener("click", function () {
         sample.items.splice(idx, 1); saveSample(); renderItemRows(); render();
       });
       tdDel.appendChild(del);
-
-      tr.appendChild(tdName); tr.appendChild(tdQty); tr.appendChild(tdNote); tr.appendChild(tdDel);
+      tr.appendChild(tdDel);
       itemsBody.appendChild(tr);
     });
   }
@@ -493,96 +839,19 @@
     saveSample(); renderItemRows(); render();
   });
 
-  /* ---- プレビュー描画 ---- */
-  var slipEl = document.getElementById("slip");
-  var pStore = document.getElementById("pStore");
-  var pTable = document.getElementById("pTable");
-  var pMeta = document.getElementById("pMeta");
-  var pSepTop = document.getElementById("pSepTop");
-  var pSepBottom = document.getElementById("pSepBottom");
-  var pItems = document.getElementById("pItems");
-
-  function mmToPx(mm) { return Math.round(mm * 96 / 25.4); }   /* 96dpi の実寸換算 */
-
-  /* 実機(relay-server/printer.js qtyText)と同一の数量表記 */
-  function fmtQty(n) {
-    if (state.qtyFormat === "times") return "  × " + n;
-    if (state.qtyFormat === "kosuu") return "  " + n + " 個";
-    return "  x " + n;
-  }
-  /* 実機(printer.js sepLine)と同一の区切り線: 58mm=24桁 / 80mm=32桁 */
-  function sepText(kind) {
-    if (kind === "none") return "";
-    var cols = state.paperWidth === 58 ? 24 : 32;
-    return new Array(cols + 1).join(kind === "solid" ? "=" : "-");
+  /* ===== 通知 (alert/confirm はブラウザ全体をブロックするため使わない) ===== */
+  var noticeEl = document.getElementById("notice");
+  var noticeTimer = null;
+  function showNotice(kind, message) {
+    noticeEl.className = "notice show " + kind;
+    noticeEl.textContent = message;
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(function () { noticeEl.className = "notice"; }, 6000);
   }
 
-  /* 用紙幅に応じた @page サイズ(印刷プレビュー用)。render() から毎回更新する */
-  var pageStyleTag = document.createElement("style");
-  document.head.appendChild(pageStyleTag);
-
-  var BASE_PX = 14;   // 実機フォント等倍のプレビュー上のサイズ
-
-  function render() {
-    pageStyleTag.textContent = "@page { size: " + state.paperWidth + "mm auto; margin: 0; }";
-    slipEl.style.width = mmToPx(state.paperWidth) + "px";
-
-    pStore.style.display = state.storeShow ? "" : "none";
-
-    // 実機は「卓  12」を中央寄せで印字。2倍角=縦横2倍
-    pTable.textContent = "卓  " + (sample.table || "--");
-    pTable.style.fontSize = (state.tableSize >= 40 ? BASE_PX * 2 : BASE_PX) + "px";
-    pTable.style.fontWeight = state.tableBold ? "700" : "400";
-
-    // 実機は受付時刻を左寄せ・等倍で印字
-    pMeta.style.display = state.metaShow ? "" : "none";
-    pMeta.textContent = "受付 " + (sample.meta || "");
-
-    pSepTop.textContent = sepText(state.sepTop);
-    pSepTop.style.display = state.sepTop === "none" ? "none" : "";
-    pSepBottom.textContent = sepText(state.sepBottom);
-    pSepBottom.style.display = state.sepBottom === "none" ? "none" : "";
-
-    // 実機の印字順を再現: 品名 → 数量行 → 備考行 → 空行
-    pItems.innerHTML = "";
-    sample.items.forEach(function (it) {
-      var block = document.createElement("div");
-      block.style.marginBottom = "1.4em";   // 実機の品目間の空行1行ぶん
-
-      var nameDiv = document.createElement("div");
-      var nameSpan = document.createElement("span");
-      nameSpan.className = "r-item-name";
-      nameSpan.textContent = it.name;
-      nameSpan.style.fontWeight = state.itemBold ? "700" : "400";
-      nameSpan.style.transform = state.itemSize >= 22 ? "scaleX(2)" : "";   // 横2倍
-      nameDiv.appendChild(nameSpan);
-      block.appendChild(nameDiv);
-
-      var qtyDiv = document.createElement("div");
-      qtyDiv.textContent = fmtQty(it.qty);
-      block.appendChild(qtyDiv);
-
-      if (state.noteShow && it.note) {
-        var noteDiv = document.createElement("div");
-        noteDiv.textContent = "  ※ " + it.note;
-        block.appendChild(noteDiv);
-      }
-      pItems.appendChild(block);
-    });
-
-    // 実機のカット前の紙送り行数ぶんの余白
-    slipEl.style.paddingBottom = (14 + state.feedLines * BASE_PX * 1.4) + "px";
-  }
-
-  /* ---- テスト印刷・保存・書き出し・読み込み・リセット ---- */
-  document.getElementById("btnPrint").addEventListener("click", function () {
-    window.print();
-  });
-
-  /* 実機テスト印刷: 今画面にあるスタイル+サンプル注文をそのまま /api/print へ送る。
-     プリンターIPはサーバー保存(/api/printer)で全端末と共有。localStorageはオフライン用の控え */
-  var LS_PRINTER_IP = "kds_printer_ip_v1";
+  /* ===== プリンターIP・テスト印刷 ===== */
   var printerIpInput = document.getElementById("printerIpInput");
+  var IP_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
   try { printerIpInput.value = localStorage.getItem(LS_PRINTER_IP) || ""; } catch (e) {}
   if (typeof fetch === "function") {
     fetch("/api/printer").then(function (res) { return res.ok ? res.json() : null; })
@@ -596,7 +865,7 @@
   printerIpInput.addEventListener("input", function () {
     var ip = printerIpInput.value.trim();
     try { localStorage.setItem(LS_PRINTER_IP, ip); } catch (e) {}
-    if (typeof fetch === "function" && (/^(\d{1,3}\.){3}\d{1,3}$/.test(ip) || ip === "")) {
+    if (typeof fetch === "function" && (IP_RE.test(ip) || ip === "")) {
       fetch("/api/printer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -605,67 +874,61 @@
     }
   });
 
+  var printing = false;
   document.getElementById("btnPrintReal").addEventListener("click", function () {
+    if (printing) return;                      // 連打での二重印字を防ぐ
     var ip = printerIpInput.value.trim();
-    if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
+    if (!IP_RE.test(ip)) {
       showNotice("err", "プリンターIPを入力してください (例: 192.168.244.41)");
       return;
     }
+    printing = true;
     showNotice("ok", "印刷データを送信中…");
+    render();                                   // 最新の状態を描き直してから送る
+    var raster = R.canvasToRaster(paper);
     fetch("/api/print", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ip: ip,
-        table: sample.table || "--",
-        meta: "受付 " + (sample.meta || ""),
-        store: "土鍋飯ぽかぽか",
-        style: state,   // 保存を待たず、いま画面にあるスタイルで印字する
-        items: sample.items.map(function (it) {
-          return { name: it.name, qty: it.qty, note: it.note || "" };
-        }),
-      }),
-    }).then(function (res) { return res.json().catch(function () { return { ok: false, error: "HTTP " + res.status }; }); })
-      .then(function (data) {
-        if (data && data.ok) showNotice("ok", "実機へ印刷しました。紙を確認してください。");
-        else showNotice("err", "実機印刷に失敗: " + ((data && data.error) || "不明なエラー") + " (IP・LAN接続・電源を確認)");
-      })
-      .catch(function (err) {
-        showNotice("err", "実機印刷に失敗: " + err.message + " (このページをサーバー経由で開いているか確認)");
-      });
+      body: JSON.stringify({ ip: ip, raster: raster, feedLines: tpl.feedLines, emulation: emulation }),
+    }).then(function (res) {
+      return res.json().catch(function () { return { ok: false, error: "HTTP " + res.status }; });
+    }).then(function (data) {
+      if (data && data.ok) {
+        showNotice("ok", "実機へ送信しました。文字化けや行送りだけが続く場合は「印字方式」が機種と合っていないので、別の方式で再試行してください。");
+      } else {
+        showNotice("err", "実機印刷に失敗: " + ((data && data.error) || "不明なエラー") + " (IP・LAN接続・電源を確認)");
+      }
+    }).catch(function (err) {
+      showNotice("err", "実機印刷に失敗: " + err.message + " (このページをサーバー経由で開いているか確認)");
+    }).then(function () { printing = false; });
   });
+
+  /* ===== 書き出し・読み込み・リセット ===== */
   document.getElementById("btnExport").addEventListener("click", function () {
-    var blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    var blob = new Blob([JSON.stringify(tpl, null, 2)], { type: "application/json" });
     var url = URL.createObjectURL(blob);
     var a = document.createElement("a");
-    a.href = url; a.download = "slip-style.json";
+    a.href = url; a.download = "slip-layout.json";
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
   });
   document.getElementById("btnImport").addEventListener("click", function () {
     document.getElementById("fileInput").click();
   });
-  /* alert/confirm はブラウザ全体をブロックするため使わず、インライン表示で代替 */
-  var noticeEl = document.getElementById("notice");
-  var noticeTimer = null;
-  function showNotice(kind, message) {
-    noticeEl.className = "notice show " + kind;
-    noticeEl.textContent = message;
-    clearTimeout(noticeTimer);
-    noticeTimer = setTimeout(function () { noticeEl.className = "notice"; }, 5000);
-  }
-
   document.getElementById("fileInput").addEventListener("change", function (e) {
     var file = e.target.files[0];
     if (!file) return;
     var reader = new FileReader();
     reader.onload = function () {
       try {
-        state = normalizeState(JSON.parse(String(reader.result)));
-        syncControls(); render(); saveState();
-        showNotice("ok", "設定を読み込みました。");
+        var parsed = JSON.parse(String(reader.result));
+        if (!R.isTemplate(parsed)) throw new Error("レイアウト形式のJSONではありません");
+        tpl = R.normalizeTemplate(parsed);
+        selectedId = null;
+        syncAll(); saveTemplate();
+        showNotice("ok", "レイアウトを読み込みました。");
       } catch (err) {
-        showNotice("err", "JSONの読み込みに失敗しました: " + err.message);
+        showNotice("err", "読み込みに失敗しました: " + err.message);
       }
     };
     reader.readAsText(file);
@@ -673,23 +936,29 @@
   });
 
   var resetConfirmEl = document.getElementById("resetConfirm");
-  document.getElementById("btnReset").addEventListener("click", function () {
-    resetConfirmEl.classList.add("show");
-  });
-  document.getElementById("resetNo").addEventListener("click", function () {
-    resetConfirmEl.classList.remove("show");
-  });
+  document.getElementById("btnReset").addEventListener("click", function () { resetConfirmEl.classList.add("show"); });
+  document.getElementById("resetNo").addEventListener("click", function () { resetConfirmEl.classList.remove("show"); });
   document.getElementById("resetYes").addEventListener("click", function () {
     resetConfirmEl.classList.remove("show");
-    state = Object.assign({}, DEFAULTS);
-    syncControls(); render(); saveState();
-    showNotice("ok", "既定値に戻しました。");
+    tpl = R.defaultTemplate();
+    selectedId = null;
+    syncAll(); saveTemplate();
+    showNotice("ok", "既定のレイアウトに戻しました。");
   });
 
-  syncControls();
+  /* ===== 初期化 ===== */
+  function syncAll() {
+    syncSegGroups();
+    feedEl.value = tpl.feedLines;
+    feedValEl.textContent = tpl.feedLines;
+    renderElList();
+    render();
+    renderProps();
+  }
+
   renderItemRows();
-  render();
-  pullServerState();
+  syncAll();
+  pullServerTemplate();
 })();
 </script>
 </body>

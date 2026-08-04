@@ -1,26 +1,35 @@
 /**
- * kds-bridge.js — 中継サーバー → KDS 予約ストック取込ブリッジ (ブラウザ側)
+ * kds-bridge.js — 中継サーバー → KDS 取込ブリッジ (ブラウザ側)
  *
  * KDS (kds-a-grid.html) 本体は改修せず、外側から接続する:
- *   GET /api/stock を定期取得 → localStorage "kds_stock_v1" へマージ →
- *   BroadcastChannel "kds_sync" に {type:"stock"} を流して全タブへ反映。
+ *   1. GET /api/stock を定期取得 → localStorage "kds_stock_v1" へマージ →
+ *      BroadcastChannel "kds_sync" に {type:"stock"} を流して全タブへ反映。
+ *   2. GET /api/orders を定期取得 → window.KDS_ORDERS へ反映 (注文端末由来の注文 #139)。
  *
  * 使い方 (どちらか):
  *   A. kds-a-grid.html の </body> 直前に <script src="/relay-server/kds-bridge.js"></script>
  *   B. KDS を開いたブラウザのコンソールに本ファイルを貼り付け
  *
- * マージ規則:
- *   - サーバー側の予約 (rid が "mock-" / TableCheck 由来) はサーバーを正とする
- *     → 変更は上書き・キャンセルは削除として反映
- *   - KDS 上で手動追加された予約 (＋追加ボタン由来) には触らない
+ * マージ規則 (予約ストック):
+ *   - 本ブリッジが一度取り込んだ予約 (rid を kds_bridge_seen_v1 に記録) はサーバーを正とする
+ *     → 変更は上書き・サーバー側から消えたら (キャンセル/日跨ぎ) 削除として反映
+ *   - KDS 上で手動追加された予約 (＋追加ボタン由来) はブリッジを通らず seen に載らないので触らない
+ *     (rid の形式では判定しない — 本番 TableCheck の ID 形式は未確定のため。Issue #129)
  *   - KDS 側で既に「着手」済み (ストックから消えた) 予約は復活させない
+ *
+ * マージ規則 (注文フィード):
+ *   - サーバー由来の注文は毎回サーバーの内容で置き換える
+ *   - KDS 内で発生した注文 (予約→着手の "res-*" カード) は残す。消してしまうと
+ *     ホールが着手した予約カードが次のポーリングで消える
+ *   - 取得に失敗したときは window.KDS_ORDERS に触らない (直前の表示を保持)
  */
 (function () {
   "use strict";
   var API = "/api/stock";
+  var API_ORDERS = "/api/orders";
   var API_KITCHEN = "/api/kitchen-state";
   var LS_STOCK = "kds_stock_v1";
-  var LS_BRIDGE_SEEN = "kds_bridge_seen_v1"; // 一度取り込んだ rid (着手/削除後の復活防止)
+  var LS_BRIDGE_SEEN = "kds_bridge_seen_v1"; // 一度取り込んだ rid (サーバー由来の印 + 着手/削除後の復活防止)
   var LS_KONRO = "kds_konro_v1";
   var LS_DONE = "kds_done_v2";
   var LS_LOCKED = "kds_locked_v1";
@@ -28,17 +37,63 @@
   var LS_DELETED = "kds_deleted_v1";
   var BC_NAME = "kds_sync";
   var POLL_MS = 5000;                        // 店内 LAN なので短くてよい (対 TableCheck の30秒とは別物)
+  var ORDER_POLL_MS = 2000;                  // 注文は厨房の着手速度に効くので予約より短く
   var KITCHEN_POLL_MS = 1500;                // コンロの取り合いに効くので短め
   var KITCHEN_FLUSH_MS = 200;                // 連打はまとめて送る
   var KITCHEN_EVENTS = { konro: 1, toggle: 1, timerLock: 1, order: 1, deleteOrder: 1 };
 
-  var bc = null;
-  try { bc = new BroadcastChannel(BC_NAME); } catch (e) {}
+  var bc = null; // ブラウザで動く時だけ末尾で生成 (Node にも BroadcastChannel があり、生成するとテストプロセスが終了しなくなる)
 
   function load(key, fb) { try { var v = JSON.parse(localStorage.getItem(key)); return v == null ? fb : v; } catch (e) { return fb; } }
   function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {} }
 
-  function isServerRid(rid) { return /^(mock-|tc-)/.test(String(rid)) || String(rid).length >= 12; }
+  /**
+   * サーバー取得分 (incoming) を既存ストックへマージする純粋関数。
+   * seen (取込済み rid の記録) は incoming に載った rid をこの場で書き足す。
+   * @param {Array}  stock    - 現在の kds_stock_v1 の中身
+   * @param {Object} seen     - kds_bridge_seen_v1 の中身 (rid -> 1)。破壊的に更新される
+   * @param {Array}  incoming - /api/stock のレスポンス
+   * @returns {{stock: Array, changed: boolean, seenChanged: boolean}}
+   *          stock: マージ後のストック (time 昇順) / changed: stock を保存すべきか /
+   *          seenChanged: seen を保存すべきか (changed とは独立 #175)
+   */
+  function mergeStock(stock, seen, incoming) {
+    var byRid = {};
+    stock.forEach(function (r) { if (r && r.rid != null) byRid[String(r.rid)] = r; });
+    var incomingRids = {};
+    var changed = false;
+    var seenChanged = false;
+
+    incoming.forEach(function (r) {
+      if (!r || r.rid == null) return;
+      var rid = String(r.rid);
+      incomingRids[rid] = true;
+      // incoming に載っている = サーバー由来が確定。新規取込かどうかに関わらず seen へ記録する。
+      // 上書きだけして seen に載せずにいると、その後キャンセルされても下の削除判定を通らない (Issue #175)
+      var wasSeen = !!seen[rid];
+      if (!wasSeen) { seen[rid] = 1; seenChanged = true; }
+      if (byRid[rid]) {                      // 既存 → 内容が変わっていれば上書き (updated 反映)
+        var cur = byRid[rid];
+        if (JSON.stringify({ a: cur.time, b: cur.adults, c: cur.kids, d: cur.name, e: cur.menu }) !==
+            JSON.stringify({ a: r.time, b: r.adults, c: r.kids, d: r.name, e: r.menu })) {
+          r.seenAt = cur.seenAt || r.seenAt; // 30分前通知の再発火を避けるため取込時刻は維持
+          byRid[rid] = r; changed = true;
+        }
+      } else if (!wasSeen) {                 // 新規 (着手/削除済みは seen に載っているので復活させない)
+        byRid[rid] = r; changed = true;
+      }
+    });
+
+    // 取込済み (seen) なのにサーバー側から消えた予約 = キャンセル/日跨ぎ → ストックから除去。
+    // 手動追加の予約はブリッジを通らず seen に載らないため、ここで消えることはない (Issue #129)
+    Object.keys(byRid).forEach(function (rid) {
+      if (seen[rid] && !incomingRids[rid]) { delete byRid[rid]; changed = true; }
+    });
+
+    var next = Object.keys(byRid).map(function (k) { return byRid[k]; });
+    next.sort(function (a, b) { return String(a.time) < String(b.time) ? -1 : 1; });
+    return { stock: next, changed: changed, seenChanged: seenChanged };
+  }
 
   async function tickOnce() {
     var res, incoming;
@@ -49,40 +104,14 @@
       if (!Array.isArray(incoming)) return;
     } catch (e) { return; }                  // 通信断: 直前の表示を保持 (6/18 方針)
 
-    var stock = load(LS_STOCK, []);
     var seen = load(LS_BRIDGE_SEEN, {});
-    var byRid = {};
-    stock.forEach(function (r) { if (r && r.rid != null) byRid[String(r.rid)] = r; });
-    var incomingRids = {};
-    var changed = false;
-
-    incoming.forEach(function (r) {
-      if (!r || r.rid == null) return;
-      var rid = String(r.rid);
-      incomingRids[rid] = true;
-      if (byRid[rid]) {                      // 既存 → 内容が変わっていれば上書き (updated 反映)
-        var cur = byRid[rid];
-        if (JSON.stringify({ a: cur.time, b: cur.adults, c: cur.kids, d: cur.name, e: cur.menu }) !==
-            JSON.stringify({ a: r.time, b: r.adults, c: r.kids, d: r.name, e: r.menu })) {
-          r.seenAt = cur.seenAt || r.seenAt; // 30分前通知の再発火を避けるため取込時刻は維持
-          byRid[rid] = r; changed = true;
-        }
-      } else if (!seen[rid]) {               // 新規 (着手/削除済みは seen に載っているので復活させない)
-        byRid[rid] = r; seen[rid] = 1; changed = true;
-      }
-    });
-
-    // サーバー由来なのにサーバー側から消えた予約 = キャンセル/日跨ぎ → ストックから除去
-    Object.keys(byRid).forEach(function (rid) {
-      if (isServerRid(rid) && !incomingRids[rid]) { delete byRid[rid]; changed = true; }
-    });
-
-    if (!changed) return;
-    var next = Object.keys(byRid).map(function (k) { return byRid[k]; });
-    next.sort(function (a, b) { return String(a.time) < String(b.time) ? -1 : 1; });
-    save(LS_STOCK, next);
-    save(LS_BRIDGE_SEEN, seen);
-    if (bc) { try { bc.postMessage({ type: "stock", stock: next }); } catch (e) {} }
+    var merged = mergeStock(load(LS_STOCK, []), seen, incoming);
+    // 取込実績は stock が変わっていない tick でも保存する。
+    // changed 側にぶら下げると「上書きのみ」「変化なし」の tick で seen を取りこぼす (Issue #175)
+    if (merged.seenChanged) save(LS_BRIDGE_SEEN, seen);
+    if (!merged.changed) return;
+    save(LS_STOCK, merged.stock);
+    if (bc) { try { bc.postMessage({ type: "stock", stock: merged.stock }); } catch (e) {} }
     // 同一タブへの反映: KDS は storage イベント/BC を購読しているが、自タブには BC が届かないため
     // ページ側の再描画フックが無い場合に備え、控えめにリロードは行わず storage 書換のみとする。
     // (kds-a-grid.html に <script src> で読み込ませた場合、別タブ・別端末には即時反映される)
@@ -204,16 +233,52 @@
     adoptKitchenState(snap);
   }
 
-  if (bc) {
-    // KDS 本体が同一コンテキストで postMessage したものも、別の BroadcastChannel オブジェクトである
-    // こちらには届く。つまり自タブ・他タブ・他端末のどの操作もここで拾える
-    bc.onmessage = function (ev) { onLocalKitchenEvent(ev && ev.data); };
+  /* ---- 注文フィード (#139) ---- */
+  var serverOrderIds = {};   // 直近のサーバー由来 id。KDS 内で生まれた注文と区別するために持つ
+
+  function applyOrders(incoming) {
+    var current = Array.isArray(window.KDS_ORDERS) ? window.KDS_ORDERS : [];
+    var nextIds = {};
+    incoming.forEach(function (o) { if (o && o.id != null) nextIds[String(o.id)] = 1; });
+    // KDS 内で発生した注文 (予約→着手カード等) を先頭に残す。
+    // サーバー側にも同じ id があればサーバーを正とする
+    var local = current.filter(function (o) {
+      if (!o || o.id == null) return false;
+      var id = String(o.id);
+      return !serverOrderIds[id] && !nextIds[id];
+    });
+    serverOrderIds = nextIds;
+    window.KDS_ORDERS = local.concat(incoming);
   }
 
-  tickOnce();
-  setInterval(tickOnce, POLL_MS);
-  tickKitchen();
-  setInterval(tickKitchen, KITCHEN_POLL_MS);
-  console.log("[kds-bridge] 予約ストック取込を開始 (" + API + " を " + POLL_MS / 1000 + "秒間隔) / " +
-    "厨房状態の端末間同期 (" + API_KITCHEN + " を " + KITCHEN_POLL_MS / 1000 + "秒間隔)");
+  async function tickOrders() {
+    var res, incoming;
+    try {
+      res = await fetch(API_ORDERS, { cache: "no-store" });
+      if (!res.ok) throw new Error(res.status);
+      incoming = await res.json();
+      if (!Array.isArray(incoming)) return;
+    } catch (e) { return; }        // 通信断: 直前の表示を保持 (window.KDS_ORDERS に触らない)
+    applyOrders(incoming);
+  }
+
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = { mergeStock: mergeStock }; // Node (テスト) から require された場合はポーリングしない
+  } else {
+    try { bc = new BroadcastChannel(BC_NAME); } catch (e) {}
+    if (bc) {
+      // KDS 本体が同一コンテキストで postMessage したものも、別の BroadcastChannel オブジェクトである
+      // こちらには届く。つまり自タブ・他タブ・他端末のどの操作もここで拾える (#132)
+      bc.onmessage = function (ev) { onLocalKitchenEvent(ev && ev.data); };
+    }
+    tickOnce();
+    setInterval(tickOnce, POLL_MS);
+    tickOrders();
+    setInterval(tickOrders, ORDER_POLL_MS);
+    tickKitchen();
+    setInterval(tickKitchen, KITCHEN_POLL_MS);
+    console.log("[kds-bridge] 予約ストック取込を開始 (" + API + " を " + POLL_MS / 1000 + "秒間隔) / " +
+      "注文取込 (" + API_ORDERS + " を " + ORDER_POLL_MS / 1000 + "秒間隔) / " +
+      "厨房状態の端末間同期 (" + API_KITCHEN + " を " + KITCHEN_POLL_MS / 1000 + "秒間隔)");
+  }
 })();

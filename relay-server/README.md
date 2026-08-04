@@ -3,8 +3,18 @@
 TableCheck の予約(メニュー・人数等)を取得し、KDS の予約ストックに流し込むためのサーバー。
 6/18 議事録の「ファイルを置くだけの見かけ上のサーバー」役と、TableCheck 取込役の2役を1プロセスで担う。
 **依存パッケージはほぼゼロ・Node 18+ で動作**(本体リポジトリの単一HTML主義に合わせた設計)。
-唯一の例外は `printer.js` の日本語ESC/POS印字用 `iconv-lite`(Node標準にShift_JIS変換が無いため。#144)。
-初回のみ `cd relay-server && npm install` が必要。
+例外は**印刷まわりの2つだけ**:
+
+| パッケージ | 使う場所 | 無いとどうなるか |
+|---|---|---|
+| `iconv-lite` | `printer.js` の日本語ESC/POS印字(Node標準にShift_JIS変換が無いため #144) | `POST /api/print` が 503。KDS は `window.print()` にフォールバック |
+| `qrcode` | `/qr` の接続QRページ(#144追補) | `/qr` が 503(接続先URLは本文に出る) |
+
+印刷を使うなら初回に `cd relay-server && npm install` を実行する。
+
+**どちらも遅延読込(lazy require)なので、未インストールでもサーバーは起動する**(#173)。
+`npm install` 漏れやオフラインのミニPCでも、**予約取込・`/api/stock`・KDS配信は通常どおり動く**。
+欠けている場合は起動ログに理由と対処が出る。
 
 ```
 【クラウド】               【店内ミニPC = このサーバー】          【KDS端末】
@@ -12,6 +22,9 @@ TableCheck ◀── 30秒差分pull ─ server.js ── /api/stock(JSON) ─�
 (Booking v1 + Sync v1)       当日分のみメモリ保持                  → kds_stock_v1 へマージ
            ◀── 起動時+15分毎の当日全件リシンク
                             kds-a-grid.html も配信                → BroadcastChannel で全端末反映
+
+【注文端末(各卓16台)】── POST /api/orders ──▶ 注文(当日メモリ) ── /api/orders ──▶ window.KDS_ORDERS
+ 別チームが実装                卓番はペイロードで受け取る                        → 新規オーダーのカード
 ```
 
 ## 予約が本当にデシャップまで届くかを手で検証する（デモコンソール）
@@ -102,6 +115,9 @@ cp config/config.example.json config/config.json
 | `tablecheck.allowCustomBase` | `TABLECHECK_ALLOW_CUSTOM_BASE` | 0 | 公式以外のHTTPS接続先を明示許可する場合のみ |
 | `seat.beforeMin` / `seat.afterMin` | `SEAT_BEFORE_MIN` / `SEAT_AFTER_MIN` | 30 / 120 | 予約時刻の前後どこまでを在席とみなすか |
 | `kitchen.ttlMin` | `KITCHEN_TTL_MIN` | 720 | 厨房状態(#132)を最後の更新から何分保持するか(1〜1440分) |
+| `order.ttlMin` | `ORDER_TTL_MIN` | 720 | 注文(`/api/orders`)の保持時間(1〜1440分)。日跨ぎで前日分が残らないための上限 |
+| `auth.token` | `RELAY_TOKEN` | — | **共有トークン**(8文字以上)。設定すると他端末はトークン必須になる。未設定なら認証なし(従来どおり) #174 |
+| `auth.trustLoopback` | `RELAY_TRUST_LOOPBACK` | 1 | ミニPC自身(127.0.0.1)をトークン無しで通すか。`0` で無効 |
 | **(不可)** | `TABLECHECK_API_KEY` | — | secret_key。**環境変数のみ**。未設定ならモック |
 | **(不可)** | `MOCK` | — | `1` でモック強制 |
 
@@ -122,6 +138,64 @@ WiFi越しに初めて繋ぐときは、設定以外の次の点も確認する(
 - **OSファイアウォールでポート8000の受信が許可されているか** — bindできていても弾かれる
 - **WiFiのネットワークプロファイルが「パブリック」でないか** — パブリックは受信が既定でブロック
 
+### 疎通診断(繋がらないときはまずこれ) — #140
+
+上の点をまとめて自動判定するスクリプトがある。**読み取りしかしない**ので現地で何度実行してもよい。
+
+```sh
+node relay-server/preflight.js
+# または
+cd relay-server && npm run preflight
+```
+
+見るもの:
+
+| # | 判定 |
+|---|---|
+| 1 | `config/config.json` の有無と `server.host` / `server.port`(`"auto"` の解決結果も) |
+| 2 | 待ち受けアドレスが他端末から届くか(`127.0.0.1` / 実在しないIP / `0.0.0.0` を指摘) |
+| 3 | IPが静的かDHCPか(`PrefixOrigin`) |
+| 4 | ネットワークプロファイルが「パブリック」でないか |
+| 5 | ポートの受信を許可するファイアウォール規則があるか |
+| 6 | サーバーがLAN側アドレスで実際に応答するか(`/api/health` と KDS 画面) |
+| 7 | 人の目で確認する項目(別端末での表示・予約反映・2台同期・注文投入・来客用WiFiから届かないこと) |
+
+`❌` が出たら上から順に潰す。3〜5 は Windows のみ自動判定で、取得できなかった場合は
+「確認できなかった」と明示して手順を出す(黙って通ったことにはしない)。
+
+### 店内Wi-Fiを客と共用している場合の認証(#174)
+
+中継サーバーには元々認証が無く、**到達できる端末なら誰でも書き込み操作ができる**。
+飲食店ではゲスト Wi-Fi を解放している構成が珍しくないため、スタッフ用と客用の
+セグメントが分かれていない場合、客のスマホから次の操作ができてしまう。
+
+| 操作 | 実害 |
+|---|---|
+| `DELETE /api/seats/{table}` | 予約席が空席扱いになり二重着席が起きる |
+| `POST /api/printer` | プリンターIPを空にされ、印刷が黙って止まる |
+| `POST /api/slip-style` | 全端末の伝票レイアウトが書き換わる |
+
+**まず店のWi-Fiがスタッフ用と客用で分かれているかを確認する**。分かれていて客から到達できないなら、
+ネットワーク側で塞がっているので設定は不要(この節は読み飛ばしてよい)。
+
+共用の場合は `config/config.json` に共有トークンを置く:
+
+```json
+{ "auth": { "token": "店ごとの合言葉を8文字以上で" } }
+```
+
+- **未設定なら従来どおり認証なし**。開発・検証の手順は何も変わらない
+- 設定すると、**ページもAPIもトークンが必要**になる(ページだけ素通しにすると、
+  そのページからトークンを読み出されて意味がない)
+- 端末は次のいずれかで通る: `Authorization: Bearer <token>` / `?token=<token>` / Cookie `relay_token`
+- **ミニPC自身(127.0.0.1)はトークン無しで通る**。QRでトークンを配る導線がミニPC上の
+  `/qr` から始まるため。ミニPCを他人が触る運用なら `auth.trustLoopback` を `false` にする
+- **`/api/health` だけは認証なしで読める**。疎通確認を詰まらせないため(読み取り専用)
+- `/qr` のQRには自動でトークンが載る。**iPadは1回読めばCookieが入り、以後はURLにトークンが要らない**
+
+これはインターネットに晒す前提の認証ではなく、**店内LANという閉じた場所での
+意図しない操作・いたずらを止めるためのもの**。外部公開しない方針は変わらない。
+
 ### エンドポイント
 
 | パス | 内容 |
@@ -132,6 +206,9 @@ WiFi越しに初めて繋ぐときは、設定以外の次の点も確認する(
 | `/api/health` | モード・ready状態・最終差分ポール・最終全件リシンク・保持件数 |
 | `GET /api/kitchen-state` | 厨房状態の共有スナップショット `{sessionId,rev,updatedAt,konro,done,locked,seq,deleted}`。→「厨房状態の端末間同期」 |
 | `POST /api/kitchen-state` | 厨房状態の変更イベント投入 `{events:[...]}`。応答は `{ok,rev,sessionId}` |
+| `GET /api/orders` | KDS 注文フィード(注文端末由来)。→「注文端末との契約」 |
+| `POST /api/orders` | 注文の投入。`orderId` で冪等 |
+| `DELETE /api/orders/{orderId}` | 注文の取消 |
 | `GET /api/seats` | 当日の座席占有 `[{table,source,rid?,name?,since}]`。初回全件リシンク成功までは503 |
 | `POST /api/seats` | walk-in 占有の登録 `{table:"5"}` |
 | `DELETE /api/seats/{table}` | 占有の解除 |
@@ -139,20 +216,42 @@ WiFi越しに初めて繋ぐときは、設定以外の次の点も確認する(
 | `POST /api/mock/reservations` | (MOCK限定) 予約作成。body は TableCheck Reservation 形 |
 | `PATCH /api/mock/reservations/{id}` | (MOCK限定) 予約変更(人数・メニュー等) |
 | `DELETE /api/mock/reservations/{id}` | (MOCK限定) 予約キャンセル(status=cancelled) |
-| `POST /api/print` | チビ伝を実機プリンターへ印字(#144)。body は `{ip, table, meta, store?, style?, items:[{name,qty,note}]}`。`style` 未指定時はサーバー保存のスタイル(下記)を使う。`ip` は店内LAN想定のプライベートIPv4のみ許可(10/8・172.16-31/12・192.168/16)。ポート9100固定のESC/POS RAWへ生ソケットで送信 |
-| `GET /api/slip-style` | サーバー保存の印刷スタイルを返す(未設定は `{}`) |
-| `POST /api/slip-style` | 印刷スタイルを保存。不正値は許容値へ丸め、`config/slip-style.json` に永続化(git管理外)。どの端末で設定しても全端末のKDS印刷に反映される |
+| `POST /api/print` | チビ伝を実機プリンターへ印字(#144)。**画像印字**は `{ip, raster:{width,height,data(base64)}, feedLines?, emulation?}`(自由配置レイアウトの本線)。**テキスト印字**は `{ip, table, meta, store?, style?, items:[{name,qty,note}]}`。`raster` が付いていれば画像経路を使う(寸法とデータ長が食い違う `raster` は400で拒否し、黙って別物を印字しない)。`ip` は店内LAN想定のプライベートIPv4のみ許可(10/8・172.16-31/12・192.168/16)。ポート9100固定のRAWポートへ生ソケットで送信 |
+| `GET /api/slip-style` | サーバー保存のレイアウト/スタイルを返す(未設定は `{}`) |
+| `POST /api/slip-style` | レイアウト/スタイルを保存し `config/slip-style.json` へ永続化(git管理外)。自由配置レイアウト(`elements[]`)は描画がブラウザ側のため中身を解釈せずそのまま預かる(50KB上限)。旧テキスト型スタイルは従来どおり許容値へ丸める。どの端末で設定しても全端末のKDSに反映される |
 | `GET /qr` | iPad等からKDS/スタイル設定を開くための接続QRを表示するページ。エンコードするURLは待ち受け中のLAN IPから自動生成 |
 
-### チビ伝の印刷スタイル設定(slip-style-designer.html)
+### チビ伝のレイアウト設定(slip-style-designer.html)
 
-`http://<サーバー>:<port>/slip-style-designer.html` で伝票の見た目(用紙幅・文字サイズ・太字・
-数量表記・罫線・店名/備考の表示など)をプレビューを見ながら設定できる。
+`http://<サーバー>:<port>/slip-style-designer.html` で、伝票の要素(文字・罫線・品目リスト)を
+**用紙の上へドラッグして自由に配置**できる。要素ごとに書体・大きさ・太字・寄せ・幅を設定でき、
+文字には `{卓番}` `{受付}` `{人数}` などの差込フィールドを入れられる。
 設定は **サーバーに保存**(`POST /api/slip-style` → `config/slip-style.json`)され、
 **どの端末で設定しても、KDSを開いている全端末(PC/iPad)の伝票プレビューと実機印刷に反映される**。
 各端末の localStorage はオフライン用キャッシュで、KDS起動時と伝票を開くたびにサーバーから更新される。
-ESC/POS は文字サイズが段階的(等倍/2倍)のため、実機印字は近似になる:
-卓番は 40px 以上で2倍角、品名は 22px 以上で横2倍、それ未満は等倍。
+
+描画は `slip-renderer.js`(フォーマッターとKDSが共有)が canvas に対して行い、
+**その canvas をそのまま1bit画像にしてプリンターへ送る**。したがって
+「フォーマッターの見た目 = KDSのプレビュー = 実際の紙」が必ず一致する。
+プリンター内蔵フォントを使わないため、書体・大きさ・位置に制約が無い。
+
+品目リストは品数で伸縮する。要素の「Yの基準」を **品目リストの下から** にすると、
+品数が増えたぶんだけ自動で下へずれる(合計欄やフッターを重ならせないため)。
+
+#### 印字方式(emulation)
+
+画像印字のコマンドは**プリンターのコマンド体系ごとに互換性が無い**。素のテキストはどの体系でも
+印字できてしまうので、テキスト印字が通っていても体系の判別にはならない。体系が合っていない状態で
+画像を送ると、画像データがそのまま文字として解釈され「文字化け + データ中の `0x0A` による
+行送りだけが延々続く」壊れ方をする。
+
+| 値 | コマンド | 対象 |
+|---|---|---|
+| `starprnt`(既定) | `ESC GS S` | **Star mC-Print3**(本番機)。StarPRNT専用機でESC/POSモードは持たない |
+| `starline` | `ESC * r A` … `b` … `ESC * r B` | Star Line Mode 機(TSP650II/TSP700II 等) |
+| `escpos` | `GS v 0` | ESC/POS 系 |
+
+本番機は `starprnt` のままでよい。機種を入れ替えたときだけフォーマッターの「印字方式」で切り替える。
 
 ### チビ伝の実機印刷(#144)
 
@@ -162,7 +261,7 @@ KDS 画面の「印刷」ボタンは、プリンターIP未設定時は従来�
 1. KDS ヘッダーの「プリンター設定」ボタンでプリンター(例: Star mC-Print3)のIPアドレスを登録する
    (`localStorage` に端末ごと保存。店舗ネットワーク依存のためコードへの固定埋め込みはしない)
 2. 以降は「印刷」ボタン押下で `POST /api/print` → このサーバーが生ソケットでプリンターの
-   RAWポート(9100)へESC/POSバイト列を送信する(ブラウザは生TCPソケットを開けないため中継が必要)
+   RAWポート(9100)へコマンドバイト列を送信する(ブラウザは生TCPソケットを開けないため中継が必要)
 3. 実機送信に失敗(未設定・接続不可・タイムアウト)した場合は自動で `window.print()` にフォールバックする
 
 ### 厨房状態の端末間同期(#132)
@@ -207,11 +306,67 @@ localStorage + BroadcastChannel で同期しているが、**どちらも同一�
 **同期の対象外**: 予約ストック(`/api/stock` が正本)と、予約→着手の移動。後者は着手した端末の
 ストックからのみ消える(別端末では残る)ため、必要になったら別途対応する。
 
+### 注文端末との契約(POST /api/orders)
+
+注文端末(各卓16台)のシステムは別チームが作る。**受け口の形はこちらが定義し、別チームがそれに
+合わせて送る**(2026-07-16 確定)。送信先は `config.json` の `server.host`/`port` に伝えるだけでよい。
+
+```sh
+curl -X POST http://<ミニPCのIP>:8000/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "orderId": "t12-20260802-0001",
+    "table": "12",
+    "people": 4,
+    "orderedAt": "2026-08-02T18:05:00+09:00",
+    "items": [
+      { "name": "山城牛の肉たく土鍋御膳", "qty": 2, "note": "塩少なめ" },
+      { "name": "ウーロン茶", "qty": 4 }
+    ]
+  }'
+```
+
+| フィールド | 必須 | 内容 |
+|---|---|---|
+| `orderId` | ✅ | 注文端末が振る一意ID(64文字以内)。**冪等キー**: 同じIDの再送は二重注文にならない |
+| `table` | ✅ | 卓番(6文字以内)。**ペイロードで受け取る**(送信元IPからは引かない) |
+| `items[].name` | ✅ | 品名(80文字以内)。KDS の表示名がそのまま |
+| `items[].qty` | | 個数(1〜99。既定1) |
+| `items[].note` | | 品目の注記(200文字以内)。KDS の注記欄に出る |
+| `items[].allergies` | | アレルギー注記(200文字以内)。KDS では注記と並べて表示 |
+| `people` | | 人数(0〜99)。カードの人数表示に使う |
+| `orderedAt` | | ISO 8601。省略時はサーバー受信時刻。**未来時刻はサーバー時刻に丸める**(端末の時計ズレで経過時間が止まって見えるのを防ぐ) |
+
+応答:
+
+| 状況 | ステータス | body |
+|---|---|---|
+| 新規受付 | `201` | `{ok:true, duplicate:false, order:{...}}` |
+| 再送(同一 `orderId`) | `200` | `{ok:true, duplicate:true, order:{...}}` — 既存を正とし、内容が違っても上書きしない |
+| 検証エラー | `400` | `{ok:false, error:"table must be ..."}` — どこを直せばよいか分かる文言 |
+| 取消 | `204` / `404` | `DELETE /api/orders/{orderId}` |
+
+**卓番をIPから引かない理由**: WiFi + DHCP でIPが入れ替わると、注文が黙って別の卓に付き、
+ログ上は正常に見える。飲食店では「違う卓に料理が出る」形でしか表面化せず原因究明が困難。
+この方針により**16台の固定IP運用は不要**になる。
+
+保持は**当日メモリのみ**(#115)。`order.ttlMin`(既定720分)を過ぎた注文は配信から落ちる。
+再起動すると受付済みの注文は消えるので、注文端末側は未反映を検知したら再送してよい(冪等)。
+
+**まだ決めていないこと**(別チームと詰める):
+
+- 商品の識別を名前の文字列で通すか、商品IDにしてマスタを持つか(現状は**名前が正**)
+- 同一卓への継ぎ足し注文は**別 `orderId` = KDS 上は別カード**として扱う(暫定)
+- KDS 側で完了・削除した注文は relay からは消えない(TTL 満了まで配信される)。
+  KDS は完了状態(`kds_done_v2`)と削除済みID(`kds_deleted_v1`)を持っており再表示はされないが、
+  完了を relay へ返す経路は未実装(#132 の厨房状態同期と合わせて設計するのが自然)
+
 ### KDS への接続(kds-bridge.js)
 
 KDS 本体は無改修。**このサーバー経由で `/` を開くと、配信時にブリッジが自動注入される**
 (`server.js` が `kds-a-grid.html` の `</body>` 直前へ1行差し込む。ディスク上のファイルは変更しない)。
-静的配信は情報露出を避けるため `kds-a-grid.html` と `kds-bridge.js` のallowlistに限定する。
+静的配信は情報露出を避けるため allowlist に限定する
+(`kds-a-grid.html` / `slip-style-designer.html` / `slip-renderer.js` / `relay-server/kds-bridge.js`)。
 サーバーを介さず単体で使う場合のみ、手動で `</body>` 直前に次を足す:
 
 ```html
@@ -226,13 +381,22 @@ KDS 本体は無改修。**このサーバー経由で `/` を開くと、配信
 - **着手・削除済みの予約は復活させない**(取込済み rid を記録)
 - 通信断時は直前の表示を保持(6/18 方針)
 
+同じブリッジが 2秒間隔で `/api/orders` も取得し、`window.KDS_ORDERS` へ反映する(#139)。
+こちらのマージ規則:
+
+- **サーバー由来の注文は毎回サーバーの内容で置き換える**
+- **KDS 内で生まれた注文(予約→着手の `res-*` カード)は残す** — 上書きするとホールが着手した
+  予約カードが次のポーリングで消えるため
+- 通信断時は `window.KDS_ORDERS` に触らない(直前の表示を保持)
+
 ## テスト
 
 ```sh
 node relay-server/tablecheck-sync.test.js
 node --test relay-server/booking-resync.test.js relay-server/server.test.js \
   relay-server/seat-occupancy.test.js relay-server/load-config.test.js \
-  relay-server/printer.test.js
+  relay-server/printer.test.js relay-server/auth.test.js \
+  relay-server/order-intake.test.js
 ```
 
 正規化(スキーマ候補キー・pax→adults フォールバック)、memo パーサ、

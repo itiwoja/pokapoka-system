@@ -25,10 +25,20 @@ var os = require("os");
 var path = require("path");
 var seats = require("./seat-occupancy");
 var kitchen = require("./kitchen-state");
+var orderIntake = require("./order-intake");
+var auth = require("./auth");
 var booking = require("./booking-resync");
 var loadConfig = require("./load-config");
 var printer = require("./printer");
-var QRCode = require("qrcode");   // /qr ページ用 (iPad等からの接続URLをQR表示 #144追補)
+
+/* qrcode は /qr ページ専用なので、トップレベルでは読み込まない (#173)。
+   npm install が済んでいない店内ミニPCで、QRページのためにサーバー全体
+   (予約取込・KDS配信) を起動不能にしないため */
+var qrcodeModule = null;
+function loadQRCode() {
+  if (!qrcodeModule) qrcodeModule = require("qrcode");
+  return qrcodeModule;
+}
 
 var MIME = {
   ".html": "text/html; charset=utf-8",
@@ -55,6 +65,7 @@ function createRelay(options) {
   var allowedStaticFiles = [
     "kds-a-grid.html",
     "slip-style-designer.html",   // 印刷スタイル設定ツール。KDSと同一オリジンで配信しlocalStorageを共有する
+    "slip-renderer.js",           // 伝票レイアウトの描画エンジン。フォーマッターとKDSで同じ絵を出すため共有する
     path.join("relay-server", "kds-bridge.js"),
   ];
   var timers = [];
@@ -63,6 +74,7 @@ function createRelay(options) {
   // 厨房状態の共有 (#132)。sessionId は relay 再起動を端末側が検出するための識別子で、
   // 再起動すると rev が 0 に戻るため、これが無いと端末が「取込済み」と誤認する
   var kitchenState = kitchen.createState(options.sessionId || String(Date.now().toString(36)));
+  var orders = new Map();      // 注文端末から受けた注文 (当日メモリのみ #115)
   var started = false;
   var initialSync = Promise.resolve();
   var slipStyle = createSlipStyleStore(options.slipStylePath || path.join(root, "config", "slip-style.json"), printerModule, log);
@@ -91,6 +103,17 @@ function createRelay(options) {
     try { url = new URL(req.url, "http://localhost"); }
     catch (err) { res.writeHead(400); return res.end("bad request"); }
 
+    /* 共有トークン認証 (#174)。未設定なら素通し = 従来どおりの挙動。
+       ページもAPIもまとめて守る: ページだけ素通しにするとトークンを読み出されて意味がない */
+    var allowed = auth.check(req, url, config.authToken,
+      req.socket && req.socket.remoteAddress, config.authTrustLoopback);
+    if (!allowed.ok) {
+      res.writeHead(401, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+      return res.end(JSON.stringify({ ok: false, error: "unauthorized: " + allowed.reason }));
+    }
+    // QR経由(?token=)で来た端末には Cookie を渡す。以後はURLにトークンが要らない
+    if (allowed.setCookie) res.setHeader("Set-Cookie", auth.cookieHeader(config.authToken));
+
     if (url.pathname === "/api/stock") {
       var stock = reservationSync.stockResponse(Date.now());
       return json(res, stock.body, stock.code);
@@ -114,6 +137,10 @@ function createRelay(options) {
 
     if (url.pathname === "/api/kitchen-state") {
       return handleKitchenState(req, res, { state: kitchenState, ttlMs: config.kitchenTtlMs });
+    }
+
+    if (url.pathname === "/api/orders" || url.pathname.indexOf("/api/orders/") === 0) {
+      return handleOrders(req, res, url, { orders: orders, ttlMs: config.orderTtlMs });
     }
 
     if (url.pathname === "/api/print" && req.method === "POST") {
@@ -165,7 +192,7 @@ function createRelay(options) {
        エンコードするURLは「今この端末が実際に他端末から見えるアドレス」を使う:
        LAN IPで待ち受けていればそのIP、127.0.0.1待ち受けならLAN IPを検出して案内する */
     if (url.pathname === "/qr") {
-      return handleQrPage(res, config);
+      return handleQrPage(res, config, req.headers && req.headers.host);
     }
 
     var rel;
@@ -225,7 +252,21 @@ function createRelay(options) {
         if (env.SEED === "1") { mock.seed(); log("SEED=1: デモ予約を1件シード"); }
         log("デモ操作コンソール: http://127.0.0.1:" + listenPort + "/demo");
       }
-      log("KDS(デシャップ): http://127.0.0.1:" + listenPort + "/  / 予約: /api/stock / 状態: /api/health");
+      log("KDS(デシャップ): http://127.0.0.1:" + listenPort + "/  / 予約: /api/stock / 注文: /api/orders / 状態: /api/health");
+      if (config.authToken) {
+        log("認証: 有効 (他端末は /qr のQR経由で開く。ミニPC自身は" +
+          (config.authTrustLoopback ? "認証なしで開ける" : "トークンが必要") + ")");
+      } else {
+        log("認証: 無効 — 到達できる端末なら誰でも操作できます。" +
+          "店内Wi-Fiを客と共用しているなら config.json の auth.token を設定してください (#174)");
+      }
+
+      // 依存の欠落は起動を止めないが、現地で「印刷だけ効かない」の原因が分かるよう起動時に言う (#173)
+      var deps = printerModule.checkDependencies ? printerModule.checkDependencies() : { ok: true };
+      if (!deps.ok) {
+        log("⚠ 実機印刷は無効: " + deps.error);
+        log("⚠ 予約取込とKDS配信は通常どおり動きます (印刷を使うなら relay-server で npm install)");
+      }
 
       initialSync = resyncThenPoll();
       timers = [
@@ -254,6 +295,7 @@ function createRelay(options) {
     server: server,
     sync: reservationSync,
     kitchenState: kitchenState,
+    orders: orders,
     start: start,
     stop: stop,
     pollTick: pollTick,
@@ -289,6 +331,13 @@ function createConfig(env, options) {
     // 厨房状態(#132)を最後の更新から何分保持するか。常駐プロセスなので、
     // 掃除しないと前日の完了・コンロ状態が翌日へ持ち越される (#115)
     kitchenTtlMs: normalizeInterval(src.KITCHEN_TTL_MIN, 720, 1, 1440) * 60000,
+    // 注文の保持上限。常駐プロセスなので、掃除しないと日跨ぎで前日の注文が残る (#115)
+    orderTtlMs: normalizeInterval(src.ORDER_TTL_MIN, 720, 1, 1440) * 60000,
+    // 未設定なら認証なし (従来どおり)。店内Wi-Fiを客と共用する場合に設定する (#174)
+    authToken: auth.normalizeToken(src.RELAY_TOKEN),
+    // ミニPC自身(ループバック)を信頼するか。既定は信頼する — QRでトークンを配る導線が
+    // ミニPC上の /qr から始まるため。ミニPCを他人が触る運用なら 0 にする
+    authTrustLoopback: src.RELAY_TRUST_LOOPBACK !== "0",
   };
 }
 
@@ -435,13 +484,39 @@ function afterMutation(res, payload, reservationSync) {
 }
 
 /** GET /qr — iPadでKDS/スタイル設定を開くQRコードのページ (#144追補) */
-function handleQrPage(res, config) {
-  var isLoopback = config.host === "127.0.0.1" || config.host === "localhost";
-  var lanIp = isLoopback ? detectLanIp() : config.host;
-  var reachable = !isLoopback && lanIp;   // 127.0.0.1待ち受けでは他端末から届かない
-  var base = "http://" + (lanIp || "127.0.0.1") + ":" + config.port;
-  var kdsUrl = base + "/";
-  var styleUrl = base + "/slip-style-designer.html";
+function handleQrPage(res, config, hostHeader) {
+  // このページを開いた端末が実際に到達したアドレス(Hostヘッダ)を最優先で使う。
+  // PCが有線とWi-Fiの両方に繋がっていると、待ち受けアドレス(config.host)を埋めた場合に
+  // 「iPadからは届かない側のIP」が載ったQRになる。0.0.0.0待ち受けではURLごと壊れる
+  var fromHeader = typeof hostHeader === "string" ? hostHeader.trim() : "";
+  var usable = fromHeader &&
+    !/^(0\.0\.0\.0|\[?::\]?)(:\d+)?$/.test(fromHeader) &&
+    !/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(fromHeader);
+
+  var base, reachable;
+  if (usable) {
+    base = "http://" + fromHeader;                  // Hostヘッダはポートを含む
+    reachable = true;
+  } else {
+    var isLoopback = config.host === "127.0.0.1" || config.host === "localhost";
+    var lanIp = isLoopback ? detectLanIp() : config.host;
+    if (lanIp === "0.0.0.0" || lanIp === "::") lanIp = detectLanIp();
+    reachable = !!lanIp && lanIp !== "127.0.0.1";   // 127.0.0.1待ち受けでは他端末から届かない
+    base = "http://" + (lanIp || "127.0.0.1") + ":" + config.port;
+  }
+  // 認証有効時は QR にトークンを載せる。iPad は1回読めば Cookie が入り、以後は不要 (#174)
+  var tokenQuery = config.authToken ? "?token=" + encodeURIComponent(config.authToken) : "";
+  var kdsUrl = base + "/" + tokenQuery;
+  var styleUrl = base + "/slip-style-designer.html" + tokenQuery;
+  var QRCode;
+  try { QRCode = loadQRCode(); }
+  catch (err) {
+    // 依存が入っていないだけ。原因が現地で分かるよう理由を返す (サーバー本体は動き続ける #173)。
+    // QRが出せなくても、トークン付きURLを本文に出せば手入力で繋げる (#174)
+    res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8" });
+    return res.end("QRページは qrcode パッケージが必要です。relay-server で npm install を実行してください。\n" +
+      "接続先URL: " + kdsUrl + "\n");
+  }
   Promise.all([
     QRCode.toDataURL(kdsUrl, { width: 420, margin: 2 }),
     QRCode.toDataURL(styleUrl, { width: 420, margin: 2 }),
@@ -478,14 +553,32 @@ function handleQrPage(res, config) {
  * 残るようにするためで、環境ごとに値が違うので git 管理しない。
  */
 function createSlipStyleStore(filePath, printerModule, log) {
+  var MAX_TEMPLATE_BYTES = 50000;
+
+  /* 自由配置レイアウト(elements[])は描画がブラウザ側なので、サーバーは中身を解釈しない。
+     形(配列であること)とサイズだけ検査してそのまま預かる。旧テキスト型は従来どおり丸める */
+  function accept(raw) {
+    if (raw && typeof raw === "object" && Array.isArray(raw.elements)) {
+      var json = JSON.stringify(raw);
+      if (json.length > MAX_TEMPLATE_BYTES) {
+        log("slip-style: レイアウトが大きすぎるため保存しません (" + json.length + " bytes)");
+        return null;
+      }
+      return JSON.parse(json);
+    }
+    return printerModule.normalizeStyle(raw);
+  }
+
   var current = null;
   try {
-    current = printerModule.normalizeStyle(JSON.parse(fs.readFileSync(filePath, "utf8")));
+    current = accept(JSON.parse(fs.readFileSync(filePath, "utf8")));
   } catch (e) { current = null; }  // 無い・壊れているときは未設定扱い
   return {
     get: function () { return current || {}; },
     set: function (body) {
-      current = printerModule.normalizeStyle(body);
+      var next = accept(body);
+      if (!next) return current || {};   // 上限超過。既存の設定は壊さない
+      current = next;
       try { fs.writeFileSync(filePath, JSON.stringify(current, null, 2) + "\n", "utf8"); }
       catch (err) { log("slip-style の保存に失敗(メモリ上は反映済み): " + err.message); }
       return current;
@@ -512,18 +605,44 @@ function createPrinterIpStore(filePath, printerModule, log) {
 
 /** POST /api/print — チビ伝を実機プリンターへ送る (#144)。IPは店内LANのプライベートアドレスのみ許可 */
 function handlePrint(req, res, printerModule, slipStyle, printerIp) {
+  // 依存(iconv-lite)が入っていなければ、原因の分かる 503 で返す (#173)。
+  // KDS 側は非200で window.print() にフォールバックするので、印刷操作自体は止まらない
+  var deps = printerModule.checkDependencies ? printerModule.checkDependencies() : { ok: true };
+  if (!deps.ok) return json(res, { ok: false, error: deps.error }, 503);
+
   readJson(req, res, function (body) {
     // ip未指定はサーバー保存のプリンターIP(/api/printer)を使う。端末ごとの再登録を不要にする
     var ip = (body && body.ip) || (printerIp && printerIp.get());
     if (!printerModule.isPrivateIPv4(ip)) {
       return json(res, { ok: false, error: "printer ip must be a private LAN IPv4 address" }, 400);
     }
-    // style未指定はサーバー保存のスタイル(/api/slip-style)を使う。どの端末から印刷しても同じ見た目になる
-    if (body && body.style == null && slipStyle) body.style = slipStyle.get();
-    var job = printerModule.normalizeJob(body);
     var buffer;
-    try { buffer = printerModule.buildEscPos(job); }
-    catch (err) { return json(res, { ok: false, error: "failed to build print job: " + err.message }, 500); }
+    // ラスター(画像)が付いていれば画像として印字する。自由配置レイアウトの経路で、
+    // プリンター内蔵フォントを使わないぶん書体・位置の制限が無い
+    var raster = printerModule.normalizeRaster(body);
+    if (raster) {
+      try {
+        buffer = printerModule.buildRaster(raster, {
+          feedLines: body && body.feedLines,
+          emulation: body && body.emulation,
+        });
+      } catch (err) {
+        return json(res, { ok: false, error: "failed to build raster job: " + err.message }, 500);
+      }
+    } else {
+      if (body && body.raster) {
+        // 寸法とデータ長が食い違うラスターは、黙ってテキスト印字に落ちると
+        // 「何か出たが別物」になって原因が分かりにくい。ここで明示的に弾く
+        return json(res, { ok: false, error: "invalid raster (width/height and data length do not match)" }, 400);
+      }
+      // style未指定はサーバー保存のスタイル(/api/slip-style)を使う。どの端末から印刷しても同じ見た目になる。
+      // ただし保存されているのが自由配置レイアウトの場合、テキスト印字では解釈できないので使わない
+      var saved = slipStyle ? slipStyle.get() : null;
+      if (body && body.style == null && saved && !Array.isArray(saved.elements)) body.style = saved;
+      var job = printerModule.normalizeJob(body);
+      try { buffer = printerModule.buildEscPos(job); }
+      catch (err) { return json(res, { ok: false, error: "failed to build print job: " + err.message }, 500); }
+    }
     printerModule.sendToPrinter(ip, buffer).then(function () {
       json(res, { ok: true });
     }).catch(function (err) {
@@ -582,6 +701,37 @@ function handleKitchenState(req, res, context) {
       if (result.error) return json(res, { ok: false, error: result.error }, 400);
       return json(res, { ok: true, rev: result.rev, sessionId: context.state.sessionId });
     });
+  }
+  return json(res, { ok: false, error: "method not allowed" }, 405);
+}
+
+/**
+ * 注文端末 → relay → KDS の受け口 (#139)。
+ * 卓番はペイロードで受け取る (送信元IPからは引かない)。
+ * 継ぎ足し注文は別の orderId で送ってもらい、KDS では別カードとして出す。
+ */
+function handleOrders(req, res, url, context) {
+  if (url.pathname === "/api/orders" && req.method === "GET") {
+    return json(res, orderIntake.toFeed(context.orders, Date.now(), context.ttlMs));
+  }
+  if (url.pathname === "/api/orders" && req.method === "POST") {
+    return readJson(req, res, function (body) {
+      var result = orderIntake.normalizeOrder(body, Date.now());
+      if (result.error) return json(res, { ok: false, error: result.error }, 400);
+      var put = orderIntake.putOrder(context.orders, result.order);
+      // 再送は成功として返す。エラーにすると注文端末側が延々リトライして二重注文を誘発する
+      return json(res, { ok: true, duplicate: !put.created, order: put.order }, put.created ? 201 : 200);
+    });
+  }
+  if (url.pathname.indexOf("/api/orders/") === 0 && req.method === "DELETE") {
+    var raw = url.pathname.slice("/api/orders/".length);
+    var orderId;
+    try { orderId = decodeURIComponent(raw); }
+    catch (e) { return json(res, { ok: false, error: "invalid orderId" }, 400); }
+    if (!orderIntake.validateOrderId(orderId)) return json(res, { ok: false, error: "invalid orderId" }, 400);
+    if (!orderIntake.removeOrder(context.orders, orderId)) return json(res, { ok: false, error: "order not found" }, 404);
+    res.writeHead(204, { "Cache-Control": "no-store" });
+    return res.end();
   }
   return json(res, { ok: false, error: "method not allowed" }, 405);
 }
