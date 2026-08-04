@@ -24,6 +24,7 @@ var fs = require("fs");
 var os = require("os");
 var path = require("path");
 var seats = require("./seat-occupancy");
+var orderIntake = require("./order-intake");
 var auth = require("./auth");
 var booking = require("./booking-resync");
 var loadConfig = require("./load-config");
@@ -69,6 +70,7 @@ function createRelay(options) {
   var timers = [];
   var inFlight = new Set();
   var walkins = new Map();
+  var orders = new Map();      // 注文端末から受けた注文 (当日メモリのみ #115)
   var started = false;
   var initialSync = Promise.resolve();
   var slipStyle = createSlipStyleStore(options.slipStylePath || path.join(root, "config", "slip-style.json"), printerModule, log);
@@ -127,6 +129,10 @@ function createRelay(options) {
         beforeMin: config.seatBeforeMin,
         afterMin: config.seatAfterMin,
       });
+    }
+
+    if (url.pathname === "/api/orders" || url.pathname.indexOf("/api/orders/") === 0) {
+      return handleOrders(req, res, url, { orders: orders, ttlMs: config.orderTtlMs });
     }
 
     if (url.pathname === "/api/print" && req.method === "POST") {
@@ -238,7 +244,7 @@ function createRelay(options) {
         if (env.SEED === "1") { mock.seed(); log("SEED=1: デモ予約を1件シード"); }
         log("デモ操作コンソール: http://127.0.0.1:" + listenPort + "/demo");
       }
-      log("KDS(デシャップ): http://127.0.0.1:" + listenPort + "/  / 予約: /api/stock / 状態: /api/health");
+      log("KDS(デシャップ): http://127.0.0.1:" + listenPort + "/  / 予約: /api/stock / 注文: /api/orders / 状態: /api/health");
       if (config.authToken) {
         log("認証: 有効 (他端末は /qr のQR経由で開く。ミニPC自身は" +
           (config.authTrustLoopback ? "認証なしで開ける" : "トークンが必要") + ")");
@@ -280,6 +286,7 @@ function createRelay(options) {
     config: config,
     server: server,
     sync: reservationSync,
+    orders: orders,
     start: start,
     stop: stop,
     pollTick: pollTick,
@@ -312,6 +319,8 @@ function createConfig(env, options) {
     requestTimeoutMs: normalizeInterval(src.TABLECHECK_TIMEOUT_MS, 15000, 1000, 120000),
     seatBeforeMin: Math.max(Number(src.SEAT_BEFORE_MIN) || 30, 0),
     seatAfterMin: Math.max(Number(src.SEAT_AFTER_MIN) || 120, 0),
+    // 注文の保持上限。常駐プロセスなので、掃除しないと日跨ぎで前日の注文が残る (#115)
+    orderTtlMs: normalizeInterval(src.ORDER_TTL_MIN, 720, 1, 1440) * 60000,
     // 未設定なら認証なし (従来どおり)。店内Wi-Fiを客と共用する場合に設定する (#174)
     authToken: auth.normalizeToken(src.RELAY_TOKEN),
     // ミニPC自身(ループバック)を信頼するか。既定は信頼する — QRでトークンを配る導線が
@@ -657,6 +666,37 @@ function handleSeats(req, res, url, context) {
     catch (e) { return json(res, { ok: false, error: "invalid table" }, 400); }
     if (!seats.validateTable(table)) return json(res, { ok: false, error: "invalid table" }, 400);
     if (!seats.releaseWalkin(context.walkins, table)) return json(res, { ok: false, error: "seat not found" }, 404);
+    res.writeHead(204, { "Cache-Control": "no-store" });
+    return res.end();
+  }
+  return json(res, { ok: false, error: "method not allowed" }, 405);
+}
+
+/**
+ * 注文端末 → relay → KDS の受け口 (#139)。
+ * 卓番はペイロードで受け取る (送信元IPからは引かない)。
+ * 継ぎ足し注文は別の orderId で送ってもらい、KDS では別カードとして出す。
+ */
+function handleOrders(req, res, url, context) {
+  if (url.pathname === "/api/orders" && req.method === "GET") {
+    return json(res, orderIntake.toFeed(context.orders, Date.now(), context.ttlMs));
+  }
+  if (url.pathname === "/api/orders" && req.method === "POST") {
+    return readJson(req, res, function (body) {
+      var result = orderIntake.normalizeOrder(body, Date.now());
+      if (result.error) return json(res, { ok: false, error: result.error }, 400);
+      var put = orderIntake.putOrder(context.orders, result.order);
+      // 再送は成功として返す。エラーにすると注文端末側が延々リトライして二重注文を誘発する
+      return json(res, { ok: true, duplicate: !put.created, order: put.order }, put.created ? 201 : 200);
+    });
+  }
+  if (url.pathname.indexOf("/api/orders/") === 0 && req.method === "DELETE") {
+    var raw = url.pathname.slice("/api/orders/".length);
+    var orderId;
+    try { orderId = decodeURIComponent(raw); }
+    catch (e) { return json(res, { ok: false, error: "invalid orderId" }, 400); }
+    if (!orderIntake.validateOrderId(orderId)) return json(res, { ok: false, error: "invalid orderId" }, 400);
+    if (!orderIntake.removeOrder(context.orders, orderId)) return json(res, { ok: false, error: "order not found" }, 404);
     res.writeHead(204, { "Cache-Control": "no-store" });
     return res.end();
   }

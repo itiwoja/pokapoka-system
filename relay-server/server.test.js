@@ -298,6 +298,63 @@ test("座席APIは初回同期前503で、同期後もwalk-in操作を維持す�
   assert.equal((await requestRaw(relay.server, "/api/seats/5", { method: "DELETE" })).status, 204);
 });
 
+test("注文APIは投入・配信・再送・取消をこなし、予約同期の完了を待たない", async function (t) {
+  // 初回全件リシンクを保留したまま注文APIを叩き、予約同期に依存しないことを見る
+  var resolveReservations;
+  var relay = createTestRelay({
+    listReservations: function () {
+      return new Promise(function (resolve) { resolveReservations = resolve; });
+    },
+    listSyncEvents: async function () { return []; },
+    getReservation: async function () { return null; },
+  }, []);
+  t.after(function () { return relay.stop(); });
+  relay.start();
+  await events.once(relay.server, "listening");
+
+  function post(payload) {
+    return requestRaw(relay.server, "/api/orders", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  assert.equal((await requestRaw(relay.server, "/api/stock")).status, 503);   // 予約側は未同期
+
+  var created = await post({ orderId: "t12-1", table: "12", people: 3, items: [{ name: "土鍋御膳", qty: 2, note: "塩少なめ" }] });
+  assert.equal(created.status, 201);
+  assert.equal(JSON.parse(created.text).duplicate, false);
+
+  var feed = JSON.parse((await requestRaw(relay.server, "/api/orders")).text);
+  assert.equal(feed.length, 1);
+  assert.equal(feed[0].id, "t12-1");
+  assert.equal(feed[0].table, "12");
+  assert.equal(feed[0].type, "new");
+  assert.equal(typeof feed[0].start, "number");
+  assert.deepEqual(feed[0].items, [{ name: "土鍋御膳", qty: 2, options: "塩少なめ", allergies: null, done: false }]);
+
+  // 通信断の再送: 200 + duplicate。カードは増えない
+  var retry = await post({ orderId: "t12-1", table: "12", items: [{ name: "土鍋御膳", qty: 2 }] });
+  assert.equal(retry.status, 200);
+  assert.equal(JSON.parse(retry.text).duplicate, true);
+  assert.equal(JSON.parse((await requestRaw(relay.server, "/api/orders")).text).length, 1);
+
+  // 卓番の欠落は 400 で理由を返す (別チームが送信側を直せるように)
+  var invalid = await post({ orderId: "t13-1", items: [{ name: "茶" }] });
+  assert.equal(invalid.status, 400);
+  assert.match(JSON.parse(invalid.text).error, /^table/);
+
+  assert.equal((await requestRaw(relay.server, "/api/orders/t12-1", { method: "DELETE" })).status, 204);
+  assert.equal((await requestRaw(relay.server, "/api/orders/t12-1", { method: "DELETE" })).status, 404);
+  assert.deepEqual(JSON.parse((await requestRaw(relay.server, "/api/orders")).text), []);
+
+  assert.equal((await requestRaw(relay.server, "/api/orders", { method: "PATCH" })).status, 405);
+
+  resolveReservations([]);          // 保留していた初回リシンクを解いて stop() を待てるようにする
+  await relay.whenInitialSync();
+});
+
 test("POST /api/print はプライベートIP検証・正規化を行い、送信結果をHTTPで返す(#144)", async function (t) {
   var sent = [];
   var relay = serverModule.createRelay({

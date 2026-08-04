@@ -22,6 +22,9 @@ TableCheck ◀── 30秒差分pull ─ server.js ── /api/stock(JSON) ─�
 (Booking v1 + Sync v1)       当日分のみメモリ保持                  → kds_stock_v1 へマージ
            ◀── 起動時+15分毎の当日全件リシンク
                             kds-a-grid.html も配信                → BroadcastChannel で全端末反映
+
+【注文端末(各卓16台)】── POST /api/orders ──▶ 注文(当日メモリ) ── /api/orders ──▶ window.KDS_ORDERS
+ 別チームが実装                卓番はペイロードで受け取る                        → 新規オーダーのカード
 ```
 
 ## 予約が本当にデシャップまで届くかを手で検証する（デモコンソール）
@@ -111,6 +114,7 @@ cp config/config.example.json config/config.json
 | `tablecheck.base` | `TABLECHECK_BASE` | api.tablecheck.com | 旧 tablesolution.com は2026年廃止のため使わない |
 | `tablecheck.allowCustomBase` | `TABLECHECK_ALLOW_CUSTOM_BASE` | 0 | 公式以外のHTTPS接続先を明示許可する場合のみ |
 | `seat.beforeMin` / `seat.afterMin` | `SEAT_BEFORE_MIN` / `SEAT_AFTER_MIN` | 30 / 120 | 予約時刻の前後どこまでを在席とみなすか |
+| `order.ttlMin` | `ORDER_TTL_MIN` | 720 | 注文(`/api/orders`)の保持時間(1〜1440分)。日跨ぎで前日分が残らないための上限 |
 | `auth.token` | `RELAY_TOKEN` | — | **共有トークン**(8文字以上)。設定すると他端末はトークン必須になる。未設定なら認証なし(従来どおり) #174 |
 | `auth.trustLoopback` | `RELAY_TRUST_LOOPBACK` | 1 | ミニPC自身(127.0.0.1)をトークン無しで通すか。`0` で無効 |
 | **(不可)** | `TABLECHECK_API_KEY` | — | secret_key。**環境変数のみ**。未設定ならモック |
@@ -199,6 +203,12 @@ cd relay-server && npm run preflight
 | `/demo` | 予約デモコンソール(`tablecheck-demo.html`) |
 | `/api/stock` | KDS 予約ストック形式 `[{rid,time,adults,kids,name,menu[],seenAt}]`。メニュー無し(席だけ)予約は含まない。初回全件リシンク成功までは503 |
 | `/api/health` | モード・ready状態・最終差分ポール・最終全件リシンク・保持件数 |
+| `GET /api/orders` | KDS 注文フィード(注文端末由来)。→「注文端末との契約」 |
+| `POST /api/orders` | 注文の投入。`orderId` で冪等 |
+| `DELETE /api/orders/{orderId}` | 注文の取消 |
+| `GET /api/seats` | 当日の座席占有 `[{table,source,rid?,name?,since}]`。初回全件リシンク成功までは503 |
+| `POST /api/seats` | walk-in 占有の登録 `{table:"5"}` |
+| `DELETE /api/seats/{table}` | 占有の解除 |
 | `GET /api/mock/reservations` | (MOCK限定) 上流の生予約一覧(本物スキーマ) |
 | `POST /api/mock/reservations` | (MOCK限定) 予約作成。body は TableCheck Reservation 形 |
 | `PATCH /api/mock/reservations/{id}` | (MOCK限定) 予約変更(人数・メニュー等) |
@@ -251,6 +261,61 @@ KDS 画面の「印刷」ボタンは、プリンターIP未設定時は従来�
    RAWポート(9100)へコマンドバイト列を送信する(ブラウザは生TCPソケットを開けないため中継が必要)
 3. 実機送信に失敗(未設定・接続不可・タイムアウト)した場合は自動で `window.print()` にフォールバックする
 
+### 注文端末との契約(POST /api/orders)
+
+注文端末(各卓16台)のシステムは別チームが作る。**受け口の形はこちらが定義し、別チームがそれに
+合わせて送る**(2026-07-16 確定)。送信先は `config.json` の `server.host`/`port` に伝えるだけでよい。
+
+```sh
+curl -X POST http://<ミニPCのIP>:8000/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "orderId": "t12-20260802-0001",
+    "table": "12",
+    "people": 4,
+    "orderedAt": "2026-08-02T18:05:00+09:00",
+    "items": [
+      { "name": "山城牛の肉たく土鍋御膳", "qty": 2, "note": "塩少なめ" },
+      { "name": "ウーロン茶", "qty": 4 }
+    ]
+  }'
+```
+
+| フィールド | 必須 | 内容 |
+|---|---|---|
+| `orderId` | ✅ | 注文端末が振る一意ID(64文字以内)。**冪等キー**: 同じIDの再送は二重注文にならない |
+| `table` | ✅ | 卓番(6文字以内)。**ペイロードで受け取る**(送信元IPからは引かない) |
+| `items[].name` | ✅ | 品名(80文字以内)。KDS の表示名がそのまま |
+| `items[].qty` | | 個数(1〜99。既定1) |
+| `items[].note` | | 品目の注記(200文字以内)。KDS の注記欄に出る |
+| `items[].allergies` | | アレルギー注記(200文字以内)。KDS では注記と並べて表示 |
+| `people` | | 人数(0〜99)。カードの人数表示に使う |
+| `orderedAt` | | ISO 8601。省略時はサーバー受信時刻。**未来時刻はサーバー時刻に丸める**(端末の時計ズレで経過時間が止まって見えるのを防ぐ) |
+
+応答:
+
+| 状況 | ステータス | body |
+|---|---|---|
+| 新規受付 | `201` | `{ok:true, duplicate:false, order:{...}}` |
+| 再送(同一 `orderId`) | `200` | `{ok:true, duplicate:true, order:{...}}` — 既存を正とし、内容が違っても上書きしない |
+| 検証エラー | `400` | `{ok:false, error:"table must be ..."}` — どこを直せばよいか分かる文言 |
+| 取消 | `204` / `404` | `DELETE /api/orders/{orderId}` |
+
+**卓番をIPから引かない理由**: WiFi + DHCP でIPが入れ替わると、注文が黙って別の卓に付き、
+ログ上は正常に見える。飲食店では「違う卓に料理が出る」形でしか表面化せず原因究明が困難。
+この方針により**16台の固定IP運用は不要**になる。
+
+保持は**当日メモリのみ**(#115)。`order.ttlMin`(既定720分)を過ぎた注文は配信から落ちる。
+再起動すると受付済みの注文は消えるので、注文端末側は未反映を検知したら再送してよい(冪等)。
+
+**まだ決めていないこと**(別チームと詰める):
+
+- 商品の識別を名前の文字列で通すか、商品IDにしてマスタを持つか(現状は**名前が正**)
+- 同一卓への継ぎ足し注文は**別 `orderId` = KDS 上は別カード**として扱う(暫定)
+- KDS 側で完了・削除した注文は relay からは消えない(TTL 満了まで配信される)。
+  KDS は完了状態(`kds_done_v2`)と削除済みID(`kds_deleted_v1`)を持っており再表示はされないが、
+  完了を relay へ返す経路は未実装(#132 の厨房状態同期と合わせて設計するのが自然)
+
 ### KDS への接続(kds-bridge.js)
 
 KDS 本体は無改修。**このサーバー経由で `/` を開くと、配信時にブリッジが自動注入される**
@@ -271,13 +336,22 @@ KDS 本体は無改修。**このサーバー経由で `/` を開くと、配信
 - **着手・削除済みの予約は復活させない**(取込済み rid を記録)
 - 通信断時は直前の表示を保持(6/18 方針)
 
+同じブリッジが 2秒間隔で `/api/orders` も取得し、`window.KDS_ORDERS` へ反映する(#139)。
+こちらのマージ規則:
+
+- **サーバー由来の注文は毎回サーバーの内容で置き換える**
+- **KDS 内で生まれた注文(予約→着手の `res-*` カード)は残す** — 上書きするとホールが着手した
+  予約カードが次のポーリングで消えるため
+- 通信断時は `window.KDS_ORDERS` に触らない(直前の表示を保持)
+
 ## テスト
 
 ```sh
 node relay-server/tablecheck-sync.test.js
 node --test relay-server/booking-resync.test.js relay-server/server.test.js \
   relay-server/seat-occupancy.test.js relay-server/load-config.test.js \
-  relay-server/printer.test.js relay-server/auth.test.js
+  relay-server/printer.test.js relay-server/auth.test.js \
+  relay-server/order-intake.test.js
 ```
 
 正規化(スキーマ候補キー・pax→adults フォールバック)、memo パーサ、

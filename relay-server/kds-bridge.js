@@ -1,28 +1,37 @@
 /**
- * kds-bridge.js — 中継サーバー → KDS 予約ストック取込ブリッジ (ブラウザ側)
+ * kds-bridge.js — 中継サーバー → KDS 取込ブリッジ (ブラウザ側)
  *
  * KDS (kds-a-grid.html) 本体は改修せず、外側から接続する:
- *   GET /api/stock を定期取得 → localStorage "kds_stock_v1" へマージ →
- *   BroadcastChannel "kds_sync" に {type:"stock"} を流して全タブへ反映。
+ *   1. GET /api/stock を定期取得 → localStorage "kds_stock_v1" へマージ →
+ *      BroadcastChannel "kds_sync" に {type:"stock"} を流して全タブへ反映。
+ *   2. GET /api/orders を定期取得 → window.KDS_ORDERS へ反映 (注文端末由来の注文 #139)。
  *
  * 使い方 (どちらか):
  *   A. kds-a-grid.html の </body> 直前に <script src="/relay-server/kds-bridge.js"></script>
  *   B. KDS を開いたブラウザのコンソールに本ファイルを貼り付け
  *
- * マージ規則:
+ * マージ規則 (予約ストック):
  *   - 本ブリッジが一度取り込んだ予約 (rid を kds_bridge_seen_v1 に記録) はサーバーを正とする
  *     → 変更は上書き・サーバー側から消えたら (キャンセル/日跨ぎ) 削除として反映
  *   - KDS 上で手動追加された予約 (＋追加ボタン由来) はブリッジを通らず seen に載らないので触らない
  *     (rid の形式では判定しない — 本番 TableCheck の ID 形式は未確定のため。Issue #129)
  *   - KDS 側で既に「着手」済み (ストックから消えた) 予約は復活させない
+ *
+ * マージ規則 (注文フィード):
+ *   - サーバー由来の注文は毎回サーバーの内容で置き換える
+ *   - KDS 内で発生した注文 (予約→着手の "res-*" カード) は残す。消してしまうと
+ *     ホールが着手した予約カードが次のポーリングで消える
+ *   - 取得に失敗したときは window.KDS_ORDERS に触らない (直前の表示を保持)
  */
 (function () {
   "use strict";
   var API = "/api/stock";
+  var API_ORDERS = "/api/orders";
   var LS_STOCK = "kds_stock_v1";
   var LS_BRIDGE_SEEN = "kds_bridge_seen_v1"; // 一度取り込んだ rid (サーバー由来の印 + 着手/削除後の復活防止)
   var BC_NAME = "kds_sync";
   var POLL_MS = 5000;                        // 店内 LAN なので短くてよい (対 TableCheck の30秒とは別物)
+  var ORDER_POLL_MS = 2000;                  // 注文は厨房の着手速度に効くので予約より短く
 
   var bc = null; // ブラウザで動く時だけ末尾で生成 (Node にも BroadcastChannel があり、生成するとテストプロセスが終了しなくなる)
 
@@ -99,12 +108,44 @@
     // (kds-a-grid.html に <script src> で読み込ませた場合、別タブ・別端末には即時反映される)
   }
 
+  /* ---- 注文フィード (#139) ---- */
+  var serverOrderIds = {};   // 直近のサーバー由来 id。KDS 内で生まれた注文と区別するために持つ
+
+  function applyOrders(incoming) {
+    var current = Array.isArray(window.KDS_ORDERS) ? window.KDS_ORDERS : [];
+    var nextIds = {};
+    incoming.forEach(function (o) { if (o && o.id != null) nextIds[String(o.id)] = 1; });
+    // KDS 内で発生した注文 (予約→着手カード等) を先頭に残す。
+    // サーバー側にも同じ id があればサーバーを正とする
+    var local = current.filter(function (o) {
+      if (!o || o.id == null) return false;
+      var id = String(o.id);
+      return !serverOrderIds[id] && !nextIds[id];
+    });
+    serverOrderIds = nextIds;
+    window.KDS_ORDERS = local.concat(incoming);
+  }
+
+  async function tickOrders() {
+    var res, incoming;
+    try {
+      res = await fetch(API_ORDERS, { cache: "no-store" });
+      if (!res.ok) throw new Error(res.status);
+      incoming = await res.json();
+      if (!Array.isArray(incoming)) return;
+    } catch (e) { return; }        // 通信断: 直前の表示を保持 (window.KDS_ORDERS に触らない)
+    applyOrders(incoming);
+  }
+
   if (typeof module !== "undefined" && module.exports) {
     module.exports = { mergeStock: mergeStock }; // Node (テスト) から require された場合はポーリングしない
   } else {
     try { bc = new BroadcastChannel(BC_NAME); } catch (e) {}
     tickOnce();
     setInterval(tickOnce, POLL_MS);
-    console.log("[kds-bridge] 予約ストック取込を開始 (" + API + " を " + POLL_MS / 1000 + "秒間隔)");
+    tickOrders();
+    setInterval(tickOrders, ORDER_POLL_MS);
+    console.log("[kds-bridge] 予約ストック取込を開始 (" + API + " を " + POLL_MS / 1000 + "秒間隔) / " +
+      "注文取込 (" + API_ORDERS + " を " + ORDER_POLL_MS / 1000 + "秒間隔)");
   }
 })();
