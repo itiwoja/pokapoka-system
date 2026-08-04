@@ -22,6 +22,61 @@ test("server.js はimportだけでlistenせずcreateRelayを公開する", funct
   assert.equal(result.status, 0, result.stderr || result.stdout);
 });
 
+test("印刷用の依存が無くてもサーバーは起動し、予約取込とKDS配信は生き残る", function () {
+  // 現地で `npm install` が済んでいない状態を、モジュール解決を差し替えて再現する (#173)。
+  // 以前はトップレベル require だったため、この状態でプロセスごと起動不能になっていた
+  var serverPath = path.join(__dirname, "server.js");
+  var script = [
+    "var Module = require('module');",
+    "var orig = Module._resolveFilename;",
+    "Module._resolveFilename = function (request) {",
+    "  if (request === 'iconv-lite' || request === 'qrcode') {",
+    "    var e = new Error(\"Cannot find module '\" + request + \"'\"); e.code = 'MODULE_NOT_FOUND'; throw e;",
+    "  }",
+    "  return orig.apply(this, arguments);",
+    "};",
+    "var http = require('http');",
+    "var relay = require(" + JSON.stringify(serverPath) + ").createRelay({",
+    "  port: 0, env: { MOCK: '1' }, mockSource: {}, log: function () {},",
+    "  source: { listReservations: async function () { return []; },",
+    "            listSyncEvents: async function () { return []; },",
+    "            getReservation: async function () { return null; } },",
+    "});",
+    "relay.start();",
+    "relay.server.on('listening', async function () {",
+    "  await relay.whenInitialSync();",
+    "  var port = relay.server.address().port;",
+    "  function req(pathname, method, body) {",
+    "    return new Promise(function (resolve) {",
+    "      var r = http.request({ host: '127.0.0.1', port: port, path: pathname, method: method || 'GET' },",
+    "        function (res) { res.resume(); res.on('end', function () { resolve(res.statusCode); }); });",
+    "      if (body) r.write(body);",
+    "      r.end();",
+    "    });",
+    "  }",
+    "  var out = {",
+    "    stock: await req('/api/stock'),",
+    "    kds: await req('/'),",
+    "    health: await req('/api/health'),",
+    "    print: await req('/api/print', 'POST', JSON.stringify({ ip: '192.168.1.50', table: '1', items: [] })),",
+    "    qr: await req('/qr'),",
+    "  };",
+    "  console.log(JSON.stringify(out));",
+    "  await relay.stop();",
+    "});",
+  ].join("\n");
+
+  var result = childProcess.spawnSync(process.execPath, ["-e", script], { encoding: "utf8", timeout: 10000 });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  var out = JSON.parse(String(result.stdout).trim().split("\n").pop());
+  assert.equal(out.stock, 200, "予約配信が依存欠落に巻き込まれている");
+  assert.equal(out.kds, 200, "KDS配信が依存欠落に巻き込まれている");
+  assert.equal(out.health, 200);
+  assert.equal(out.print, 503, "印刷は理由付きの503で断るべき (KDSはwindow.print()へフォールバックする)");
+  assert.equal(out.qr, 503, "QRページも理由付きの503で断るべき");
+});
+
 function rawReservation(id) {
   var startAt = new Date();
   startAt.setHours(18, 30, 0, 0);

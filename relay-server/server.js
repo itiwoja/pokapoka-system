@@ -28,7 +28,15 @@ var auth = require("./auth");
 var booking = require("./booking-resync");
 var loadConfig = require("./load-config");
 var printer = require("./printer");
-var QRCode = require("qrcode");   // /qr ページ用 (iPad等からの接続URLをQR表示 #144追補)
+
+/* qrcode は /qr ページ専用なので、トップレベルでは読み込まない (#173)。
+   npm install が済んでいない店内ミニPCで、QRページのためにサーバー全体
+   (予約取込・KDS配信) を起動不能にしないため */
+var qrcodeModule = null;
+function loadQRCode() {
+  if (!qrcodeModule) qrcodeModule = require("qrcode");
+  return qrcodeModule;
+}
 
 var MIME = {
   ".html": "text/html; charset=utf-8",
@@ -237,6 +245,13 @@ function createRelay(options) {
       } else {
         log("認証: 無効 — 到達できる端末なら誰でも操作できます。" +
           "店内Wi-Fiを客と共用しているなら config.json の auth.token を設定してください (#174)");
+      }
+
+      // 依存の欠落は起動を止めないが、現地で「印刷だけ効かない」の原因が分かるよう起動時に言う (#173)
+      var deps = printerModule.checkDependencies ? printerModule.checkDependencies() : { ok: true };
+      if (!deps.ok) {
+        log("⚠ 実機印刷は無効: " + deps.error);
+        log("⚠ 予約取込とKDS配信は通常どおり動きます (印刷を使うなら relay-server で npm install)");
       }
 
       initialSync = resyncThenPoll();
@@ -472,6 +487,15 @@ function handleQrPage(res, config, hostHeader) {
   var tokenQuery = config.authToken ? "?token=" + encodeURIComponent(config.authToken) : "";
   var kdsUrl = base + "/" + tokenQuery;
   var styleUrl = base + "/slip-style-designer.html" + tokenQuery;
+  var QRCode;
+  try { QRCode = loadQRCode(); }
+  catch (err) {
+    // 依存が入っていないだけ。原因が現地で分かるよう理由を返す (サーバー本体は動き続ける #173)。
+    // QRが出せなくても、トークン付きURLを本文に出せば手入力で繋げる (#174)
+    res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8" });
+    return res.end("QRページは qrcode パッケージが必要です。relay-server で npm install を実行してください。\n" +
+      "接続先URL: " + kdsUrl + "\n");
+  }
   Promise.all([
     QRCode.toDataURL(kdsUrl, { width: 420, margin: 2 }),
     QRCode.toDataURL(styleUrl, { width: 420, margin: 2 }),
@@ -560,6 +584,11 @@ function createPrinterIpStore(filePath, printerModule, log) {
 
 /** POST /api/print — チビ伝を実機プリンターへ送る (#144)。IPは店内LANのプライベートアドレスのみ許可 */
 function handlePrint(req, res, printerModule, slipStyle, printerIp) {
+  // 依存(iconv-lite)が入っていなければ、原因の分かる 503 で返す (#173)。
+  // KDS 側は非200で window.print() にフォールバックするので、印刷操作自体は止まらない
+  var deps = printerModule.checkDependencies ? printerModule.checkDependencies() : { ok: true };
+  if (!deps.ok) return json(res, { ok: false, error: deps.error }, 503);
+
   readJson(req, res, function (body) {
     // ip未指定はサーバー保存のプリンターIP(/api/printer)を使う。端末ごとの再登録を不要にする
     var ip = (body && body.ip) || (printerIp && printerIp.get());

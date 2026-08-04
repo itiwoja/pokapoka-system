@@ -7,11 +7,35 @@
  * 依存: iconv-lite (Node標準にShift_JISが無いため。日本語ESC/POS印字にほぼ必須の変換)。
  * relay-server は元々「依存パッケージゼロ」方針だが、この変換だけは自前実装だと
  * 文字化けリスクが残るため例外的に依存を許容する(判断の経緯は #144 参照)。
+ *
+ * ただし require はトップレベルに置かない(#173)。店内ミニPCで `npm install` が済んで
+ * いないと、トップレベルの require はサーバーのプロセスごと落とし、印刷どころか
+ * 予約取込・KDS配信まで道連れになる。ここでは印字の直前に読み込み、失敗しても
+ * 「印刷が失敗する」ところで止める。
  */
 "use strict";
 
 var net = require("net");
-var iconv = require("iconv-lite");
+
+/* iconv-lite の遅延ロード。npm install 漏れを「印刷だけの失敗」に閉じ込める (#173) */
+var iconv = null;
+function loadIconv() {
+  if (!iconv) iconv = require("iconv-lite");
+  return iconv;
+}
+
+/** 印字に必要な依存が揃っているか。揃っていなければ理由を返す (起動時の警告と503用) */
+function checkDependencies() {
+  try {
+    loadIconv();
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: "iconv-lite が読み込めない (relay-server で npm install を実行する): " + err.message,
+    };
+  }
+}
 
 var PRINT_PORT = 9100;                 // ESC/POS RAWポートの事実上の標準
 var DEFAULT_TIMEOUT_MS = 5000;
@@ -58,7 +82,7 @@ var ESC = "\x1b", GS = "\x1d";
 var IPV4_RE = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 
 /** 日本語テキストをShift_JISへ変換する */
-function sjis(text) { return iconv.encode(String(text), "Shift_JIS"); }
+function sjis(text) { return loadIconv().encode(String(text), "Shift_JIS"); }
 /** ESC/POS制御バイト列。文字コード=バイト値のため latin1 でそのまま組み立てる */
 function ctl(text) { return Buffer.from(text, "latin1"); }
 
@@ -317,6 +341,7 @@ function sendToPrinter(ip, buffer, options) {
 }
 
 module.exports = {
+  checkDependencies: checkDependencies,
   normalizeJob: normalizeJob,
   normalizeStyle: normalizeStyle,
   normalizeRaster: normalizeRaster,
