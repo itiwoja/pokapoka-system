@@ -111,6 +111,8 @@ cp config/config.example.json config/config.json
 | `tablecheck.base` | `TABLECHECK_BASE` | api.tablecheck.com | 旧 tablesolution.com は2026年廃止のため使わない |
 | `tablecheck.allowCustomBase` | `TABLECHECK_ALLOW_CUSTOM_BASE` | 0 | 公式以外のHTTPS接続先を明示許可する場合のみ |
 | `seat.beforeMin` / `seat.afterMin` | `SEAT_BEFORE_MIN` / `SEAT_AFTER_MIN` | 30 / 120 | 予約時刻の前後どこまでを在席とみなすか |
+| `auth.token` | `RELAY_TOKEN` | — | **共有トークン**(8文字以上)。設定すると他端末はトークン必須になる。未設定なら認証なし(従来どおり) #174 |
+| `auth.trustLoopback` | `RELAY_TRUST_LOOPBACK` | 1 | ミニPC自身(127.0.0.1)をトークン無しで通すか。`0` で無効 |
 | **(不可)** | `TABLECHECK_API_KEY` | — | secret_key。**環境変数のみ**。未設定ならモック |
 | **(不可)** | `MOCK` | — | `1` でモック強制 |
 
@@ -155,6 +157,39 @@ cd relay-server && npm run preflight
 
 `❌` が出たら上から順に潰す。3〜5 は Windows のみ自動判定で、取得できなかった場合は
 「確認できなかった」と明示して手順を出す(黙って通ったことにはしない)。
+
+### 店内Wi-Fiを客と共用している場合の認証(#174)
+
+中継サーバーには元々認証が無く、**到達できる端末なら誰でも書き込み操作ができる**。
+飲食店ではゲスト Wi-Fi を解放している構成が珍しくないため、スタッフ用と客用の
+セグメントが分かれていない場合、客のスマホから次の操作ができてしまう。
+
+| 操作 | 実害 |
+|---|---|
+| `DELETE /api/seats/{table}` | 予約席が空席扱いになり二重着席が起きる |
+| `POST /api/printer` | プリンターIPを空にされ、印刷が黙って止まる |
+| `POST /api/slip-style` | 全端末の伝票レイアウトが書き換わる |
+
+**まず店のWi-Fiがスタッフ用と客用で分かれているかを確認する**。分かれていて客から到達できないなら、
+ネットワーク側で塞がっているので設定は不要(この節は読み飛ばしてよい)。
+
+共用の場合は `config/config.json` に共有トークンを置く:
+
+```json
+{ "auth": { "token": "店ごとの合言葉を8文字以上で" } }
+```
+
+- **未設定なら従来どおり認証なし**。開発・検証の手順は何も変わらない
+- 設定すると、**ページもAPIもトークンが必要**になる(ページだけ素通しにすると、
+  そのページからトークンを読み出されて意味がない)
+- 端末は次のいずれかで通る: `Authorization: Bearer <token>` / `?token=<token>` / Cookie `relay_token`
+- **ミニPC自身(127.0.0.1)はトークン無しで通る**。QRでトークンを配る導線がミニPC上の
+  `/qr` から始まるため。ミニPCを他人が触る運用なら `auth.trustLoopback` を `false` にする
+- **`/api/health` だけは認証なしで読める**。疎通確認を詰まらせないため(読み取り専用)
+- `/qr` のQRには自動でトークンが載る。**iPadは1回読めばCookieが入り、以後はURLにトークンが要らない**
+
+これはインターネットに晒す前提の認証ではなく、**店内LANという閉じた場所での
+意図しない操作・いたずらを止めるためのもの**。外部公開しない方針は変わらない。
 
 ### エンドポイント
 
@@ -242,7 +277,7 @@ KDS 本体は無改修。**このサーバー経由で `/` を開くと、配信
 node relay-server/tablecheck-sync.test.js
 node --test relay-server/booking-resync.test.js relay-server/server.test.js \
   relay-server/seat-occupancy.test.js relay-server/load-config.test.js \
-  relay-server/printer.test.js
+  relay-server/printer.test.js relay-server/auth.test.js
 ```
 
 正規化(スキーマ候補キー・pax→adults フォールバック)、memo パーサ、

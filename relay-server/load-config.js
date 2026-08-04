@@ -27,6 +27,10 @@ var KEY_TO_ENV = {
   "tablecheck.allowCustomBase": "TABLECHECK_ALLOW_CUSTOM_BASE",
   "seat.beforeMin": "SEAT_BEFORE_MIN",
   "seat.afterMin": "SEAT_AFTER_MIN",
+  // 店内LAN内でだけ使う共有トークン。クラウドのAPIキーと違い店ごとに書き換える設定値なので
+  // config.json に置く (このファイル自体が .gitignore 済み) #174
+  "auth.token": "RELAY_TOKEN",
+  "auth.trustLoopback": "RELAY_TRUST_LOOPBACK",
 };
 
 // 秘密情報は config.json に置かせない。黙って無視すると「キーを書いたのに MOCK のまま」という
