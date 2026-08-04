@@ -21,7 +21,7 @@
 
 var DB = {};          // id -> Reservation (本物スキーマ)
 var queue = [];       // 未配信 SyncEvent の待ち行列 (deliver=true でドレインされる)
-var ridSeq = 0;       // mock 予約IDの連番 (kds-bridge が "mock-" を server 由来と判定する)
+var ridSeq = 0;       // mock 予約IDの連番 ("mock-" 接頭辞は目視識別用。kds-bridge の由来判定には使われない)
 var evSeq = 0;        // SyncEvent ID の連番
 
 /** ISO8601 (ローカルTZオフセット付き) — TableCheck の start_at 形式に合わせる */
