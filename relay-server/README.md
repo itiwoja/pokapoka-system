@@ -114,6 +114,7 @@ cp config/config.example.json config/config.json
 | `tablecheck.base` | `TABLECHECK_BASE` | api.tablecheck.com | 旧 tablesolution.com は2026年廃止のため使わない |
 | `tablecheck.allowCustomBase` | `TABLECHECK_ALLOW_CUSTOM_BASE` | 0 | 公式以外のHTTPS接続先を明示許可する場合のみ |
 | `seat.beforeMin` / `seat.afterMin` | `SEAT_BEFORE_MIN` / `SEAT_AFTER_MIN` | 30 / 120 | 予約時刻の前後どこまでを在席とみなすか |
+| `kitchen.ttlMin` | `KITCHEN_TTL_MIN` | 720 | 厨房状態(#132)を最後の更新から何分保持するか(1〜1440分) |
 | `order.ttlMin` | `ORDER_TTL_MIN` | 720 | 注文(`/api/orders`)の保持時間(1〜1440分)。日跨ぎで前日分が残らないための上限 |
 | `auth.token` | `RELAY_TOKEN` | — | **共有トークン**(8文字以上)。設定すると他端末はトークン必須になる。未設定なら認証なし(従来どおり) #174 |
 | `auth.trustLoopback` | `RELAY_TRUST_LOOPBACK` | 1 | ミニPC自身(127.0.0.1)をトークン無しで通すか。`0` で無効 |
@@ -203,6 +204,8 @@ cd relay-server && npm run preflight
 | `/demo` | 予約デモコンソール(`tablecheck-demo.html`) |
 | `/api/stock` | KDS 予約ストック形式 `[{rid,time,adults,kids,name,menu[],seenAt}]`。メニュー無し(席だけ)予約は含まない。初回全件リシンク成功までは503 |
 | `/api/health` | モード・ready状態・最終差分ポール・最終全件リシンク・保持件数 |
+| `GET /api/kitchen-state` | 厨房状態の共有スナップショット `{sessionId,rev,updatedAt,konro,done,locked,seq,deleted}`。→「厨房状態の端末間同期」 |
+| `POST /api/kitchen-state` | 厨房状態の変更イベント投入 `{events:[...]}`。応答は `{ok,rev,sessionId}` |
 | `GET /api/orders` | KDS 注文フィード(注文端末由来)。→「注文端末との契約」 |
 | `POST /api/orders` | 注文の投入。`orderId` で冪等 |
 | `DELETE /api/orders/{orderId}` | 注文の取消 |
@@ -260,6 +263,48 @@ KDS 画面の「印刷」ボタンは、プリンターIP未設定時は従来�
 2. 以降は「印刷」ボタン押下で `POST /api/print` → このサーバーが生ソケットでプリンターの
    RAWポート(9100)へコマンドバイト列を送信する(ブラウザは生TCPソケットを開けないため中継が必要)
 3. 実機送信に失敗(未設定・接続不可・タイムアウト)した場合は自動で `window.print()` にフォールバックする
+
+### 厨房状態の端末間同期(#132)
+
+KDS の厨房状態(**コンロ番号・品目完了・タイマーロック・カード並び順・削除済みID**)は
+localStorage + BroadcastChannel で同期しているが、**どちらも同一ブラウザ内にしか届かない**。
+厨房用とホール用に2台並べると一切共有されず、#114 のコンロのダブルアサイン防止も端末をまたぐと効かない。
+
+そこで、KDS が状態変更のたびに `BroadcastChannel("kds_sync")` へ流しているイベントを
+ブリッジが拾って relay へ送り、relay 側で当日の状態へ畳み込む。
+
+```
+端末A ── BroadcastChannel ──▶ kds-bridge ──POST /api/kitchen-state──▶ relay(当日メモリ)
+                                                                        │ 畳み込み(rev++)
+端末B ◀── localStorage 書換 ── kds-bridge ◀──GET /api/kitchen-state─────┘
+                               (KDSは1秒ごとにLSを読み直すので自動で画面に乗る)
+```
+
+**KDS 本体(`kds-a-grid.html`)は無改修**。取り込みは localStorage を書き換えるだけでよい
+(KDS の `poll()` が毎秒 `loadKonro()`/`loadDone()`/`loadLocked()`/`loadOrderSeq()`/`loadDeleted()` を実行するため)。
+
+受け取るイベントは KDS の `broadcast*()` が流す形そのまま:
+
+| type | body | 意味 |
+|---|---|---|
+| `konro` | `{id, num, state}` | コンロ番号の状態。`state:"skeleton"` で解除 |
+| `toggle` | `{id, index, doneCount}` | 品目の完了個数 |
+| `timerLock` | `{id, locked}` | タイマーロック |
+| `order` | `{seq:[cardId,...]}` | カードの並び順 |
+| `deleteOrder` | `{id}` | 注文の削除(関連するコンロ・完了・ロック・並び順も解放) |
+
+設計上の判断:
+
+- **差分ではなく畳み込み済みのスナップショットを配る**。遅れて起動した端末も1回の取得で追いつける
+- **全イベントが絶対値の代入**なので、再送・重複適用しても結果が変わらない(複数タブが同じイベントを送っても壊れない)
+- **relay が空(`rev:0`)のときは端末が手元の状態を種として送る**。これが無いと「最初の1操作だけが載ったスナップショット」を取り込んだ瞬間に手元の状態が消える
+- **`sessionId` で relay の再起動を検出する**。再起動で `rev` が 0 に戻るため、これが無いと端末が「取込済み」と誤認して同期が止まる
+- **送信中・未送信のイベントがある間は取り込まない**。取り込むと直前の操作が一瞬巻き戻って見える
+- 通信断のときは手元の状態を保持する(relay が落ちても KDS は単独で動き続ける)
+- 保存はしない(#115)。`kitchen.ttlMin`(既定720分)を過ぎたら当日分を捨てる
+
+**同期の対象外**: 予約ストック(`/api/stock` が正本)と、予約→着手の移動。後者は着手した端末の
+ストックからのみ消える(別端末では残る)ため、必要になったら別途対応する。
 
 ### 注文端末との契約(POST /api/orders)
 
