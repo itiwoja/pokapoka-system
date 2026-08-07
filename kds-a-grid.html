@@ -398,10 +398,13 @@
   .hud-stat.warn-on .k, .hud-stat.warn-on .v { color: var(--on-u-warn); }
   .hud-sep { width: 1px; align-self: stretch; margin: 8px 2px; background: var(--border); flex: 0 0 auto; }
 
-  .konro-hud { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+  /* コンロ列とタイマー列を横に並べる (#145)。HUD は overflow-x:auto なので溢れても横に流れる */
+  .konro-hud { display: flex; align-items: center; gap: 14px; flex: 0 0 auto; }
+  .kh-row { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
   .konro-hud .kh-label {
     font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
     color: var(--text-secondary); font-weight: 800; margin-right: 4px;
+    white-space: nowrap;
   }
   .kh-cell {
     width: 30px; height: 30px;
@@ -416,6 +419,22 @@
   }
   .kh-cell[data-state="white"] { background: var(--text-primary); border-color: var(--text-primary); color: #FFFFFF; }
   .kh-cell[data-state="red"]   { background: var(--u-alert); border-color: var(--u-alert); color: #FFFFFF; }
+  /* 占有卓バッジ。番号だけでは誰が使っているか分からないため (#145) */
+  .kh-cell { position: relative; }
+  .kh-cell[data-owner]::after {
+    content: attr(data-owner);
+    position: absolute;
+    top: -5px; right: -4px;
+    min-width: 12px; height: 14px;
+    padding: 0 3px;
+    border-radius: 7px;
+    background: var(--chrome);
+    color: #FFFFFF;
+    font-family: var(--font-num);
+    font-size: 9px; font-weight: 900;
+    line-height: 14px;
+    text-align: center;
+  }
 
   /* ============================================================ 2ペインシェル (左=メイン配膳 / 右=予約ストック) */
   .shell {
@@ -821,6 +840,26 @@
   }
   .konro-btn[data-locked="true"]:hover  { border-color: var(--border); color: var(--text-muted); }
   .konro-btn[data-locked="true"]:active { transform: none; }
+  /* data-taken: 片方の種別だけ他卓に埋まっている (#145)。押下は可能 (タップで空いている方へ進む)
+     ため dashed のロック表示にはせず、何が埋まっているかをバッジの色で示すに留める。
+     色は意味に対応させる: コンロ=使用中の黒 / タイマー=赤 */
+  .konro-btn[data-taken]::after {
+    content: attr(data-owner);
+    position: absolute;
+    top: -6px; right: -5px;
+    min-width: 13px; height: 15px;
+    padding: 0 3px;
+    border-radius: 8px;
+    color: #fff;
+    font-family: var(--font-num);
+    font-size: 9px; font-weight: 900;
+    line-height: 15px;
+    text-align: center;
+    letter-spacing: .02em;
+  }
+  .konro-btn[data-taken="konro"]::after { background: var(--text-primary); }
+  .konro-btn[data-taken="timer"]::after { background: var(--u-alert); }
+
   /* 占有卓バッジ (data-owner に卓番)。ロック時は data-state=skeleton なので state ドットとは競合しない */
   .konro-btn[data-locked="true"]::after {
     content: attr(data-owner);
@@ -1362,9 +1401,8 @@
     <span class="hud-stat" id="hudAlertWrap"><span class="k">10分超過</span><span class="v" id="hudAlert">0</span></span>
     <span class="hud-stat" id="hudSoonWrap"><span class="k">まもなく予約</span><span class="v" id="hudSoon">0</span></span>
     <span class="hud-sep" aria-hidden="true"></span>
-    <div class="konro-hud" id="konroHud" role="group" aria-label="コンロ使用状況">
-      <span class="kh-label" aria-hidden="true">コンロ</span>
-    </div>
+    <!-- コンロ列とタイマー列を独立して並べる (#145)。ラベルとセルは buildKonroHud() が生成する -->
+    <div class="konro-hud" id="konroHud" role="group" aria-label="コンロ・タイマー使用状況"></div>
   </div>
 
   <div class="shell">
@@ -1567,6 +1605,7 @@
       demo:"デモデータを投入",
       konro:"コンロ", konroSkeleton:"未使用", konroWhite:"使用中", konroRed:"タイマー管理中",
       konroLocked:"他卓使用中",
+      konroHudKonro:"コンロ", konroHudTimer:"タイマー",   // HUD の列見出し (#145)
       modeKitchen:"キッチン", modeHall:"ホール",
       stockTitle:"予約ストック", stockEmpty:"本日の予約はありません",
       addReservation:"予約を追加", fldTime:"予約時間", fldAdults:"大人", fldKids:"0-2歳",
@@ -1608,7 +1647,7 @@
     var bc = null;
     var undoInfo = null;           // { id, index } 全完了直後の取り消し対象
     var undoTimer = null;
-    var khCells = [];              // HUD のコンロセル DOM
+    var khRows = [];               // HUD の列 [{kind:"white"|"red", label, cells:[DOM]}] (#145)
     var printerIp = "";            // チビ伝 実機プリンターIP (未設定ならブラウザ印刷のまま #144)
     var currentSlipOrder = null;   // チビ伝プレビュー表示中の注文 (印刷ボタン押下時に参照)
     var printBusy = false;         // チビ伝を送信中か。連打による重複印字を防ぐ (#176)
@@ -1965,18 +2004,37 @@
       return (s === "white" || s === "red") ? s : KONRO_DEFAULT;
     }
 
-    /* コンロ num を占有 (使用中/タイマー管理中 = white/red) している別カードid を返す。
+    /* コンロ num を種別 kind で占有している別カードid を返す。
        exceptCardId は判定から除外 (＝自分)。占有カードが無ければ null。
-       物理コンロは同時に1卓のみ → 占有中は他カードの同番号ボタンをロックする根拠 (#114)。 */
-    function konroOwnerId(num, exceptCardId) {
+
+       kind は "white"(コンロ使用中) / "red"(タイマー管理中)。**コンロ枠とタイマー枠は
+       別資源として独立に数える** (#145)。以前は white/red のどちらでも「占有」とみなして
+       同番号を丸ごとロックしていたため、卓Aがコンロ1番を使っているだけで他卓がタイマー1番を
+       使えなくなっていた。店舗運用ではコンロとタイマーは別物なので連動させない。
+
+       kind 省略時は従来どおり「どちらかで占有中」を見る (集計用)。 */
+    function konroOwnerId(num, exceptCardId, kind) {
       var nk = String(num), ex = String(exceptCardId);
       var ids = Object.keys(konroMap);
       for (var i = 0; i < ids.length; i++) {
         if (ids[i] === ex) continue;
         var s = konroMap[ids[i]] && konroMap[ids[i]][nk];
-        if (s === "white" || s === "red") return ids[i];
+        if (kind ? (s === kind) : (s === "white" || s === "red")) return ids[i];
       }
       return null;
+    }
+
+    /* タップで進む先の状態。埋まっている種別の枠は飛ばす (#145)。
+       例) コンロ1が他卓で使用中でも、タイマー1が空いていればタイマーとして使える。
+       進める先が無い (両方の枠が他卓で埋まっている) 場合は現状のまま返す。 */
+    function nextKonroState(cardId, num, cur) {
+      var next = KONRO_CYCLE[cur] || KONRO_DEFAULT;
+      for (var step = 0; step < 3; step++) {
+        if (next === KONRO_DEFAULT) return next;             // 解除は常に可能
+        if (!konroOwnerId(num, cardId, next)) return next;   // その種別の枠が空いている
+        next = KONRO_CYCLE[next] || KONRO_DEFAULT;           // 埋まっている枠は飛ばす
+      }
+      return KONRO_DEFAULT;
     }
 
     /* スケルトン(初期値)は保存しない = LS を肥大化させない。注文消去時の掃除も簡潔に */
@@ -2784,10 +2842,11 @@
     /* ===================== 操作: コンロ番号タップ ===================== */
     function onKonroTap(id, num) {
       var cur = konroState(id, num);
-      // 他卓が物理コンロを占有中は割当不可 (自分がオーナー=white/red の時は解除操作なので許可)。
-      // ボタン自体も disabled にしているが、同期タイミングの隙間対策で二重にガードする (#114)。
-      if (cur !== "white" && cur !== "red" && konroOwnerId(num, id)) return;
-      var next = KONRO_CYCLE[cur] || KONRO_DEFAULT;
+      // 他卓が埋めている種別の枠は飛ばして、空いている状態へ進む (#145)。
+      // ボタン自体も両方埋まっていれば disabled にしているが、同期タイミングの隙間対策で
+      // ここでも判定する (#114)。進める先が無ければ何もしない。
+      var next = nextKonroState(id, num, cur);
+      if (next === cur) return;
       setKonroState(id, num, next);
       saveKonro();                                  // LS 即時保存 (正本)
       broadcastKonro(id, num, next);                // 他タブへ同期
@@ -2796,24 +2855,37 @@
       updateKonroHud();
     }
 
-    /* 1つのコンロボタンへ「自カードの状態」+「他カード占有によるロック」を反映する単一の描画経路 (#114) */
+    /* 1つのコンロボタンへ「自カードの状態」+「他カード占有によるロック」を反映する単一の描画経路 (#114)。
+       コンロ枠とタイマー枠は独立なので、**両方が他卓に埋まっている時だけ**押下不可にする。
+       片方だけ埋まっている場合は押せる (タップで空いている種別へ進む) が、
+       何が埋まっているかはバッジで示す (#145)。 */
     function applyKonroBtn(btn, cardId, num) {
       var st = konroState(cardId, num);                       // このカード自身の状態
       // 自分が使用中/管理中ならオーナー = ロックされない。skeleton の時だけ他カード占有を見る。
-      var ownerId = (st === "white" || st === "red") ? null : konroOwnerId(num, cardId);
+      var mine = (st === "white" || st === "red");
+      var konroOwner = mine ? null : konroOwnerId(num, cardId, "white");
+      var timerOwner = mine ? null : konroOwnerId(num, cardId, "red");
       btn.setAttribute("data-state", st);
-      if (ownerId) {
-        var tbl = ownerTable(ownerId);
+      if (konroOwner && timerOwner) {                         // 進める先が無い = 従来どおりロック
+        var tbl = ownerTable(konroOwner) || ownerTable(timerOwner);
         btn.setAttribute("data-locked", "true");
         btn.setAttribute("data-owner", tbl || "占");
+        if (btn.hasAttribute("data-taken")) btn.removeAttribute("data-taken");
         btn.disabled = true;
         btn.setAttribute("aria-label",
           t("konro") + " " + num + " " + t("konroLocked") + (tbl ? "（卓" + tbl + "）" : ""));
       } else {
         if (btn.hasAttribute("data-locked")) btn.removeAttribute("data-locked");
-        if (btn.hasAttribute("data-owner"))  btn.removeAttribute("data-owner");
+        var takenOwner = konroOwner || timerOwner;
+        if (takenOwner) {
+          btn.setAttribute("data-taken", konroOwner ? "konro" : "timer");
+          btn.setAttribute("data-owner", ownerTable(takenOwner) || "占");
+        } else {
+          if (btn.hasAttribute("data-taken")) btn.removeAttribute("data-taken");
+          if (btn.hasAttribute("data-owner")) btn.removeAttribute("data-owner");
+        }
         btn.disabled = false;
-        setKonroBtnAria(btn, num, st);
+        setKonroBtnAria(btn, num, st, konroOwner, timerOwner);
       }
     }
 
@@ -2842,11 +2914,15 @@
       Object.keys(cards).forEach(function (cid) { applyKonroToCard(cid); });
     }
 
-    function setKonroBtnAria(btn, num, state) {
+    function setKonroBtnAria(btn, num, state, konroOwner, timerOwner) {
       var stateLabel = state === "white" ? t("konroWhite")
                      : state === "red"   ? t("konroRed")
                      : t("konroSkeleton");
-      btn.setAttribute("aria-label", t("konro") + " " + num + " " + stateLabel);
+      // 片方の枠だけ他卓に埋まっている場合は、押せることと何が埋まっているかを読み上げる (#145)
+      var taken = "";
+      if (konroOwner) taken = "、" + t("konroWhite") + "は他卓（卓" + (ownerTable(konroOwner) || "?") + "）";
+      else if (timerOwner) taken = "、" + t("konroRed") + "は他卓（卓" + (ownerTable(timerOwner) || "?") + "）";
+      btn.setAttribute("aria-label", t("konro") + " " + num + " " + stateLabel + taken);
     }
 
     /* ===================== 並べ替え (長押し 0.8s で掴む → ドラッグ → 離して確定 / 取消) ===================== */
@@ -3756,34 +3832,56 @@
     }
 
     /* コンロ 1〜10 を全カード横断で集約表示 (赤 > 白 > 未使用の優先で1状態に潰す) */
+    /* コンロ列とタイマー列を別々に並べる (#145)。
+       以前は1列で、同じ番号のコンロとタイマーを1セルに畳んで赤優先で表示していたため、
+       「コンロ3は空いているがタイマー3は稼働中」といった状態が読み取れなかった。 */
     function buildKonroHud() {
-      for (var n = 1; n <= KONRO_COUNT; n++) {
-        var cell = document.createElement("span");
-        cell.className = "kh-cell";
-        cell.setAttribute("data-state", "skeleton");
-        cell.textContent = String(n);
-        konroHudEl.appendChild(cell);
-        khCells.push(cell);
-      }
+      khRows = [
+        { kind: "white", label: t("konroHudKonro"), cells: [] },
+        { kind: "red",   label: t("konroHudTimer"), cells: [] }
+      ];
+      khRows.forEach(function (row) {
+        var group = document.createElement("span");
+        group.className = "kh-row";
+        var label = document.createElement("span");
+        label.className = "kh-label";
+        label.setAttribute("aria-hidden", "true");
+        label.textContent = row.label;
+        group.appendChild(label);
+        for (var n = 1; n <= KONRO_COUNT; n++) {
+          var cell = document.createElement("span");
+          cell.className = "kh-cell";
+          cell.setAttribute("data-state", "skeleton");
+          cell.textContent = String(n);
+          group.appendChild(cell);
+          row.cells.push(cell);
+        }
+        konroHudEl.appendChild(group);
+      });
     }
     function updateKonroHud() {
-      for (var n = 1; n <= KONRO_COUNT; n++) {
-        var state = "skeleton";
-        var owner = "";
-        Object.keys(konroMap).forEach(function (cid) {
-          var s = konroMap[cid] && konroMap[cid][String(n)];
-          if (s === "red") { state = "red"; owner = ownerTable(cid); }
-          else if (s === "white" && state !== "red") { state = "white"; owner = ownerTable(cid); }
-        });
-        var cell = khCells[n - 1];
-        if (!cell) continue;
-        if (cell.getAttribute("data-state") !== state) cell.setAttribute("data-state", state);
-        var stateLabel = state === "white" ? t("konroWhite")
-                       : state === "red"   ? t("konroRed")
-                       : t("konroSkeleton");
-        cell.setAttribute("aria-label", t("konro") + n + " " + stateLabel + (owner ? "（卓" + owner + "）" : ""));
-        cell.title = stateLabel + (owner ? " 卓" + owner : "");
-      }
+      khRows.forEach(function (row) {
+        for (var n = 1; n <= KONRO_COUNT; n++) {
+          var cell = row.cells[n - 1];
+          if (!cell) continue;
+          var used = false, owner = "";
+          Object.keys(konroMap).forEach(function (cid) {
+            if (!konroMap[cid] || konroMap[cid][String(n)] !== row.kind) return;
+            used = true;
+            if (!owner) owner = ownerTable(cid);
+          });
+          var state = used ? row.kind : "skeleton";
+          if (cell.getAttribute("data-state") !== state) cell.setAttribute("data-state", state);
+          // 占有卓を数字バッジで出す。番号だけでは「誰が使っているか」が分からない (#145)
+          if (used && owner) cell.setAttribute("data-owner", owner);
+          else if (cell.hasAttribute("data-owner")) cell.removeAttribute("data-owner");
+          var stateLabel = used
+            ? (row.kind === "white" ? t("konroWhite") : t("konroRed"))
+            : t("konroSkeleton");
+          cell.setAttribute("aria-label", row.label + n + " " + stateLabel + (owner ? "（卓" + owner + "）" : ""));
+          cell.title = row.label + n + " " + stateLabel + (owner ? " 卓" + owner : "");
+        }
+      });
     }
     function ownerTable(cardId) {
       var e = cards[cardId];
