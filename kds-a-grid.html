@@ -293,6 +293,21 @@
     text-align: center;
   }
 
+  /* 保存領域が尽きたときの警告 (#179)。黙って壊れるのを避けるため、
+     出たら消えない。色は「意味にのみ使う」方針に従い経過警告と同じ赤を使う */
+  .storage-warn {
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 8px 14px;
+    border-radius: var(--r-chip);
+    background: var(--u-alert);
+    color: var(--on-u-alert);
+    font-size: 14px;
+    font-weight: 900;
+    white-space: nowrap;
+  }
+  .storage-warn[hidden] { display: none; }
+
   /* 権限モード切替 */
   .mode-switch {
     display: flex;
@@ -1334,6 +1349,11 @@
       <span>プリンター設定</span>
     </button>
 
+    <!-- 保存に失敗したら出しっぱなしにする。黙って壊れるのを避けるため (#179) -->
+    <p class="storage-warn" id="storageWarn" role="alert" hidden>
+      ⚠ 保存領域が一杯です。この端末では状態が保存されません（リロードで巻き戻ります）
+    </p>
+
   </header>
 
   <!-- HUD: 状況サマリー + コンロ全体ビュー -->
@@ -1652,6 +1672,7 @@
     var undoToastMsgEl = document.getElementById("undoToastMsg");
     var undoToastBtn = document.getElementById("undoToastBtn");
     var printToastEl = document.getElementById("printToast");
+    var storageWarnEl = document.getElementById("storageWarn");   // 保存失敗の警告バナー (#179)
 
     /* ===================== ユーティリティ ===================== */
     function t(key) { return LABELS[key] || key; }
@@ -1806,14 +1827,18 @@
     }
     function setView(next) {
       view = (next === "lane") ? "lane" : "grid";
-      try { localStorage.setItem(LS_VIEW, view); } catch (e) {}
+      lsSet(LS_VIEW, view);
       applyView();
     }
 
     /* ===================== 当日分のみ運用 (#63) =====================
        「データ保存は当日分のみ・永続DB無し」(deshup-spec / 議事録6/18)。
        日付が変わって起動したら前日の運用データを破棄する。
-       設定 (権限モード/トグル類) と提供時間ログ (#29 KPIベースライン用に意図的に永続) は対象外。 */
+       設定 (権限モード/トグル類) は対象外。
+
+       提供時間ログ (#29 KPIベースライン) だけは当日で消さず複数日ぶん残すが、
+       無期限に貯めると LS 上限に達して保存が全部止まるため、ここで直近
+       SERVE_KEEP_DAYS 日ぶんへローテーションする (#179)。 */
     function todayStr() {
       var d = new Date();
       return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
@@ -1831,8 +1856,58 @@
             localStorage.removeItem(key);
           });
         }
-        localStorage.setItem(LS_DAY, today);
+        lsSet(LS_DAY, today);
       } catch (e) {}
+      // 起動のたびに保持期間を掛ける。日跨ぎ以外 (連続稼働からのリロード等) でも
+      // 件数上限には掛かるので、ここに置いておけば取りこぼしがない (#179)
+      pruneStoredServeLog();
+    }
+
+    /* ===================== LocalStorage の書き込み口 (#179) =====================
+       以前は各 save 関数が setItem を空 catch で囲んでいた。容量が尽きると
+       完了状態・コンロ・並び順・予約ストックの保存が「全部まとめて黙って」止まり、
+       画面はメモリ上の状態を描き続けるので、リロードするまで誰も気づけなかった。
+
+       ここに一本化して (1) 失敗を必ず console.error に出す (2) 一番先に肥大する
+       提供時間ログを削って1回だけ再試行する (3) それでも駄目ならヘッダーに警告を出す。 */
+    var storageFailed = false;      // 警告バナーを出したか (出しっぱなしにする)
+    var storageReclaiming = false;  // 再試行の再入防止
+
+    function lsSet(key, value) {
+      try { localStorage.setItem(key, value); return true; }
+      catch (err) {
+        if (reclaimStorage(key)) {
+          try { localStorage.setItem(key, value); return true; }
+          catch (err2) { reportStorageFailure(key, err2); return false; }
+        }
+        reportStorageFailure(key, err);
+        return false;
+      }
+    }
+
+    /* 容量不足時の最後の手段: 提供時間ログを当日分まで削る。
+       消えて一番困らないのがこれ (CSV に書き出せば残せる) */
+    function reclaimStorage(triggerKey) {
+      if (storageReclaiming || triggerKey === LS_SERVE) return false;
+      storageReclaiming = true;
+      try {
+        var log = loadServeLog();
+        var trimmed = pruneServeLog(log, todayStr(), 1, SERVE_MAX_RECORDS);
+        if (trimmed.length >= log.length) return false;
+        localStorage.setItem(LS_SERVE, JSON.stringify(trimmed));
+        console.warn("[KDS] 保存領域が不足したため提供時間ログを当日分へ切り詰めました (" +
+          log.length + " → " + trimmed.length + " 件)。CSV書き出しで退避してください");
+        return true;
+      } catch (e) { return false; }
+      finally { storageReclaiming = false; }
+    }
+
+    function reportStorageFailure(key, err) {
+      console.error("[KDS] localStorage への保存に失敗しました (" + key + ")。" +
+        "この端末では状態が保存されず、リロードで巻き戻ります:", err);
+      if (storageFailed) return;
+      storageFailed = true;
+      if (storageWarnEl) storageWarnEl.hidden = false;
     }
 
     /* ===================== LocalStorage (完了状態) ===================== */
@@ -1845,7 +1920,7 @@
     }
 
     function saveDone() {
-      try { localStorage.setItem(LS_DONE, JSON.stringify(doneMap)); } catch (e) {}
+      lsSet(LS_DONE, JSON.stringify(doneMap));
     }
 
     /* ----- コンロ番号状態 (カードidに紐付け / 注文配列とは別管理) ----- */
@@ -1855,7 +1930,7 @@
     }
 
     function saveKonro() {
-      try { localStorage.setItem(LS_KONRO, JSON.stringify(konroMap)); } catch (e) {}
+      lsSet(LS_KONRO, JSON.stringify(konroMap));
     }
 
     /* ----- 配膳カードの並び順 (LS正本 / BC同期) ----- */
@@ -1864,7 +1939,7 @@
       orderSeq = Array.isArray(v) ? v.map(String) : [];
     }
     function saveOrderSeq() {
-      try { localStorage.setItem(LS_ORDER, JSON.stringify(orderSeq)); } catch (e) {}
+      lsSet(LS_ORDER, JSON.stringify(orderSeq));
     }
 
     /* ----- 予約ストック (当日分のみ・永続DB無し) ----- */
@@ -1873,7 +1948,7 @@
       stock = Array.isArray(v) ? v.filter(function (r) { return r && r.rid != null; }) : [];
     }
     function saveStock() {
-      try { localStorage.setItem(LS_STOCK, JSON.stringify(stock)); } catch (e) {}
+      lsSet(LS_STOCK, JSON.stringify(stock));
     }
 
     /* ----- 権限モード ----- */
@@ -2460,6 +2535,58 @@
        ※ 下記の純粋関数は serve-log.js (Nodeテスト付き) のインライン複製。単一HTML要件のため複製している。
           ロジックを変える際は serve-log.js と serve-log.test.js も必ず同期すること。 */
     var SERVE_TEN_MIN_MS = 10 * 60000;
+    /* ログの保持方針 (#179)。追記されるだけで減らないと 5MB の LS 上限に到達し、
+       その時点で KDS の保存が全機能まとめて黙って止まる。長期のKPIデータは CSV 書き出しに
+       任せ、ブラウザ側は直近ぶんだけ持つ。日次パージと読み込み時に切り詰める。 */
+    var SERVE_KEEP_DAYS = 14;        // 今日を含めて何日ぶん残すか
+    var SERVE_MAX_RECORDS = 3000;    // 件数上限 (1日100件でも上の14日に収まる安全弁)
+
+    /* epoch ms → 営業日キー "YYYY-MM-DD"。todayStr() と同じ規則 (#179) */
+    function serveDayKey(ms) {
+      var d = new Date(Number(ms));
+      if (isNaN(d.getTime())) return "";
+      return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+    }
+    /* day を持たない旧レコードは completedAt から導く */
+    function serveRecordDay(r) {
+      if (r && typeof r.day === "string" && r.day) return r.day;
+      return serveDayKey(r && r.completedAt);
+    }
+    function serveShiftDayKey(dayStr, minusDays) {
+      var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dayStr));
+      if (!m) return "";
+      var d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      d.setDate(d.getDate() - (Number(minusDays) || 0));
+      return serveDayKey(d.getTime());
+    }
+    /* 直近 keepDays 営業日ぶん かつ maxRecords 件以内へ切り詰める (#179) */
+    function pruneServeLog(log, today, keepDays, maxRecords) {
+      var records = Array.isArray(log) ? log : [];
+      var days = Math.max(1, Number(keepDays) || 1);
+      var cutoff = serveShiftDayKey(today, days - 1);
+      var kept = records;
+      if (cutoff) {
+        kept = records.filter(function (r) {
+          var d = serveRecordDay(r);
+          return d ? d >= cutoff : false;   // 日付が読めないレコードは壊れているので落とす
+        });
+      }
+      var cap = Number(maxRecords) || 0;
+      if (cap > 0 && kept.length > cap) kept = kept.slice(kept.length - cap);
+      return kept === records ? records.slice() : kept;
+    }
+    /* 重複判定。day を渡すとその営業日ぶんだけ見る (POSの日次連番IDで取りこぼさないため #179) */
+    function hasServeRecord(log, orderId, day) {
+      var records = Array.isArray(log) ? log : [];
+      var id = String(orderId);
+      for (var i = records.length - 1; i >= 0; i--) {
+        var r = records[i];
+        if (!r || String(r.orderId) !== id) continue;
+        if (day && serveRecordDay(r) !== day) continue;
+        return true;
+      }
+      return false;
+    }
 
     function buildServeRecord(order, completedAt) {
       var items = (order && order.items) || [];
@@ -2467,7 +2594,8 @@
       return {
         orderId: order.id, table: order.table, type: order.type,
         people: order.people, itemCount: items.length, totalQty: totalQty,
-        start: order.start, completedAt: completedAt, serveMs: completedAt - order.start
+        start: order.start, completedAt: completedAt, serveMs: completedAt - order.start,
+        day: serveDayKey(completedAt)   // 営業日。ローテーションと重複判定の軸 (#179)
       };
     }
     function computeServeStats(log) {
@@ -2500,17 +2628,32 @@
     }
 
     function loadServeLog() { return safeParse(localStorage.getItem(LS_SERVE), []) || []; }
-    function saveServeLog(log) { try { localStorage.setItem(LS_SERVE, JSON.stringify(log)); } catch (e) {} }
+    function saveServeLog(log) { return lsSet(LS_SERVE, JSON.stringify(log)); }
 
-    /* 全品目完了時に提供時間を記録 (orderId 重複はガード = 同期/再完了での二重計上防止) */
+    /* 保存済みログを保持方針まで切り詰める。減った場合だけ書き戻す (#179) */
+    function pruneStoredServeLog() {
+      var log = loadServeLog();
+      if (!log.length) return log;
+      var kept = pruneServeLog(log, todayStr(), SERVE_KEEP_DAYS, SERVE_MAX_RECORDS);
+      if (kept.length !== log.length) {
+        saveServeLog(kept);
+        console.info("[KDS] 提供時間ログを保持期間 " + SERVE_KEEP_DAYS + "日ぶんへ整理しました (" +
+          log.length + " → " + kept.length + " 件)");
+      }
+      return kept;
+    }
+
+    /* 全品目完了時に提供時間を記録。
+       重複ガードは当日分に限定する — 永続ログ全体を見ると、POS の注文IDが日次リセットの
+       連番だった場合に2日目以降の記録が丸ごと落ちる (#179) */
     function recordServe(entry) {
       var order = entry && entry.order;
       if (!order) return;
-      var log = loadServeLog();
-      for (var i = 0; i < log.length; i++) {
-        if (String(log[i].orderId) === String(order.id)) return;
-      }
-      log.push(buildServeRecord(order, Date.now()));
+      var now = Date.now();
+      var today = serveDayKey(now);
+      var log = pruneServeLog(loadServeLog(), todayStr(), SERVE_KEEP_DAYS, SERVE_MAX_RECORDS);
+      if (hasServeRecord(log, order.id, today)) return;
+      log.push(buildServeRecord(order, now));
       saveServeLog(log);
     }
 
@@ -3157,7 +3300,7 @@
         var prev = null;
         try { prev = localStorage.getItem(LS_SLIP_STYLE); } catch (e) {}
         if (next === prev) return;   // 変化なし (openSlip→refresh の再帰もここで止まる)
-        try { localStorage.setItem(LS_SLIP_STYLE, next); } catch (e) {}
+        lsSet(LS_SLIP_STYLE, next);
         if (document.body.classList.contains("slip-open") && currentSlipOrder) openSlip(currentSlipOrder);
       }).catch(function () { /* サーバー未経由(file://等)ではlocalStorageのまま動く */ });
     }
@@ -3297,7 +3440,7 @@
       }
     }
     function savePrinterIp() {
-      try { localStorage.setItem(LS_PRINTER_IP, printerIp); } catch (e) {}
+      lsSet(LS_PRINTER_IP, printerIp);
       // サーバーにも保存して他端末(iPad等)と共有する
       if (typeof fetch === "function") {
         fetch("/api/printer", {
@@ -3512,7 +3655,7 @@
       } catch (e) { lockedTimers = {}; }
     }
     function saveLocked() {
-      try { localStorage.setItem(LS_LOCKED, JSON.stringify(lockedTimers)); } catch (e) {}
+      lsSet(LS_LOCKED, JSON.stringify(lockedTimers));
     }
     /* ----- 削除済み注文ID (トゥームストーン #67) -----
        POS接続後は window.KDS_ORDERS が毎秒上書きされるため、配列から除くだけでは
@@ -3523,7 +3666,7 @@
       deletedIds = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
     }
     function saveDeleted() {
-      try { localStorage.setItem(LS_DELETED, JSON.stringify(deletedIds)); } catch (e) {}
+      lsSet(LS_DELETED, JSON.stringify(deletedIds));
     }
     /* フィード(生データ)から居なくなった削除済みIDは掃除する (POSが再送し続ける間だけ保持) */
     function pruneDeleted() {
@@ -3566,7 +3709,7 @@
     }
     function setMode(next) {
       mode = (next === "hall") ? "hall" : "kitchen";
-      try { localStorage.setItem(LS_MODE, mode); } catch (e) {}
+      lsSet(LS_MODE, mode);
       if (mode === "hall" && grab) cancelReorder();
       applyMode();
     }
