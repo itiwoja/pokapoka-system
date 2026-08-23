@@ -2,7 +2,9 @@
 
 TableCheck の予約(メニュー・人数等)を取得し、KDS の予約ストックに流し込むためのサーバー。
 6/18 議事録の「ファイルを置くだけの見かけ上のサーバー」役と、TableCheck 取込役の2役を1プロセスで担う。
-**依存パッケージゼロ・Node 18+ のみで動作**(本体リポジトリの単一HTML主義に合わせた設計)。
+**依存パッケージはほぼゼロ・Node 18+ で動作**(本体リポジトリの単一HTML主義に合わせた設計)。
+唯一の例外は `printer.js` の日本語ESC/POS印字用 `iconv-lite`(Node標準にShift_JIS変換が無いため。#144)。
+初回のみ `cd relay-server && npm install` が必要。
 
 ```
 【クラウド】               【店内ミニPC = このサーバー】          【KDS端末】
@@ -131,12 +133,60 @@ WiFi越しに初めて繋ぐときは、設定以外の次の点も確認する(
 | `POST /api/mock/reservations` | (MOCK限定) 予約作成。body は TableCheck Reservation 形 |
 | `PATCH /api/mock/reservations/{id}` | (MOCK限定) 予約変更(人数・メニュー等) |
 | `DELETE /api/mock/reservations/{id}` | (MOCK限定) 予約キャンセル(status=cancelled) |
+| `POST /api/print` | チビ伝を実機プリンターへ印字(#144)。**画像印字**は `{ip, raster:{width,height,data(base64)}, feedLines?, emulation?}`(自由配置レイアウトの本線)。**テキスト印字**は `{ip, table, meta, store?, style?, items:[{name,qty,note}]}`。`raster` が付いていれば画像経路を使う(寸法とデータ長が食い違う `raster` は400で拒否し、黙って別物を印字しない)。`ip` は店内LAN想定のプライベートIPv4のみ許可(10/8・172.16-31/12・192.168/16)。ポート9100固定のRAWポートへ生ソケットで送信 |
+| `GET /api/slip-style` | サーバー保存のレイアウト/スタイルを返す(未設定は `{}`) |
+| `POST /api/slip-style` | レイアウト/スタイルを保存し `config/slip-style.json` へ永続化(git管理外)。自由配置レイアウト(`elements[]`)は描画がブラウザ側のため中身を解釈せずそのまま預かる(50KB上限)。旧テキスト型スタイルは従来どおり許容値へ丸める。どの端末で設定しても全端末のKDSに反映される |
+| `GET /qr` | iPad等からKDS/スタイル設定を開くための接続QRを表示するページ。エンコードするURLは待ち受け中のLAN IPから自動生成 |
+
+### チビ伝のレイアウト設定(slip-style-designer.html)
+
+`http://<サーバー>:<port>/slip-style-designer.html` で、伝票の要素(文字・罫線・品目リスト)を
+**用紙の上へドラッグして自由に配置**できる。要素ごとに書体・大きさ・太字・寄せ・幅を設定でき、
+文字には `{卓番}` `{受付}` `{人数}` などの差込フィールドを入れられる。
+設定は **サーバーに保存**(`POST /api/slip-style` → `config/slip-style.json`)され、
+**どの端末で設定しても、KDSを開いている全端末(PC/iPad)の伝票プレビューと実機印刷に反映される**。
+各端末の localStorage はオフライン用キャッシュで、KDS起動時と伝票を開くたびにサーバーから更新される。
+
+描画は `slip-renderer.js`(フォーマッターとKDSが共有)が canvas に対して行い、
+**その canvas をそのまま1bit画像にしてプリンターへ送る**。したがって
+「フォーマッターの見た目 = KDSのプレビュー = 実際の紙」が必ず一致する。
+プリンター内蔵フォントを使わないため、書体・大きさ・位置に制約が無い。
+
+品目リストは品数で伸縮する。要素の「Yの基準」を **品目リストの下から** にすると、
+品数が増えたぶんだけ自動で下へずれる(合計欄やフッターを重ならせないため)。
+
+#### 印字方式(emulation)
+
+画像印字のコマンドは**プリンターのコマンド体系ごとに互換性が無い**。素のテキストはどの体系でも
+印字できてしまうので、テキスト印字が通っていても体系の判別にはならない。体系が合っていない状態で
+画像を送ると、画像データがそのまま文字として解釈され「文字化け + データ中の `0x0A` による
+行送りだけが延々続く」壊れ方をする。
+
+| 値 | コマンド | 対象 |
+|---|---|---|
+| `starprnt`(既定) | `ESC GS S` | **Star mC-Print3**(本番機)。StarPRNT専用機でESC/POSモードは持たない |
+| `starline` | `ESC * r A` … `b` … `ESC * r B` | Star Line Mode 機(TSP650II/TSP700II 等) |
+| `escpos` | `GS v 0` | ESC/POS 系 |
+
+本番機は `starprnt` のままでよい。機種を入れ替えたときだけフォーマッターの「印字方式」で切り替える。
+
+### チビ伝の実機印刷(#144)
+
+KDS 画面の「印刷」ボタンは、プリンターIP未設定時は従来どおり `window.print()`(ブラウザ手動印刷)。
+実機で印字するには:
+
+1. KDS ヘッダーの「プリンター設定」ボタンでプリンター(例: Star mC-Print3)のIPアドレスを登録する
+   (`localStorage` に端末ごと保存。店舗ネットワーク依存のためコードへの固定埋め込みはしない)
+2. 以降は「印刷」ボタン押下で `POST /api/print` → このサーバーが生ソケットでプリンターの
+   RAWポート(9100)へコマンドバイト列を送信する(ブラウザは生TCPソケットを開けないため中継が必要)
+3. 実機送信に失敗(未設定・接続不可・タイムアウト)した場合は自動で `window.print()` にフォールバックする
 
 ### KDS への接続(kds-bridge.js)
 
 KDS 本体は無改修。**このサーバー経由で `/` を開くと、配信時にブリッジが自動注入される**
 (`server.js` が `kds-a-grid.html` の `</body>` 直前へ1行差し込む。ディスク上のファイルは変更しない)。
-静的配信は情報露出を避けるため `kds-a-grid.html` と `kds-bridge.js` のallowlistに限定する。
+静的配信は情報露出を避けるため allowlist に限定する
+(`kds-a-grid.html` / `slip-style-designer.html` / `slip-renderer.js` / `relay-server/kds-bridge.js`)。
 サーバーを介さず単体で使う場合のみ、手動で `</body>` 直前に次を足す:
 
 ```html
@@ -156,7 +206,8 @@ KDS 本体は無改修。**このサーバー経由で `/` を開くと、配信
 ```sh
 node relay-server/tablecheck-sync.test.js
 node --test relay-server/booking-resync.test.js relay-server/server.test.js \
-  relay-server/seat-occupancy.test.js relay-server/load-config.test.js
+  relay-server/seat-occupancy.test.js relay-server/load-config.test.js \
+  relay-server/printer.test.js
 ```
 
 正規化(スキーマ候補キー・pax→adults フォールバック)、memo パーサ、
