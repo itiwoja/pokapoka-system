@@ -25,5 +25,6 @@ config/slip-style.json
 config/printer-ip.json
 
 # Codexの出力物
+.codex/
 .output/
 .workspace/
