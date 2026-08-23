@@ -24,10 +24,21 @@ var fs = require("fs");
 var os = require("os");
 var path = require("path");
 var seats = require("./seat-occupancy");
+var kitchen = require("./kitchen-state");
+var orderIntake = require("./order-intake");
+var auth = require("./auth");
 var booking = require("./booking-resync");
 var loadConfig = require("./load-config");
 var printer = require("./printer");
-var QRCode = require("qrcode");   // /qr ページ用 (iPad等からの接続URLをQR表示 #144追補)
+
+/* qrcode は /qr ページ専用なので、トップレベルでは読み込まない (#173)。
+   npm install が済んでいない店内ミニPCで、QRページのためにサーバー全体
+   (予約取込・KDS配信) を起動不能にしないため */
+var qrcodeModule = null;
+function loadQRCode() {
+  if (!qrcodeModule) qrcodeModule = require("qrcode");
+  return qrcodeModule;
+}
 
 var MIME = {
   ".html": "text/html; charset=utf-8",
@@ -60,6 +71,10 @@ function createRelay(options) {
   var timers = [];
   var inFlight = new Set();
   var walkins = new Map();
+  // 厨房状態の共有 (#132)。sessionId は relay 再起動を端末側が検出するための識別子で、
+  // 再起動すると rev が 0 に戻るため、これが無いと端末が「取込済み」と誤認する
+  var kitchenState = kitchen.createState(options.sessionId || String(Date.now().toString(36)));
+  var orders = new Map();      // 注文端末から受けた注文 (当日メモリのみ #115)
   var started = false;
   var initialSync = Promise.resolve();
   var slipStyle = createSlipStyleStore(options.slipStylePath || path.join(root, "config", "slip-style.json"), printerModule, log);
@@ -88,6 +103,17 @@ function createRelay(options) {
     try { url = new URL(req.url, "http://localhost"); }
     catch (err) { res.writeHead(400); return res.end("bad request"); }
 
+    /* 共有トークン認証 (#174)。未設定なら素通し = 従来どおりの挙動。
+       ページもAPIもまとめて守る: ページだけ素通しにするとトークンを読み出されて意味がない */
+    var allowed = auth.check(req, url, config.authToken,
+      req.socket && req.socket.remoteAddress, config.authTrustLoopback);
+    if (!allowed.ok) {
+      res.writeHead(401, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+      return res.end(JSON.stringify({ ok: false, error: "unauthorized: " + allowed.reason }));
+    }
+    // QR経由(?token=)で来た端末には Cookie を渡す。以後はURLにトークンが要らない
+    if (allowed.setCookie) res.setHeader("Set-Cookie", auth.cookieHeader(config.authToken));
+
     if (url.pathname === "/api/stock") {
       var stock = reservationSync.stockResponse(Date.now());
       return json(res, stock.body, stock.code);
@@ -106,7 +132,16 @@ function createRelay(options) {
         walkins: walkins,
         beforeMin: config.seatBeforeMin,
         afterMin: config.seatAfterMin,
+        walkinTtlMs: config.seatWalkinTtlMs,
       });
+    }
+
+    if (url.pathname === "/api/kitchen-state") {
+      return handleKitchenState(req, res, { state: kitchenState, ttlMs: config.kitchenTtlMs });
+    }
+
+    if (url.pathname === "/api/orders" || url.pathname.indexOf("/api/orders/") === 0) {
+      return handleOrders(req, res, url, { orders: orders, ttlMs: config.orderTtlMs });
     }
 
     if (url.pathname === "/api/print" && req.method === "POST") {
@@ -218,7 +253,21 @@ function createRelay(options) {
         if (env.SEED === "1") { mock.seed(); log("SEED=1: デモ予約を1件シード"); }
         log("デモ操作コンソール: http://127.0.0.1:" + listenPort + "/demo");
       }
-      log("KDS(デシャップ): http://127.0.0.1:" + listenPort + "/  / 予約: /api/stock / 状態: /api/health");
+      log("KDS(デシャップ): http://127.0.0.1:" + listenPort + "/  / 予約: /api/stock / 注文: /api/orders / 状態: /api/health");
+      if (config.authToken) {
+        log("認証: 有効 (他端末は /qr のQR経由で開く。ミニPC自身は" +
+          (config.authTrustLoopback ? "認証なしで開ける" : "トークンが必要") + ")");
+      } else {
+        log("認証: 無効 — 到達できる端末なら誰でも操作できます。" +
+          "店内Wi-Fiを客と共用しているなら config.json の auth.token を設定してください (#174)");
+      }
+
+      // 依存の欠落は起動を止めないが、現地で「印刷だけ効かない」の原因が分かるよう起動時に言う (#173)
+      var deps = printerModule.checkDependencies ? printerModule.checkDependencies() : { ok: true };
+      if (!deps.ok) {
+        log("⚠ 実機印刷は無効: " + deps.error);
+        log("⚠ 予約取込とKDS配信は通常どおり動きます (印刷を使うなら relay-server で npm install)");
+      }
 
       initialSync = resyncThenPoll();
       timers = [
@@ -246,6 +295,8 @@ function createRelay(options) {
     config: config,
     server: server,
     sync: reservationSync,
+    kitchenState: kitchenState,
+    orders: orders,
     start: start,
     stop: stop,
     pollTick: pollTick,
@@ -278,6 +329,19 @@ function createConfig(env, options) {
     requestTimeoutMs: normalizeInterval(src.TABLECHECK_TIMEOUT_MS, 15000, 1000, 120000),
     seatBeforeMin: Math.max(Number(src.SEAT_BEFORE_MIN) || 30, 0),
     seatAfterMin: Math.max(Number(src.SEAT_AFTER_MIN) || 120, 0),
+    // ローカル登録した占有をいつ諦めるか。POS連携が無く「退店した」というイベントが
+    // 存在しないため、解除し忘れた席が永久に埋まったままにならないよう時間で切る (#123)
+    seatWalkinTtlMs: normalizeInterval(src.SEAT_WALKIN_TTL_MIN, 120, 1, 1440) * 60000,
+    // 厨房状態(#132)を最後の更新から何分保持するか。常駐プロセスなので、
+    // 掃除しないと前日の完了・コンロ状態が翌日へ持ち越される (#115)
+    kitchenTtlMs: normalizeInterval(src.KITCHEN_TTL_MIN, 720, 1, 1440) * 60000,
+    // 注文の保持上限。常駐プロセスなので、掃除しないと日跨ぎで前日の注文が残る (#115)
+    orderTtlMs: normalizeInterval(src.ORDER_TTL_MIN, 720, 1, 1440) * 60000,
+    // 未設定なら認証なし (従来どおり)。店内Wi-Fiを客と共用する場合に設定する (#174)
+    authToken: auth.normalizeToken(src.RELAY_TOKEN),
+    // ミニPC自身(ループバック)を信頼するか。既定は信頼する — QRでトークンを配る導線が
+    // ミニPC上の /qr から始まるため。ミニPCを他人が触る運用なら 0 にする
+    authTrustLoopback: src.RELAY_TRUST_LOOPBACK !== "0",
   };
 }
 
@@ -444,8 +508,19 @@ function handleQrPage(res, config, hostHeader) {
     reachable = !!lanIp && lanIp !== "127.0.0.1";   // 127.0.0.1待ち受けでは他端末から届かない
     base = "http://" + (lanIp || "127.0.0.1") + ":" + config.port;
   }
-  var kdsUrl = base + "/";
-  var styleUrl = base + "/slip-style-designer.html";
+  // 認証有効時は QR にトークンを載せる。iPad は1回読めば Cookie が入り、以後は不要 (#174)
+  var tokenQuery = config.authToken ? "?token=" + encodeURIComponent(config.authToken) : "";
+  var kdsUrl = base + "/" + tokenQuery;
+  var styleUrl = base + "/slip-style-designer.html" + tokenQuery;
+  var QRCode;
+  try { QRCode = loadQRCode(); }
+  catch (err) {
+    // 依存が入っていないだけ。原因が現地で分かるよう理由を返す (サーバー本体は動き続ける #173)。
+    // QRが出せなくても、トークン付きURLを本文に出せば手入力で繋げる (#174)
+    res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8" });
+    return res.end("QRページは qrcode パッケージが必要です。relay-server で npm install を実行してください。\n" +
+      "接続先URL: " + kdsUrl + "\n");
+  }
   Promise.all([
     QRCode.toDataURL(kdsUrl, { width: 420, margin: 2 }),
     QRCode.toDataURL(styleUrl, { width: 420, margin: 2 }),
@@ -534,6 +609,11 @@ function createPrinterIpStore(filePath, printerModule, log) {
 
 /** POST /api/print — チビ伝を実機プリンターへ送る (#144)。IPは店内LANのプライベートアドレスのみ許可 */
 function handlePrint(req, res, printerModule, slipStyle, printerIp) {
+  // 依存(iconv-lite)が入っていなければ、原因の分かる 503 で返す (#173)。
+  // KDS 側は非200で window.print() にフォールバックするので、印刷操作自体は止まらない
+  var deps = printerModule.checkDependencies ? printerModule.checkDependencies() : { ok: true };
+  if (!deps.ok) return json(res, { ok: false, error: deps.error }, 503);
+
   readJson(req, res, function (body) {
     // ip未指定はサーバー保存のプリンターIP(/api/printer)を使う。端末ごとの再登録を不要にする
     var ip = (body && body.ip) || (printerIp && printerIp.get());
@@ -585,12 +665,15 @@ function handleSeats(req, res, url, context) {
       context.walkins,
       Date.now(),
       context.beforeMin,
-      context.afterMin
+      context.afterMin,
+      context.walkinTtlMs
     ));
   }
   if (url.pathname === "/api/seats" && req.method === "POST") {
     return readJson(req, res, function (body) {
-      var occupancy = seats.registerWalkin(context.walkins, body && body.table, Date.now());
+      // rid があれば「予約の着席」。卓番はスタッフが KDS で割り当てるローカルデータで、
+      // TableCheck 側には無い(あっても希望席種まで)ため、ここが唯一の正本になる
+      var occupancy = seats.registerWalkin(context.walkins, body && body.table, Date.now(), body);
       if (!occupancy) return json(res, { ok: false, error: "table must be a non-empty string of at most 6 characters" }, 400);
       json(res, occupancy, 201);
     });
@@ -602,6 +685,58 @@ function handleSeats(req, res, url, context) {
     catch (e) { return json(res, { ok: false, error: "invalid table" }, 400); }
     if (!seats.validateTable(table)) return json(res, { ok: false, error: "invalid table" }, 400);
     if (!seats.releaseWalkin(context.walkins, table)) return json(res, { ok: false, error: "seat not found" }, 404);
+    res.writeHead(204, { "Cache-Control": "no-store" });
+    return res.end();
+  }
+  return json(res, { ok: false, error: "method not allowed" }, 405);
+}
+
+/**
+ * 厨房状態の端末間共有 (#132)。
+ * 端末は「自分が起こした変更イベント」を POST し、「全体のスナップショット」を GET で取り込む。
+ * 差分ではなく畳み込み済みの状態を返すので、遅れて起動した端末も1回の取得で追いつける。
+ */
+function handleKitchenState(req, res, context) {
+  if (req.method === "GET") {
+    kitchen.purgeStale(context.state, Date.now(), context.ttlMs);
+    return json(res, kitchen.snapshot(context.state));
+  }
+  if (req.method === "POST") {
+    return readJson(req, res, function (body) {
+      kitchen.purgeStale(context.state, Date.now(), context.ttlMs);
+      var result = kitchen.applyEvents(context.state, body && body.events, Date.now());
+      if (result.error) return json(res, { ok: false, error: result.error }, 400);
+      return json(res, { ok: true, rev: result.rev, sessionId: context.state.sessionId });
+    });
+  }
+  return json(res, { ok: false, error: "method not allowed" }, 405);
+}
+
+/**
+ * 注文端末 → relay → KDS の受け口 (#139)。
+ * 卓番はペイロードで受け取る (送信元IPからは引かない)。
+ * 継ぎ足し注文は別の orderId で送ってもらい、KDS では別カードとして出す。
+ */
+function handleOrders(req, res, url, context) {
+  if (url.pathname === "/api/orders" && req.method === "GET") {
+    return json(res, orderIntake.toFeed(context.orders, Date.now(), context.ttlMs));
+  }
+  if (url.pathname === "/api/orders" && req.method === "POST") {
+    return readJson(req, res, function (body) {
+      var result = orderIntake.normalizeOrder(body, Date.now());
+      if (result.error) return json(res, { ok: false, error: result.error }, 400);
+      var put = orderIntake.putOrder(context.orders, result.order);
+      // 再送は成功として返す。エラーにすると注文端末側が延々リトライして二重注文を誘発する
+      return json(res, { ok: true, duplicate: !put.created, order: put.order }, put.created ? 201 : 200);
+    });
+  }
+  if (url.pathname.indexOf("/api/orders/") === 0 && req.method === "DELETE") {
+    var raw = url.pathname.slice("/api/orders/".length);
+    var orderId;
+    try { orderId = decodeURIComponent(raw); }
+    catch (e) { return json(res, { ok: false, error: "invalid orderId" }, 400); }
+    if (!orderIntake.validateOrderId(orderId)) return json(res, { ok: false, error: "invalid orderId" }, 400);
+    if (!orderIntake.removeOrder(context.orders, orderId)) return json(res, { ok: false, error: "order not found" }, 404);
     res.writeHead(204, { "Cache-Control": "no-store" });
     return res.end();
   }
