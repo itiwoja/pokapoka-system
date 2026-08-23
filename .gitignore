@@ -23,3 +23,7 @@ config/slip-style.json
 
 # プリンターIPのサーバー保存(店舗ごとに違うためgit管理しない #144追補)
 config/printer-ip.json
+
+# Codexの出力物
+.output/
+.workspace/
