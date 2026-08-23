@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TableCheck 予約デモコンソール — ぽかぽか</title>
+<!--
+  tablecheck-demo.html — 予約SaaS(TableCheck) の操作を模した「検証用の最小操作パネル」。
+
+  役割: このタブで予約を作成/人数変更/キャンセルすると、
+    このタブ → /api/mock/reservations (中継サーバー) → 正規化 → /api/stock
+      → kds-bridge.js(KDSページに注入・常駐) → KDS(デシャップ) に反映
+    という本番と同じ経路でデータが流れる。
+
+  ※ 送信する予約は「本物の TableCheck Reservation スキーマ」
+    (first_name/last_name, pax_adult/pax_child, orders[], special_request) で組み立てる。
+  ※ 取込ブリッジは KDS ページ側に常駐するので、このコンソールは
+    サーバーへ POST するだけ。KDS タブは単独で自己更新する(5秒間隔)。
+-->
+<style>
+  :root{
+    --bg:#eef1f4; --panel:#ffffff; --ink:#1c2733; --muted:#5b6b7a;
+    --line:#d9e0e7; --accent:#00867d; --accent-ink:#ffffff;
+    --warn:#b23b3b; --chip:#eaf4f3; --shadow:0 1px 3px rgba(20,40,60,.10);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Hiragino Kaku Gothic ProN","Yu Gothic UI",system-ui,sans-serif;
+    background:var(--bg);color:var(--ink);font-size:15px;line-height:1.55}
+  header{position:sticky;top:0;z-index:5;background:var(--accent);color:var(--accent-ink);
+    padding:12px 18px;display:flex;align-items:center;gap:14px;box-shadow:var(--shadow)}
+  header h1{font-size:17px;margin:0;font-weight:700;letter-spacing:.02em}
+  header .mode{font-size:12px;background:rgba(255,255,255,.2);padding:3px 9px;border-radius:999px}
+  header .spacer{flex:1}
+  header button{font:inherit;font-size:14px;font-weight:700;cursor:pointer;
+    background:#fff;color:var(--accent);border:0;border-radius:7px;padding:8px 14px}
+  header button:active{transform:translateY(1px)}
+  .wrap{max-width:1180px;margin:0 auto;padding:18px;display:grid;
+    grid-template-columns:minmax(320px,1fr) minmax(340px,1.2fr);gap:18px}
+  @media(max-width:860px){.wrap{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:16px 18px;box-shadow:var(--shadow)}
+  .panel h2{font-size:14px;margin:0 0 12px;padding-bottom:8px;border-bottom:2px solid var(--chip);
+    letter-spacing:.03em;color:var(--muted)}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:700}
+  input,textarea{font:inherit;width:100%;padding:8px 10px;border:1px solid var(--line);
+    border-radius:7px;background:#fbfdfe;color:var(--ink)}
+  input:focus,textarea:focus{outline:2px solid var(--accent);border-color:transparent}
+  .row{display:flex;gap:10px}.row>div{flex:1}
+  .field{margin-bottom:12px}
+  .menu-row{display:grid;grid-template-columns:1fr 74px 34px;gap:8px;margin-bottom:8px;align-items:center}
+  .menu-row input[type=number]{text-align:center}
+  .icon-btn{border:1px solid var(--line);background:#fff;border-radius:7px;cursor:pointer;
+    font-size:16px;line-height:1;padding:8px 0;color:var(--warn)}
+  .add-link{background:none;border:1px dashed var(--line);width:100%;padding:8px;border-radius:7px;
+    cursor:pointer;color:var(--accent);font:inherit;font-weight:700}
+  .primary{width:100%;margin-top:6px;background:var(--accent);color:var(--accent-ink);border:0;
+    border-radius:9px;padding:12px;font:inherit;font-size:15px;font-weight:800;cursor:pointer;letter-spacing:.04em}
+  .primary:active{transform:translateY(1px)}
+  .hint{font-size:11.5px;color:var(--muted);margin:6px 2px 0}
+  /* 予約一覧 */
+  .res{border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:10px;background:#fbfdfe}
+  .res .top{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .res .name{font-weight:800;font-size:15px}
+  .res .time{font-variant-numeric:tabular-nums;font-weight:700;color:var(--accent)}
+  .res .pax{font-size:12px;color:var(--muted)}
+  .badge{font-size:11px;padding:2px 7px;border-radius:999px;background:var(--chip);color:var(--accent);font-weight:700}
+  .badge.cx{background:#fbe6e6;color:var(--warn)}
+  .res .menu{font-size:12.5px;color:var(--ink);margin:5px 0 0;padding-left:2px}
+  .res .menu.empty{color:var(--muted);font-style:italic}
+  .res .acts{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
+  .res .acts button{font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;border-radius:6px;
+    border:1px solid var(--line);background:#fff;padding:5px 9px;color:var(--ink)}
+  .res .acts .cx{color:var(--warn);border-color:#e7c3c3}
+  .res .acts button:active{transform:translateY(1px)}
+  .empty-note{color:var(--muted);font-size:13px;padding:10px 2px}
+  /* /api/stock ビューア */
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.03em}
+  td.num{font-variant-numeric:tabular-nums}
+  code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:12px}
+  .flow{font-size:11.5px;color:var(--muted);margin:0 0 10px}
+</style>
+</head>
+<body>
+<header>
+  <h1>TableCheck 予約デモコンソール</h1>
+  <span class="mode" id="mode">接続確認中…</span>
+  <span class="spacer"></span>
+  <button id="openKds" type="button">デシャップ(KDS)を開く ↗</button>
+</header>
+
+<div class="wrap">
+  <!-- ============ 予約作成フォーム ============ -->
+  <section class="panel">
+    <h2>新規予約を作成</h2>
+    <p class="flow">このタブ → 中継サーバー <code>/api/mock/reservations</code> → <code>/api/stock</code> → デシャップ</p>
+    <form id="form">
+      <div class="row field">
+        <div><label>姓 (last_name)</label><input id="last" placeholder="山田" autocomplete="off"></div>
+        <div><label>名 (first_name)</label><input id="first" placeholder="太郎" autocomplete="off"></div>
+      </div>
+      <div class="row field">
+        <div><label>来店時間 (start_at)</label><input id="time" type="time" value="19:00"></div>
+        <div><label>大人 (pax_adult)</label><input id="adults" type="number" min="0" value="2"></div>
+        <div><label>子供 (pax_child)</label><input id="kids" type="number" min="0" value="0"></div>
+      </div>
+      <div class="field">
+        <label>事前メニュー (orders[]) — 品名 × 数量</label>
+        <div id="menuRows"></div>
+        <button type="button" class="add-link" id="addRow">＋ メニュー行を追加</button>
+        <p class="hint">メニューが1行も無い予約は「席だけ予約」扱いで、デシャップには出ません（仕様どおり）。</p>
+      </div>
+      <div class="field">
+        <label>特記事項 (special_request) — 任意</label>
+        <textarea id="special" rows="2" placeholder="アレルギー: えび (1名) など"></textarea>
+      </div>
+      <button type="submit" class="primary">予約を作成して流す</button>
+    </form>
+  </section>
+
+  <!-- ============ 右カラム: 現在の予約 + /api/stock ============ -->
+  <div>
+    <section class="panel" style="margin-bottom:18px">
+      <h2>上流の予約（TableCheck相当・<code>/api/mock/reservations</code>）</h2>
+      <div id="resList"><p class="empty-note">読込中…</p></div>
+    </section>
+
+    <section class="panel">
+      <h2>デシャップが受け取るデータ（<code>/api/stock</code>）</h2>
+      <p class="flow">中継サーバーが正規化した後の、KDS が実際に取り込む形。ここに出れば疎通OK。</p>
+      <div id="stockView"><p class="empty-note">—</p></div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var MENU_SAMPLES = ["山城牛の焼きすき土鍋御膳","うなぎの土鍋御膳","島豆腐の厚揚げ","本日の刺身盛り","天ぷら盛り合わせ"];
+
+  /* ---- 小道具 ---- */
+  function el(id){return document.getElementById(id);}
+  function h(tag,cls,txt){var e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e;}
+  function pad2(n){return (n<10?"0":"")+n;}
+  function startAtISO(hhmm){
+    var d=new Date(),p=(hhmm||"19:00").split(":");
+    d.setHours(Number(p[0])||19,Number(p[1])||0,0,0);
+    var off=-d.getTimezoneOffset(),s=off>=0?"+":"-",q=function(n){return (Math.abs(n)<10?"0":"")+Math.abs(n);};
+    return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate())+"T"+pad2(d.getHours())+":"+pad2(d.getMinutes())+":00"+s+q(Math.floor(off/60))+q(off%60);
+  }
+  function hhmm(iso){var d=new Date(iso);return isNaN(d)?String(iso):pad2(d.getHours())+":"+pad2(d.getMinutes());}
+  function transName(t){ if(!t||typeof t!=="object") return ""; if(t.ja)return t.ja; if(t.en)return t.en; for(var k in t){if(t[k])return t[k];} return ""; }
+  function esc(s){return String(s==null?"":s);}
+
+  /* ---- メニュー行 ---- */
+  function addMenuRow(name,qty){
+    var row=h("div","menu-row");
+    var inName=h("input");inName.placeholder="品名";inName.setAttribute("list","menuList");inName.value=name||"";
+    var inQty=h("input");inQty.type="number";inQty.min="1";inQty.value=qty||1;
+    var del=h("button","icon-btn","×");del.type="button";del.title="この行を削除";
+    del.onclick=function(){row.remove();};
+    row.appendChild(inName);row.appendChild(inQty);row.appendChild(del);
+    el("menuRows").appendChild(row);
+  }
+  function readMenuRows(){
+    var out=[];
+    el("menuRows").querySelectorAll(".menu-row").forEach(function(r){
+      var name=r.children[0].value.trim(), qty=Number(r.children[1].value)||1;
+      if(name) out.push({name:name,qty:qty});
+    });
+    return out;
+  }
+
+  /* ---- API ---- */
+  function api(method,path,body){
+    return fetch(path,{method:method,headers:body?{"Content-Type":"application/json"}:{},
+      body:body?JSON.stringify(body):undefined,cache:"no-store"})
+      .then(function(r){return r.json().catch(function(){return {};});});
+  }
+
+  /* ---- 予約作成 ---- */
+  el("form").addEventListener("submit",function(ev){
+    ev.preventDefault();
+    var reservation={
+      last_name:el("last").value.trim(),
+      first_name:el("first").value.trim(),
+      start_at:startAtISO(el("time").value),
+      pax_adult:Number(el("adults").value)||0,
+      pax_child:Number(el("kids").value)||0,
+      orders:readMenuRows(),                 // {name,qty} → サーバー側で本物の orders[] 形へ
+      special_request:el("special").value.trim()||null
+    };
+    api("POST","/api/mock/reservations",reservation).then(function(){
+      // フォームをリセット (次の予約入力へ)
+      el("last").value="";el("first").value="";el("special").value="";
+      el("menuRows").innerHTML="";addMenuRow();
+      refresh();
+    });
+  });
+  el("addRow").onclick=function(){addMenuRow();};
+
+  /* ---- 予約一覧の描画 ---- */
+  function renderReservations(list){
+    var box=el("resList");box.innerHTML="";
+    if(!list.length){box.appendChild(h("p","empty-note","予約はまだありません。左のフォームから作成してください。"));return;}
+    list.sort(function(a,b){return String(a.start_at)<String(b.start_at)?-1:1;});
+    list.forEach(function(r){
+      var cx=/cancel/i.test(r.status||"");
+      var card=h("div","res");
+      var top=h("div","top");
+      top.appendChild(h("span","time",hhmm(r.start_at)));
+      top.appendChild(h("span","name",(esc(r.last_name)+" "+esc(r.first_name)).trim()||"(名前なし)"));
+      top.appendChild(h("span","pax","大人"+(r.pax_adult||0)+" 子供"+(r.pax_child||0)));
+      top.appendChild(h("span","badge"+(cx?" cx":""),cx?"キャンセル":esc(r.status)));
+      card.appendChild(top);
+
+      var orders=r.orders||[];
+      if(orders.length){
+        var m=orders.map(function(o){return transName(o.menu_item_name_translations)+" ×"+(o.qty||1);}).join("、 ");
+        card.appendChild(h("div","menu",m));
+      }else{
+        card.appendChild(h("div","menu empty","メニューなし（席だけ予約 → デシャップには出ません）"));
+      }
+
+      if(!cx){
+        var acts=h("div","acts");
+        acts.appendChild(mkBtn("大人 +1",function(){patchPax(r,1);}));
+        acts.appendChild(mkBtn("大人 −1",function(){patchPax(r,-1);}));
+        var cxBtn=mkBtn("キャンセル",function(){api("DELETE","/api/mock/reservations/"+encodeURIComponent(r.id)).then(refresh);});
+        cxBtn.className="cx";
+        acts.appendChild(cxBtn);
+        card.appendChild(acts);
+      }
+      box.appendChild(card);
+    });
+  }
+  function mkBtn(label,fn){var b=h("button",null,label);b.type="button";b.onclick=fn;return b;}
+  function patchPax(r,delta){
+    var next=Math.max(0,(r.pax_adult||0)+delta);
+    api("PATCH","/api/mock/reservations/"+encodeURIComponent(r.id),{pax_adult:next}).then(refresh);
+  }
+
+  /* ---- /api/stock ビューア ---- */
+  function renderStock(rows){
+    var box=el("stockView");box.innerHTML="";
+    if(!rows.length){box.appendChild(h("p","empty-note","まだ配信データはありません。"));return;}
+    var t=h("table");
+    t.innerHTML="<thead><tr><th>時刻</th><th>予約者</th><th>人数</th><th>メニュー</th></tr></thead>";
+    var tb=h("tbody");
+    rows.forEach(function(s){
+      var tr=h("tr");
+      tr.appendChild(td(s.time,"num"));
+      tr.appendChild(td(s.name));
+      tr.appendChild(td("大人"+(s.adults||0)+" 子供"+(s.kids||0),"num"));
+      tr.appendChild(td((s.menu||[]).map(function(m){return m.name+" ×"+m.qty;}).join("、 ")));
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);box.appendChild(t);
+  }
+  function td(txt,cls){var c=h("td",cls);c.textContent=txt==null?"":txt;return c;}
+
+  /* ---- 定期更新 ---- */
+  function refresh(){
+    api("GET","/api/mock/reservations").then(renderReservations).catch(function(){});
+    api("GET","/api/stock").then(renderStock).catch(function(){});
+  }
+  function updateMode(){
+    api("GET","/api/health").then(function(hh){
+      el("mode").textContent=(hh.mode==="mock"?"MOCK モード":"LIVE モード")+" · 保持 "+(hh.store||0)+"件";
+    }).catch(function(){el("mode").textContent="サーバー未接続";});
+  }
+
+  /* ---- 初期化 ---- */
+  el("openKds").onclick=function(){window.open("/","kds_deshup");};
+  var dl=document.createElement("datalist");dl.id="menuList";
+  MENU_SAMPLES.forEach(function(n){var o=document.createElement("option");o.value=n;dl.appendChild(o);});
+  document.body.appendChild(dl);
+  addMenuRow();                    // 最初のメニュー行を1つ用意
+  refresh();updateMode();
+  setInterval(refresh,3000);
+  setInterval(updateMode,5000);
+})();
+</script>
+</body>
+</html>

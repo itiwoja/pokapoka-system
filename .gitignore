@@ -14,3 +14,6 @@ mockup/_screenshot*.png
 # ローカル環境変数
 .env
 .env.local
+
+# 接続設定の実体(環境ごとに値が違う)。雛形の config.example.json だけ管理する
+config/config.json

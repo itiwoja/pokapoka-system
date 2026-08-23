@@ -1,0 +1,25 @@
+{
+  "_readme": "このファイルを同じディレクトリに config.json としてコピーし、店舗の実値へ書き換える。config.json は .gitignore 済み(環境ごとに違う値のため)。優先順位は 既定値 < config.json < 環境変数。",
+  "_secret": "TABLECHECK_API_KEY はここに書かない。環境変数で渡すこと(書いてあると起動時にエラーで止まる)。",
+
+  "server": {
+    "_host": "中継サーバー(ミニPC)が待ち受けるIP。デシャップモニターと注文端末は、このアドレスへWiFi経由で接続する。127.0.0.1 のままだとミニPC自身からしか到達できず、他端末から繋がらない。ミニPCの店内LAN固定IPを入れる(DHCP予約 or 静的IP)。0.0.0.0(全IF)は使わない。",
+    "host": "192.168.1.10",
+    "port": 8000
+  },
+
+  "tablecheck": {
+    "_note": "唯一の外部接続。店内→TableCheck の外向きpullのみで、Webhookは使わない。",
+    "base": "https://api.tablecheck.com",
+    "shopId": "",
+    "pollMs": 30000,
+    "resyncMs": 900000,
+    "timeoutMs": 15000
+  },
+
+  "seat": {
+    "_note": "予約時刻の何分前から何分後までを在席とみなすか(/api/seats)。",
+    "beforeMin": 30,
+    "afterMin": 120
+  }
+}
