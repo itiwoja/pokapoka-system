@@ -77,3 +77,11 @@
 - 厨房限定卓番overrideは `kds_table_override_v1` にorder id単位で保存する。`effectiveTable(order)` を表示・伝票preview・hall-ready snapshot・コンロ所有卓表示にだけ適用し、`window.KDS_ORDERS`、`order.table`、relay/POS/TableCheck、`/api/seats` は変更しない。重複候補は初回決定で保存せず警告し、同一候補の「重複を許可して変更」を2回目の決定として保存する。候補変更、モーダル閉鎖、モード変更で確認状態を解除する。
 - 全品目完了時はカード消去前に `kds_hall_ready_v1` へorder id単位のsnapshot（effective卓番、完了時刻、品目要約）をidempotentに作る。cueはホール専用で、dismissed tombstoneは当日中保持する。dismissは専用6秒undoでactiveへ戻せ、既存厨房完了undoとはstate/timerを共有しない。
 - 新状態は `kds_sync` の同一originタブ間だけで同期し、`KITCHEN_EVENTS`への追加やrelay送信を行わない。別端末同期、#155最終選定、#152完全版、上流書戻しは別計画とする。
+
+## Issue #204 現行版への確認済み記録の適用範囲
+
+上記の完成レベル確認は、注記どおり2026-07-14時点の旧版を対象にした記録です。Issue #204で追加・変更された現行作業ツリーのUI（ホールA/B/C、炊飯準備cue、厨房限定卓番上書き、提供準備完了cue）を含む版へ、そのまま「確認済み」を適用しません。
+
+現行版のローカルブラウザ回帰は [現行KDSブラウザ回帰試験・受け入れ記録](現行KDSブラウザ回帰試験_受け入れ記録.md) のREG-01〜REG-10を正本とします。そこでは、同一origin 2タブのLocalStorage/BroadcastChannel確認と、中継ServerのMOCK確認を、店舗実機・店内LAN・実プリンター・TableCheck LIVEの受け入れから分離します。
+
+この仕様書の既存チェックを現行版のリリース判定へ使う場合は、現行回帰記録の実測結果・証跡・合否を先に揃え、[実機検証チェックシート](実機検証チェックシート_受け入れ試験.md)のE2E-01〜E2E-10と突合してください。実機・LAN・LIVE連携を未確認のまま、旧版のチェックだけを根拠にIssue #204をクローズしません。

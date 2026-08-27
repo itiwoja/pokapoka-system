@@ -213,7 +213,10 @@ function createRelay(options) {
       if (err) { res.writeHead(404); return res.end("not found"); }
       if (path.basename(file) === "kds-a-grid.html") {
         var html = data.toString("utf8");
-        if (html.indexOf("kds-bridge.js") < 0 && html.indexOf("</body>") >= 0) {
+        // 説明コメント中のファイル名ではなく、実際のscript要素だけを注入済みと判定する。
+        // KDS本体には接続方法のコメントにも "kds-bridge.js" が現れるため、単純な文字列検索は使わない。
+        var hasBridgeScript = /<script\b[^>]*\bsrc=["']\/relay-server\/kds-bridge\.js["'][^>]*><\/script>/i.test(html);
+        if (!hasBridgeScript && html.indexOf("</body>") >= 0) {
           html = html.replace("</body>",
             '  <script>window.__KDS_SUPPRESS_DEMO__=true;</script>\n' +
             '  <script src="/relay-server/kds-bridge.js"></script>\n</body>');
