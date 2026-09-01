@@ -44,6 +44,23 @@ node relay-server/server.js
 # → http://127.0.0.1:8000/demo   … 予約デモコンソール
 ```
 
+### 自動テスト
+
+GitHub Actions は Pull Request と `main` への push で Node.js 22 を使用し、
+中継サーバーとルートの KDS 関連テストを実行します。店舗の設定ファイル、認証情報、
+TableCheck などの実 API は不要です。ローカルでもリポジトリ直下から同じテストを再現できます。
+
+```sh
+cd relay-server
+npm ci
+npm test
+cd ..
+node --test ./*.test.js
+```
+
+`npm ci` は `relay-server/package-lock.json` に固定された依存関係をクリーンに導入します。
+いずれかのテストが失敗するとコマンドと GitHub Actions は非ゼロ終了します。
+
 `window.KDS_ORDERS` に注文データ（`{id, table, type, start, people, items:[{name, qty, options, allergies, done}]}`）を投入すると表示されます。アレルギー情報は `allergies`（`allergy` / `allergyInfo`・配列も可）で受け取り、品目直下に「アレルギー: …」として常時表示します。空の場合は「デモデータを投入」ボタンでサンプルを表示できます（中継サーバー配信時は自動デモを抑止）。
 
 ## TableCheck 予約連携（店内中継サーバー）
