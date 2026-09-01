@@ -1365,6 +1365,123 @@
   @media (max-width: 360px) {
     .board { grid-template-columns: 1fr; }
   }
+
+  /* ============================================================
+     Hall prototype layouts (#155 phase1)
+     The kitchen DOM remains the original grid/lane surface. Hall uses a
+     separate read-only surface so a prototype choice cannot alter kitchen
+     interaction or the upstream order contract.
+  */
+  .hall-proto-switch {
+    display: none;
+    flex: 0 0 auto;
+    height: 44px;
+    border: 1px solid var(--chrome-line);
+    border-radius: var(--r-pill);
+    overflow: hidden;
+    background: var(--chrome-2);
+  }
+  body.mode-hall .hall-proto-switch { display: flex; }
+  .hall-proto-btn {
+    min-width: 44px; min-height: 44px;
+    padding: 0 10px;
+    border: 0; border-left: 1px solid var(--chrome-line);
+    background: transparent; color: var(--on-chrome-dim);
+    font: 800 13px var(--font-ui); cursor: pointer;
+  }
+  .hall-proto-btn:first-child { border-left: 0; }
+  .hall-proto-btn[aria-pressed="true"] { background: #fff; color: var(--chrome); }
+  .hall-proto-view {
+    display: none;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+  }
+  body.mode-hall .hall-proto-view { display: flex; }
+  body.mode-hall .shell > main,
+  body.mode-hall .shell > aside { display: none; }
+  .hall-view {
+    display: none;
+    flex: 1 1 auto;
+    min-width: 0; min-height: 0;
+    gap: var(--gap-card);
+    padding: var(--pad-shell);
+  }
+  body.mode-hall.hall-proto-a .hall-view-a,
+  body.mode-hall.hall-proto-b .hall-view-b,
+  body.mode-hall.hall-proto-c .hall-view-c { display: grid; }
+  .hall-view-a { grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); }
+  .hall-view-b { grid-template-columns: minmax(280px, 1fr) minmax(0, 1.1fr); }
+  .hall-view-c { grid-template-columns: minmax(300px, 1.3fr) minmax(220px, .7fr) minmax(220px, .8fr); }
+  .hall-panel {
+    display: flex; flex-direction: column; min-width: 0; min-height: 0;
+    border: 2px solid var(--border); background: var(--card);
+  }
+  .hall-panel-head {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+    min-height: 48px; padding: 8px 12px;
+    border-bottom: 2px solid var(--border);
+    background: var(--chrome); color: var(--on-chrome);
+    font-size: 16px; font-weight: 900;
+  }
+  .hall-panel-head .count {
+    margin-left: auto; min-width: 30px; padding: 2px 7px;
+    border: 1px solid var(--chrome-line); background: var(--chrome-2);
+    font: 800 14px var(--font-num); text-align: center;
+  }
+  .hall-stock-add {
+    min-width: 36px; min-height: 36px; padding: 0 9px;
+    border: 1px solid var(--chrome-line); border-radius: var(--r-chip);
+    background: var(--chrome-2); color: var(--on-chrome);
+    font-size: 18px; font-weight: 900; cursor: pointer;
+  }
+  .hall-panel-body {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto;
+    padding: 10px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .hall-order-card, .hall-ready-card, .hall-stock-card {
+    border: 1px solid var(--border); border-left: 6px solid var(--type-new);
+    padding: 9px 10px; background: var(--card-new);
+  }
+  .hall-order-card.reserved, .hall-stock-card.reserved { border-left-color: var(--type-reserved-edge); background: var(--card-reserved); }
+  .hall-order-top, .hall-ready-top, .hall-stock-top { display: flex; align-items: baseline; gap: 8px; }
+  .hall-order-table, .hall-ready-table { font: 900 26px var(--font-num); }
+  .hall-order-kind, .hall-ready-time { color: var(--text-secondary); font-size: 12px; font-weight: 800; }
+  .hall-order-items, .hall-ready-items, .hall-stock-menu { margin: 6px 0 0; padding-left: 20px; font-size: 15px; line-height: 1.45; }
+  .hall-order-items li, .hall-ready-items li { overflow-wrap: anywhere; }
+  .hall-order-elapsed { margin-left: auto; font: 800 13px var(--font-num); color: var(--text-secondary); white-space: nowrap; }
+  .hall-order-card.compact { padding: 7px 8px; }
+  .hall-order-card.compact .hall-order-items { margin-top: 2px; font-size: 13px; line-height: 1.25; }
+  .hall-stock-card { border-left-width: 4px; }
+  .hall-stock-time { font: 900 20px var(--font-num); }
+  .hall-stock-name { margin-top: 2px; font-weight: 800; }
+  .hall-empty { padding: 24px 12px; text-align: center; color: var(--text-secondary); font-weight: 700; }
+  .hall-cue {
+    display: flex; align-items: center; gap: 8px; margin-top: 7px;
+    padding: 6px 8px; border: 2px solid var(--cta); background: var(--cta-soft);
+    color: var(--text-primary); font-size: 13px; font-weight: 900;
+  }
+  .hall-cue.acknowledged { border-color: var(--border-strong); background: var(--bg-raise); color: var(--text-secondary); }
+  .hall-cue button { margin-left: auto; min-height: 36px; padding: 0 10px; border: 1px solid var(--cta); background: var(--cta); color: #fff; font-weight: 900; cursor: pointer; }
+  .hall-ready-card { border-left-color: var(--cta); background: var(--cta-soft); }
+  .hall-ready-inline { display: flex; flex-direction: column; gap: 8px; margin-bottom: 2px; }
+  .hall-ready-inline::before { content: "提供準備完了"; color: var(--cta); font-size: 13px; font-weight: 900; }
+  .hall-ready-card.dismissed { border-left-color: var(--border-strong); background: var(--bg-raise); opacity: .78; }
+  .hall-ready-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 7px; }
+  .hall-ready-actions button { min-height: 40px; padding: 0 10px; border: 1px solid var(--border-strong); background: #fff; color: var(--text-primary); font-weight: 800; cursor: pointer; }
+  .hall-ready-card.dismissed .hall-ready-actions button { display: none; }
+  .hall-summary-stat { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid var(--border-soft); font-weight: 800; }
+  .hall-summary-stat .v { font: 900 24px var(--font-num); }
+  .table-override-btn { min-height: 36px; padding: 0 8px; border: 1px solid var(--border-strong); background: transparent; color: var(--text-secondary); font-size: 11px; font-weight: 800; cursor: pointer; }
+  .table-override-btn[data-overridden="true"] { border-color: var(--cta); color: var(--cta); background: var(--cta-soft); }
+  body.mode-hall .table-override-btn { display: none; }
+  .table-override-confirm-backdrop { display: none; position: fixed; inset: 0; z-index: 20; align-items: center; justify-content: center; padding: 20px; background: rgba(0,0,0,.52); }
+  body.table-override-confirm-open .table-override-confirm-backdrop { display: flex; }
+  .table-override-confirm { width: min(420px, 100%); padding: 20px; border: 2px solid var(--u-warn); background: #fff; box-shadow: var(--sh-pop); }
+  .table-override-confirm h2 { margin: 0 0 10px; font-size: 20px; }
+  .table-override-confirm p { margin: 0 0 16px; line-height: 1.6; font-weight: 700; }
+  .hall-ready-toast { z-index: 12; }
+
 </style>
 </head>
 <body class="is-empty">
@@ -1382,6 +1499,13 @@
     <div class="mode-switch" role="group" aria-label="表示切り替え">
       <button type="button" class="mode-btn" id="viewGrid" data-view="grid" aria-pressed="true">グリッド</button>
       <button type="button" class="mode-btn" id="viewLane" data-view="lane" aria-pressed="false">レーン</button>
+    </div>
+
+    <!-- ホール比較prototype (#155 phase1): キッチンには表示しない -->
+    <div class="hall-proto-switch" id="hallProtoSwitch" role="group" aria-label="ホール表示案">
+      <button type="button" class="hall-proto-btn" data-hall-layout="A" aria-pressed="true">A</button>
+      <button type="button" class="hall-proto-btn" data-hall-layout="B" aria-pressed="false">B</button>
+      <button type="button" class="hall-proto-btn" data-hall-layout="C" aria-pressed="false">C</button>
     </div>
 
     <button type="button" class="head-toggle" id="printerSettingsBtn" aria-label="レシートプリンターのIPアドレス設定">
@@ -1439,6 +1563,44 @@
       </div>
       <div class="stock-list" id="stockList" aria-live="polite"></div>
     </aside>
+
+    <!-- ホール専用prototype面。キッチンのgrid/lane DOMとは分離する。 -->
+    <div class="hall-proto-view" id="hallProtoView" aria-live="polite">
+      <div class="hall-view hall-view-a" data-hall-view="A">
+        <section class="hall-panel">
+          <h2 class="hall-panel-head">進行中オーダー <span class="count" id="hallACount">0</span></h2>
+          <div class="hall-panel-body" id="hallAOrders"></div>
+        </section>
+        <aside class="hall-panel">
+          <h2 class="hall-panel-head">予約ストック <span class="count" id="hallAStockCount">0</span><button type="button" class="hall-stock-add" data-hall-stock-add>＋</button></h2>
+          <div class="hall-panel-body" id="hallAStock"></div>
+        </aside>
+      </div>
+      <div class="hall-view hall-view-b" data-hall-view="B">
+        <section class="hall-panel">
+          <h2 class="hall-panel-head">予約ストック主表示 <span class="count" id="hallBStockCount">0</span><button type="button" class="hall-stock-add" data-hall-stock-add>＋</button></h2>
+          <div class="hall-panel-body" id="hallBStock"></div>
+        </section>
+        <section class="hall-panel">
+          <h2 class="hall-panel-head">進行中（compact） <span class="count" id="hallBCount">0</span></h2>
+          <div class="hall-panel-body" id="hallBOrders"></div>
+        </section>
+      </div>
+      <div class="hall-view hall-view-c" data-hall-view="C">
+        <section class="hall-panel">
+          <h2 class="hall-panel-head">提供準備完了 <span class="count" id="hallCReadyCount">0</span></h2>
+          <div class="hall-panel-body" id="hallCReady"></div>
+        </section>
+        <section class="hall-panel">
+          <h2 class="hall-panel-head">予約ストック <span class="count" id="hallCStockCount">0</span><button type="button" class="hall-stock-add" data-hall-stock-add>＋</button></h2>
+          <div class="hall-panel-body" id="hallCStock"></div>
+        </section>
+        <section class="hall-panel">
+          <h2 class="hall-panel-head">進行中（summary） <span class="count" id="hallCCount">0</span></h2>
+          <div class="hall-panel-body" id="hallCOrders"></div>
+        </section>
+      </div>
+    </div>
   </div>
 
   <!-- カード並べ替えの取消バー -->
@@ -1456,6 +1618,12 @@
 
   <!-- チビ伝の印刷結果通知 (押しても無反応で連打→重複印字になるのを防ぐ #176) -->
   <div class="toast toast-plain" id="printToast" role="status"></div>
+
+  <!-- 全品完了のホールcue専用undo（厨房の完了undoとは別state/timer） -->
+  <div class="toast hall-ready-toast" id="hallReadyUndoToast" role="status">
+    <span id="hallReadyUndoMsg"></span>
+    <button class="undo-btn" type="button" id="hallReadyUndoBtn">戻す</button>
+  </div>
 
   <!-- 予約追加フォーム -->
   <div class="modal-backdrop" id="modalBackdrop">
@@ -1546,6 +1714,18 @@
     </div>
   </div>
 
+  <!-- 重複卓番は最初の決定で保存せず、同じ候補を明示許可した2回目だけ保存する -->
+  <div class="table-override-confirm-backdrop" id="tableOverrideConfirmBackdrop">
+    <div class="table-override-confirm" role="dialog" aria-modal="true" aria-labelledby="tableOverrideConfirmTitle">
+      <h2 id="tableOverrideConfirmTitle">卓番が重複しています</h2>
+      <p id="tableOverrideConfirmMessage"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" id="tableOverrideConfirmCancel">キャンセル</button>
+        <button type="button" class="btn-save" id="tableOverrideConfirmAllow">重複を許可して変更</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 伝票レイアウトの描画エンジン。フォーマッターと同じコードで描くことで
        「プレビュー = 実際の印字」を保証する。読み込めない場合(file://で単体を開いた等)は
        従来のDOMプレビューにフォールバックするので、KDS本体は単体でも動作する -->
@@ -1576,6 +1756,10 @@
     var LS_VIEW   = "kds_view_v1"; // #13 表示モード (grid / lane)
     var LS_DAY = "kds_day_v1";     // 最終利用日 (YYYY-MM-DD)。日付が変わったら当日データを破棄 (#63)
     var LS_DELETED = "kds_deleted_v1"; // 削除済み注文ID (POS再送で復活させないトゥームストーン #67)
+    var LS_HALL_PROTO = "kds_hall_proto_v1"; // ホールA/B/C比較prototype (#155)
+    var LS_RICE_CUE = "kds_rice_cue_v1"; // 米料理予約cue (rid -> state, 当日分)
+    var LS_TABLE_OVERRIDE = "kds_table_override_v1"; // 厨房限定卓番上書き (order id -> table)
+    var LS_HALL_READY = "kds_hall_ready_v1"; // 全品完了ホールcue (order id -> snapshot)
     // relay-server/kds-bridge.js が所有する取込済みrid記録。書くのは向こうだが、
     // 日次パージの対象に入れる必要があるためキー名だけここでも持つ (#172)
     var LS_BRIDGE_SEEN = "kds_bridge_seen_v1";
@@ -1588,6 +1772,8 @@
     var FEATURE_DELETE_ORDER = false; // 注文削除 (×) ボタン
     var WARN_MIN = 5, ALERT_MIN = 10;
     var SOON_MIN = 30;             // 予約30分前通知
+    var HALL_LAYOUTS = ["A", "B", "C"];
+    var HALL_READY_UNDO_MS = 6000;
 
     var LONGPRESS_MS = 800;        // 並べ替え長押し (0.8〜2秒の下限)
     var UNDO_TOAST_MS = 6000;      // 全完了カードの取り消し猶予
@@ -1644,6 +1830,14 @@
     var view = "grid";             // #13 表示モード (grid / lane)
     var lockedTimers = {};         // タイマーロック状態 { orderId: true }
     var deletedIds = {};           // 削除済み注文ID { orderId: true } (LS正本 #67)
+    var riceCueMap = {};           // { rid: { status:"active"|"acknowledged", day } }
+    var tableOverrideMap = {};      // { orderId: "卓番" }。公開orderは決して変更しない
+    var hallReadyMap = {};         // { orderId: { orderId, table, completedAt, items, status, day } }
+    var hallLayout = "A";          // ホール比較prototypeの表示案
+    var tableOverridePending = null; // { id, candidate }。重複警告の2段階確認
+    var hallReadyUndoId = null;
+    var hallReadyUndoTimer = null;
+    var seatDialContext = "reservation"; // reservation / tableOverride
     var bc = null;
     var undoInfo = null;           // { id, index } 全完了直後の取り消し対象
     var undoTimer = null;
@@ -1712,6 +1906,16 @@
     var undoToastBtn = document.getElementById("undoToastBtn");
     var printToastEl = document.getElementById("printToast");
     var storageWarnEl = document.getElementById("storageWarn");   // 保存失敗の警告バナー (#179)
+    var hallProtoBtns = Array.prototype.slice.call(document.querySelectorAll("[data-hall-layout]"));
+    var hallStockAddBtns = Array.prototype.slice.call(document.querySelectorAll("[data-hall-stock-add]"));
+    var hallProtoViewEl = document.getElementById("hallProtoView");
+    var hallReadyUndoToastEl = document.getElementById("hallReadyUndoToast");
+    var hallReadyUndoMsgEl = document.getElementById("hallReadyUndoMsg");
+    var hallReadyUndoBtn = document.getElementById("hallReadyUndoBtn");
+    var tableOverrideConfirmBackdrop = document.getElementById("tableOverrideConfirmBackdrop");
+    var tableOverrideConfirmMessage = document.getElementById("tableOverrideConfirmMessage");
+    var tableOverrideConfirmCancel = document.getElementById("tableOverrideConfirmCancel");
+    var tableOverrideConfirmAllow = document.getElementById("tableOverrideConfirmAllow");
 
     /* ===================== ユーティリティ ===================== */
     function t(key) { return LABELS[key] || key; }
@@ -1753,6 +1957,22 @@
       if (/ビール|オリオン|焼酎|豊の国|黒霧島|ハイボール|サワー|ウーロンハイ|泡盛|薫長|純米|吟醸|辛口|ウーロン茶|オレンジ|コーラ|サイダー|ジュース|水割り|ソーダ|ロック|茶|酒/.test(s)) return "drink";
       if (/御膳|ご飯|ごはん|丼|白米|出汁米|卵かけ|ライス|そば|うどん|麺|米/.test(s)) return "rice";
       return "side";
+    }
+
+    /* 予約メニューのうち rice 品目を1つ以上含むものだけを炊飯cue対象にする (#159)。 */
+    function isRiceReservation(reservation) {
+      return !!(reservation && Array.isArray(reservation.menu) && reservation.menu.some(function (menu) {
+        return menu && itemCategory(menu.name) === "rice";
+      }));
+    }
+
+    /* 公開注文の table は正本。表示だけを厨房ローカル上書きへ切り替える (#160)。 */
+    function effectiveTable(order) {
+      if (!order) return "";
+      var id = String(order.id);
+      var override = tableOverrideMap[id];
+      return override != null && String(override).trim() !== ""
+        ? String(override) : (order.table != null ? String(order.table) : "");
     }
 
     /* レーン表示を描画する（未完了品目のみ・orderSeq 順）。
@@ -1826,7 +2046,7 @@
 
       var tbl = document.createElement("span");
       tbl.className = "lane-table";
-      tbl.textContent = order.table != null ? String(order.table) : "-";
+      tbl.textContent = effectiveTable(order) || "-";
 
       var mid = document.createElement("span");
       var nm = document.createElement("span");
@@ -1891,7 +2111,7 @@
           // TableCheck 側で日程変更された予約 (予約IDは不変) が「取込済み」と判定されて
           // 変更後の日に二度と取り込まれない (#172)
           [LS_STOCK, LS_DONE, LS_DONE_V1, LS_ORDER, LS_KONRO, LS_LOCKED, LS_DELETED,
-           LS_BRIDGE_SEEN].forEach(function (key) {
+           LS_BRIDGE_SEEN, LS_RICE_CUE, LS_TABLE_OVERRIDE, LS_HALL_READY].forEach(function (key) {
             localStorage.removeItem(key);
           });
         }
@@ -1988,6 +2208,53 @@
     }
     function saveStock() {
       lsSet(LS_STOCK, JSON.stringify(stock));
+    }
+
+    /* ----- 米料理予約cue (#159) ----- */
+    function loadRiceCues() {
+      var v = safeParse(localStorage.getItem(LS_RICE_CUE), {}) || {};
+      riceCueMap = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+    }
+    function saveRiceCues() {
+      lsSet(LS_RICE_CUE, JSON.stringify(riceCueMap));
+    }
+    function pruneRiceCues() {
+      var live = {};
+      stock.forEach(function (r) { if (r && r.rid != null) live[String(r.rid)] = true; });
+      var changed = false;
+      Object.keys(riceCueMap).forEach(function (rid) {
+        var reservation = findRes(rid);
+        if (!live[rid] || (reservation && !isRiceReservation(reservation))) {
+          delete riceCueMap[rid]; changed = true;
+        }
+      });
+      if (changed) saveRiceCues();
+    }
+
+    /* ----- 厨房限定卓番override (#160)。表示専用で公開注文を変更しない ----- */
+    function loadTableOverrides() {
+      var v = safeParse(localStorage.getItem(LS_TABLE_OVERRIDE), {}) || {};
+      tableOverrideMap = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+    }
+    function saveTableOverrides() {
+      lsSet(LS_TABLE_OVERRIDE, JSON.stringify(tableOverrideMap));
+    }
+    function pruneTableOverrides(liveIds) {
+      if (!liveIds) return;
+      var changed = false;
+      Object.keys(tableOverrideMap).forEach(function (id) {
+        if (!liveIds[id]) { delete tableOverrideMap[id]; changed = true; }
+      });
+      if (changed) saveTableOverrides();
+    }
+
+    /* ----- 全品完了時のホールcue snapshot (#152 phase1) ----- */
+    function loadHallReady() {
+      var v = safeParse(localStorage.getItem(LS_HALL_READY), {}) || {};
+      hallReadyMap = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+    }
+    function saveHallReady() {
+      lsSet(LS_HALL_READY, JSON.stringify(hallReadyMap));
     }
 
     /* ----- 権限モード ----- */
@@ -2120,7 +2387,13 @@
             saveDone();
             // 該当カードへ即時反映
             var c = cards[msg.id];
-            if (c) applyDoneToCard(c, /*animateRemoval*/ true);
+            if (c) applyDoneToCard(c, /*animateRemoval*/ true, /*broadcastHallReady*/ false);
+            else {
+              // ホール専用タブには厨房カードがないため、同じ正規化経路でcueだけを撤回する。
+              var syncedOrders = getOrders();
+              applyDoneToOrders(syncedOrders);
+              if (reconcileHallReadySnapshots(syncedOrders, /*broadcast*/ false)) renderHallViews();
+            }
           } else if (msg.type === "konro") {
             setKonroState(msg.id, msg.num, msg.state);
             saveKonro();
@@ -2150,6 +2423,36 @@
             lockedTimers[String(msg.id)] = !!msg.locked;
             saveLocked();
             applyTimerLockToCard(String(msg.id));
+          } else if (msg.type === "riceCue" && msg.rid != null) {
+            var riceRid = String(msg.rid);
+            if (msg.state && typeof msg.state === "object") riceCueMap[riceRid] = msg.state;
+            else riceCueMap[riceRid] = { status: msg.status === "acknowledged" ? "acknowledged" : "active", day: todayStr() };
+            saveRiceCues();
+            renderStock();
+            renderHallViews();
+          } else if (msg.type === "tableOverride" && msg.id != null) {
+            var overrideId = String(msg.id);
+            if (msg.removed || msg.table == null || String(msg.table).trim() === "") delete tableOverrideMap[overrideId];
+            else tableOverrideMap[overrideId] = String(msg.table);
+            saveTableOverrides();
+            applyTableOverrideToCard(overrideId);
+            refreshAllKonro();
+            renderHallViews();
+          } else if (msg.type === "hallReady" && msg.id != null) {
+            var readyId = String(msg.id);
+            var incoming = msg.snapshot && typeof msg.snapshot === "object" ? msg.snapshot : null;
+            var current = hallReadyMap[readyId];
+            var incomingStatus = incoming && incoming.status ? incoming.status : msg.status;
+            var staleAfterRetraction = current && current.status === "retracted" &&
+              incomingStatus !== "retracted" &&
+              Number(incoming && incoming.completedAt || 0) <= Number(current.retractedAt || 0);
+            if (!staleAfterRetraction) {
+              if (incoming) hallReadyMap[readyId] = incoming;
+              else if (msg.status === "dismissed" && current && current.status !== "retracted") current.status = "dismissed";
+              if (incomingStatus === "retracted" && hallReadyUndoId === readyId) hideHallReadyUndo();
+              saveHallReady();
+              renderHallViews();
+            }
           }
         };
       } catch (e) { bc = null; }
@@ -2186,6 +2489,19 @@
     function broadcastTimerLock(id, locked) {
       if (!bc) return;
       try { bc.postMessage({ type: "timerLock", id: String(id), locked: !!locked }); } catch (e) {}
+    }
+
+    function broadcastRiceCue(rid, state) {
+      if (!bc) return;
+      try { bc.postMessage({ type: "riceCue", rid: String(rid), state: state }); } catch (e) {}
+    }
+    function broadcastTableOverride(id, table, removed) {
+      if (!bc) return;
+      try { bc.postMessage({ type: "tableOverride", id: String(id), table: table == null ? null : String(table), removed: !!removed }); } catch (e) {}
+    }
+    function broadcastHallReady(id, snapshot) {
+      if (!bc) return;
+      try { bc.postMessage({ type: "hallReady", id: String(id), snapshot: snapshot }); } catch (e) {}
     }
 
     /* ===================== レンダリング ===================== */
@@ -2322,7 +2638,7 @@
         " lvl-" + (lockedTimers[order.id] ? "ok" : levelOf(elapsedMin(order.start)));
       card.setAttribute("data-id", String(order.id));
       card.setAttribute("aria-label",
-        "卓 " + (order.table || "") + " " + (order.type === "reserved" ? t("reserved") : t("new")));
+        "卓 " + (effectiveTable(order) || "") + " " + (order.type === "reserved" ? t("reserved") : t("new")));
 
       /* banner (帯) = 緊急度で塗る上段 */
       var head = document.createElement("div");
@@ -2344,7 +2660,7 @@
       }
       var table = document.createElement("div");
       table.className = "table-no";
-      table.textContent = order.table != null ? String(order.table) : "--";
+      table.textContent = effectiveTable(order) || "--";
       // 削除ボタン (キッチンモード専用)。ネイティブ confirm() はメインスレッドを塞ぎ
       // ポーリング・経過時間更新まで止めるため、2段階タップのインライン確認にする (#68)
       var delBtn = document.createElement("button");
@@ -2391,6 +2707,17 @@
       slipBtn.setAttribute("aria-label", t("print"));
       slipBtn.textContent = "伝";
       slipBtn.addEventListener("click", function () { openSlip(order); });
+      // 卓番overrideは厨房だけの表示上書き。元order.tableや上流APIは変更しない (#160)
+      var tableOverrideBtn = document.createElement("button");
+      tableOverrideBtn.type = "button";
+      tableOverrideBtn.className = "table-override-btn";
+      tableOverrideBtn.textContent = "卓番";
+      tableOverrideBtn.setAttribute("aria-label", "卓番を変更");
+      tableOverrideBtn.setAttribute("data-overridden", tableOverrideMap[String(order.id)] ? "true" : "false");
+      tableOverrideBtn.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        openTableOverride(order.id);
+      });
       // タイマーロックボタン
       var lockBtn = document.createElement("button");
       lockBtn.type = "button";
@@ -2407,6 +2734,7 @@
       // サブ行: 種別チップ + 受付 + 停 + 伝
       timeRow.appendChild(badge);
       timeRow.appendChild(recv);
+      timeRow.appendChild(tableOverrideBtn);
       if (FEATURE_TIMER_LOCK) timeRow.appendChild(lockBtn); // #59 既定OFF
       timeRow.appendChild(slipBtn);
 
@@ -2476,11 +2804,12 @@
     function render(orders) {
       var seen = {};
       var added = [];
+      // 完了状態を正規化した後、live orderの未完了化をhall-readyへ反映する。
+      reconcileHallReadySnapshots(orders, /*broadcast*/ true);
       orders.forEach(function (order) {
-        var entry = cards[order.id];
+      var entry = cards[order.id];
         // 全品目完了済みの注文は再表示しない (完了消去したカードがポーリングで復活しないように)
-        var allDone = (order.items || []).length > 0 &&
-          order.items.every(function (it) { return !!it.done; });
+        var allDone = isOrderAllDone(order);
         if (!entry && allDone) return;
         seen[order.id] = true;
         if (!entry) {
@@ -2500,6 +2829,7 @@
             if (oldUl) entry.el.replaceChild(buildItemsList(order), oldUl);
           }
         }
+        applyTableOverrideToCard(String(order.id));
         applyDoneToCard(entry, /*animateRemoval*/ false);
         applyKonroToCard(order.id);   // LS のコンロ状態を DOM へ反映 (他タブ更新の取り込み)
       });
@@ -2529,6 +2859,7 @@
         if (undoInfo) feedIds[undoInfo.id] = true;
         pruneDone(feedIds);
         pruneLocked(feedIds);
+        pruneTableOverrides(feedIds);
       }
 
       // コンロ掃除後に全カードのロックを再計算 (占有カードが消えた番号を解錠する) (#114)
@@ -2542,6 +2873,7 @@
       reflectEmpty();
       updateKonroHud();
       if (view === "lane") renderLanes();   // #13 レーン表示も同期
+      renderHallViews();
     }
 
     /* orderSeq を生存注文に同期。新着は末尾へ。並べ替え中は触らない */
@@ -2581,10 +2913,14 @@
       seqEls.forEach(function (el) { boardEl.appendChild(el); });
     }
 
-    function isAllDone(entry) {
-      var items = entry && entry.items || [];
+    function isOrderAllDone(order) {
+      var items = order && Array.isArray(order.items) ? order.items : [];
       if (!items.length) return false;
-      return items.every(function (it) { return !!it.done; });
+      return items.every(function (item) { return !!item.done; });
+    }
+
+    function isAllDone(entry) {
+      return isOrderAllDone(entry && entry.order ? entry.order : { items: entry && entry.items });
     }
 
     /* ===================== #29 提供時間ログ (注文受付→全完了の自動計測) =====================
@@ -2650,7 +2986,7 @@
       var items = (order && order.items) || [];
       var totalQty = items.reduce(function (s, it) { return s + (Number(it && it.qty) || 0); }, 0);
       return {
-        orderId: order.id, table: order.table, type: order.type,
+        orderId: order.id, table: effectiveTable(order), type: order.type,
         people: order.people, itemCount: items.length, totalQty: totalQty,
         start: order.start, completedAt: completedAt, serveMs: completedAt - order.start,
         day: serveDayKey(completedAt)   // 営業日。ローテーションと重複判定の軸 (#179)
@@ -2731,8 +3067,89 @@
     window.KDS_exportServeCSV = downloadServeCSV;
     window.KDS_clearServeLog = function () { saveServeLog([]); };
 
+    /* ===================== #152 hall-ready cue (phase1) =====================
+       完了カードの消去前に、表示用snapshotをidempotentに保存する。dismissedも
+       当日中はtombstoneとして残し、poll/BC再通知を防ぐ。 */
+    function reconcileHallReadySnapshot(order, shouldBroadcast) {
+      if (!order || order.id == null || isOrderAllDone(order)) return false;
+      var id = String(order.id), snapshot = hallReadyMap[id];
+      if (!snapshot || snapshot.status === "retracted") return false;
+      snapshot.status = "retracted";
+      snapshot.retractedAt = Date.now();
+      delete snapshot.dismissedAt;
+      if (hallReadyUndoId === id) hideHallReadyUndo();
+      saveHallReady();
+      if (shouldBroadcast !== false) broadcastHallReady(id, snapshot);
+      return true;
+    }
+
+    function reconcileHallReadySnapshots(orders, shouldBroadcast) {
+      var changed = false;
+      (orders || []).forEach(function (order) {
+        if (reconcileHallReadySnapshot(order, shouldBroadcast)) changed = true;
+      });
+      return changed;
+    }
+
+    function ensureHallReadySnapshot(order) {
+      if (!order || order.id == null || !Array.isArray(order.items) || !order.items.length) return null;
+      var id = String(order.id);
+      if (hallReadyMap[id] && hallReadyMap[id].status !== "retracted") return hallReadyMap[id];
+      var snapshot = {
+        orderId: id,
+        id: id,
+        table: effectiveTable(order),
+        completedAt: Date.now(),
+        day: todayStr(),
+        status: "active",
+        items: order.items.map(function (item) {
+          return { name: item.name, qty: Number(item.qty) || 1, note: itemNotesText(item) };
+        })
+      };
+      hallReadyMap[id] = snapshot;
+      saveHallReady();
+      broadcastHallReady(id, snapshot);
+      renderHallViews();
+      return snapshot;
+    }
+
+    function showHallReadyUndo(id, table) {
+      hallReadyUndoId = String(id);
+      if (hallReadyUndoMsgEl) hallReadyUndoMsgEl.textContent = "卓 " + (table || "--") + " の提供準備完了";
+      if (hallReadyUndoToastEl) hallReadyUndoToastEl.classList.add("show");
+      if (hallReadyUndoTimer) clearTimeout(hallReadyUndoTimer);
+      hallReadyUndoTimer = setTimeout(hideHallReadyUndo, HALL_READY_UNDO_MS);
+    }
+    function hideHallReadyUndo() {
+      if (hallReadyUndoTimer) { clearTimeout(hallReadyUndoTimer); hallReadyUndoTimer = null; }
+      hallReadyUndoId = null;
+      if (hallReadyUndoToastEl) hallReadyUndoToastEl.classList.remove("show");
+    }
+    function dismissHallReady(id) {
+      if (mode !== "hall") return;
+      var key = String(id), snapshot = hallReadyMap[key];
+      if (!snapshot || snapshot.status === "dismissed") return;
+      snapshot.status = "dismissed";
+      snapshot.dismissedAt = Date.now();
+      saveHallReady();
+      broadcastHallReady(key, snapshot);
+      showHallReadyUndo(key, snapshot.table);
+      renderHallViews();
+    }
+    function undoHallReady() {
+      if (!hallReadyUndoId) return;
+      var key = hallReadyUndoId, snapshot = hallReadyMap[key];
+      hideHallReadyUndo();
+      if (!snapshot || snapshot.status !== "dismissed") return;
+      snapshot.status = "active";
+      delete snapshot.dismissedAt;
+      saveHallReady();
+      broadcastHallReady(key, snapshot);
+      renderHallViews();
+    }
+
     /* 完了状態をカード DOM へ反映。全完了なら必要に応じてフェードアウト */
-    function applyDoneToCard(entry, animateRemoval) {
+    function applyDoneToCard(entry, animateRemoval, broadcastHallReady) {
       if (!entry || !entry.el) return;
       var order = entry.order;
       var saved = doneMap[order.id] || [];
@@ -2744,8 +3161,14 @@
         order.items[i].done = count >= qty;
         updateItemButtonDone(btns[i], count, qty);
       }
-      if (isAllDone(entry)) {
-        if (animateRemoval) { recordServe(entry); removeCard(order.id, /*fade*/ true); } // #29
+      if (!isAllDone(entry)) {
+        if (reconcileHallReadySnapshot(order, broadcastHallReady !== false)) renderHallViews();
+        return;
+      }
+      if (animateRemoval) {
+        ensureHallReadySnapshot(order);
+        recordServe(entry);
+        removeCard(order.id, /*fade*/ true);
       }
     }
 
@@ -2786,6 +3209,7 @@
       var btn = entry.el.querySelectorAll(".item")[index];
       if (btn) updateItemButtonDone(btn, next, qty);
       if (isAllDone(entry)) {
+        ensureHallReadySnapshot(entry.order);
         recordServe(entry);              // #29 提供時間ログ
         removeCard(id, /*fade*/ true);
         showUndoToast(entry.order, index);
@@ -2817,7 +3241,7 @@
     /* ===================== 全完了の取り消しトースト ===================== */
     function showUndoToast(order, lastIndex) {
       undoInfo = { id: String(order.id), index: lastIndex };
-      undoToastMsgEl.textContent = "卓 " + (order.table != null ? order.table : "--") + " " + t("done");
+      undoToastMsgEl.textContent = "卓 " + (effectiveTable(order) || "--") + " " + t("done");
       undoToastEl.classList.add("show");
       if (undoTimer) clearTimeout(undoTimer);
       undoTimer = setTimeout(hideUndoToast, UNDO_TOAST_MS);
@@ -2890,6 +3314,23 @@
     }
 
     /* LS / BroadcastChannel から来た状態をカード全体へ反映 */
+    function applyTableOverrideToCard(id) {
+      var entry = cards[String(id)];
+      if (!entry || !entry.el || !entry.order) return;
+      var table = effectiveTable(entry.order) || "--";
+      var tableEl = entry.el.querySelector(".table-no");
+      if (tableEl) tableEl.textContent = table;
+      entry.el.setAttribute("aria-label",
+        "卓 " + table + " " + (entry.order.type === "reserved" ? t("reserved") : t("new")));
+      var button = entry.el.querySelector(".table-override-btn");
+      if (button) {
+        var overridden = tableOverrideMap[String(id)] != null && String(tableOverrideMap[String(id)]).trim() !== "";
+        button.setAttribute("data-overridden", overridden ? "true" : "false");
+        button.textContent = overridden ? "卓番変更*" : "卓番";
+        button.setAttribute("aria-label", overridden ? "卓番を変更（表示上書き中）" : "卓番を変更");
+      }
+    }
+
     function applyKonroToCard(id) {
       var entry = cards[id];
       if (!entry || !entry.el) return;
@@ -3086,8 +3527,54 @@
       return Math.round((d.getTime() - Date.now()) / 60000);
     }
 
+    function ensureRiceCue(reservation) {
+      if (!reservation || reservation.rid == null || !isRiceReservation(reservation) || minutesUntil(reservation.time) > SOON_MIN) return null;
+      var rid = String(reservation.rid), state = riceCueMap[rid];
+      if (!state || typeof state !== "object") {
+        state = { rid: rid, status: "active", day: todayStr(), createdAt: Date.now() };
+        riceCueMap[rid] = state;
+        saveRiceCues();
+      }
+      return state;
+    }
+    function acknowledgeRiceCue(rid) {
+      if (mode !== "kitchen") return;
+      var reservation = findRes(rid), state = ensureRiceCue(reservation);
+      if (!state) return;
+      state.status = "acknowledged";
+      state.acknowledgedAt = Date.now();
+      riceCueMap[String(rid)] = state;
+      saveRiceCues();
+      broadcastRiceCue(rid, state);
+      renderStock();
+      renderHallViews();
+    }
+    function buildRiceCue(reservation) {
+      var state = ensureRiceCue(reservation);
+      if (!state) return null;
+      var cue = document.createElement("div");
+      cue.className = "hall-cue rice-cue" + (state.status === "acknowledged" ? " acknowledged" : "");
+      cue.setAttribute("data-rid", String(reservation.rid));
+      var label = document.createElement("span");
+      label.textContent = state.status === "acknowledged" ? "炊飯準備（確認済み）" : "炊飯準備";
+      cue.appendChild(label);
+      if (mode === "kitchen" && state.status !== "acknowledged") {
+        var button = document.createElement("button");
+        button.type = "button";
+        button.textContent = "確認";
+        button.setAttribute("aria-label", "炊飯準備を確認");
+        button.addEventListener("click", function (ev) {
+          ev.stopPropagation();
+          acknowledgeRiceCue(reservation.rid);
+        });
+        cue.appendChild(button);
+      }
+      return cue;
+    }
+
     function renderStock() {
       sortStock();
+      pruneRiceCues();
       // 卓番の下書きは seatDrafts (非DOM) が正本なので、全再描画してもボタン表示に自動で反映される (#118)
       stockCountEl.textContent = String(stock.length);
       stockListEl.innerHTML = "";
@@ -3142,6 +3629,8 @@
         menu.appendChild(li);
       });
 
+      var riceCue = buildRiceCue(r);
+
       var actions = document.createElement("div");
       actions.className = "res-actions";
       // 卓番はフリーテキスト入力ではなくダイヤルモーダルで選択 (誤入力防止 #118)
@@ -3172,6 +3661,7 @@
       el.appendChild(top);
       el.appendChild(name);
       if ((r.menu || []).length) el.appendChild(menu);
+      if (riceCue) el.appendChild(riceCue);
       el.appendChild(actions);
       return el;
     }
@@ -3198,6 +3688,194 @@
       rid = String(rid);
       for (var i = 0; i < stock.length; i++) if (String(stock[i].rid) === rid) return stock[i];
       return null;
+    }
+
+    /* ===================== #155 ホールA/B/C prototype ===================== */
+    function validHallLayout(value) {
+      return HALL_LAYOUTS.indexOf(String(value)) !== -1;
+    }
+    function replaceHallHash(value) {
+      try {
+        if (window.history && typeof window.history.replaceState === "function") {
+          window.history.replaceState(window.history.state, "", "#hall=" + value);
+        } else if (window.location) {
+          window.location.hash = "hall=" + value;
+        }
+      } catch (e) {}
+    }
+    function loadHallLayout() {
+      var hash = "";
+      try { hash = String(window.location && window.location.hash || ""); } catch (e) {}
+      var hashMatch = /^#hall=([^#&]+)$/.exec(hash);
+      if (hashMatch) {
+        hallLayout = validHallLayout(hashMatch[1]) ? hashMatch[1] : "A";
+        if (!validHallLayout(hashMatch[1])) replaceHallHash(hallLayout); // 無効hashはAへ正規化
+      } else {
+        var stored = null;
+        try { stored = localStorage.getItem(LS_HALL_PROTO); } catch (e2) {}
+        hallLayout = validHallLayout(stored) ? stored : "A";
+      }
+      lsSet(LS_HALL_PROTO, hallLayout);
+      applyHallLayout();
+    }
+    function applyHallLayout() {
+      HALL_LAYOUTS.forEach(function (layout) {
+        document.body.classList.toggle("hall-proto-" + layout.toLowerCase(), hallLayout === layout);
+      });
+      hallProtoBtns.forEach(function (button) {
+        button.setAttribute("aria-pressed", button.getAttribute("data-hall-layout") === hallLayout ? "true" : "false");
+      });
+    }
+    function setHallLayout(next) {
+      if (!validHallLayout(next)) next = "A";
+      hallLayout = String(next);
+      lsSet(LS_HALL_PROTO, hallLayout);
+      replaceHallHash(hallLayout);
+      applyHallLayout();
+      renderHallViews();
+    }
+    function hallLiveOrders() {
+      var ids = orderSeq.filter(function (id) { return !!cards[id]; });
+      Object.keys(cards).forEach(function (id) { if (ids.indexOf(id) === -1) ids.push(id); });
+      return ids.map(function (id) { return cards[id] && cards[id].order; }).filter(Boolean);
+    }
+    function hallEmptyNode(message) {
+      var empty = document.createElement("div");
+      empty.className = "hall-empty";
+      empty.textContent = message || "該当なし";
+      return empty;
+    }
+    function buildHallOrderCard(order, compact) {
+      var card = document.createElement("article");
+      card.className = "hall-order-card" + (order.type === "reserved" ? " reserved" : "") + (compact ? " compact" : "");
+      var top = document.createElement("div");
+      top.className = "hall-order-top";
+      var table = document.createElement("span");
+      table.className = "hall-order-table";
+      table.textContent = effectiveTable(order) || "--";
+      var kind = document.createElement("span");
+      kind.className = "hall-order-kind";
+      kind.textContent = order.type === "reserved" ? t("reserved") : t("new");
+      var elapsed = document.createElement("span");
+      elapsed.className = "hall-order-elapsed";
+      elapsed.textContent = elapsedMin(order.start) + t("min");
+      top.appendChild(table); top.appendChild(kind); top.appendChild(elapsed);
+      card.appendChild(top);
+      var list = document.createElement("ul");
+      list.className = "hall-order-items";
+      (order.items || []).forEach(function (item) {
+        var li = document.createElement("li");
+        var remaining = Math.max((Number(item.qty) || 1) - (Number(item.doneCount) || 0), 0);
+        li.textContent = String(item.name || "") + (compact ? " ×" + remaining : "");
+        if (!compact && item.done) li.textContent += "（完了）";
+        list.appendChild(li);
+      });
+      card.appendChild(list);
+      return card;
+    }
+    function buildHallStockCard(reservation) {
+      var card = document.createElement("article");
+      card.className = "hall-stock-card reserved";
+      var top = document.createElement("div");
+      top.className = "hall-stock-top";
+      var time = document.createElement("span");
+      time.className = "hall-stock-time";
+      time.textContent = reservation.time || "--:--";
+      var people = document.createElement("span");
+      people.className = "hall-stock-name";
+      people.textContent = (reservation.name || "—") + " " + (Number(reservation.adults) || 0) + t("people");
+      top.appendChild(time); top.appendChild(people); card.appendChild(top);
+      var list = document.createElement("ul");
+      list.className = "hall-stock-menu";
+      (reservation.menu || []).forEach(function (item) {
+        var li = document.createElement("li");
+        li.textContent = String(item.name || "") + " ×" + (Number(item.qty) || 1);
+        list.appendChild(li);
+      });
+      card.appendChild(list);
+      var cue = buildRiceCue(reservation);
+      if (cue) card.appendChild(cue);
+      return card;
+    }
+    function buildHallReadyCard(snapshot) {
+      var card = document.createElement("article");
+      card.className = "hall-ready-card" + (snapshot.status === "dismissed" ? " dismissed" : "");
+      var top = document.createElement("div");
+      top.className = "hall-ready-top";
+      var table = document.createElement("span");
+      table.className = "hall-ready-table";
+      table.textContent = snapshot.table || "--";
+      var time = document.createElement("span");
+      time.className = "hall-ready-time";
+      time.textContent = snapshot.status === "dismissed" ? "対応済み" : "提供準備完了";
+      top.appendChild(table); top.appendChild(time); card.appendChild(top);
+      var list = document.createElement("ul");
+      list.className = "hall-ready-items";
+      (snapshot.items || []).forEach(function (item) {
+        var li = document.createElement("li");
+        li.textContent = String(item.name || "") + " ×" + (Number(item.qty) || 1);
+        list.appendChild(li);
+      });
+      card.appendChild(list);
+      var actions = document.createElement("div");
+      actions.className = "hall-ready-actions";
+      var dismiss = document.createElement("button");
+      dismiss.type = "button";
+      dismiss.textContent = "確認して消す";
+      dismiss.setAttribute("aria-label", "卓 " + (snapshot.table || "--") + " の提供準備完了を確認");
+      dismiss.addEventListener("click", function () { dismissHallReady(snapshot.orderId || snapshot.id); });
+      actions.appendChild(dismiss); card.appendChild(actions);
+      return card;
+    }
+    function renderHallStockPanel(panel, countEl) {
+      if (!panel) return;
+      panel.innerHTML = "";
+      if (countEl) countEl.textContent = String(stock.length);
+      if (!stock.length) { panel.appendChild(hallEmptyNode(t("stockEmpty"))); return; }
+      sortStock();
+      stock.forEach(function (reservation) { panel.appendChild(buildHallStockCard(reservation)); });
+    }
+    function renderHallOrderPanel(panel, countEl, compact) {
+      if (!panel) return;
+      panel.innerHTML = "";
+      var orders = hallLiveOrders();
+      if (countEl) countEl.textContent = String(orders.length);
+      if (!orders.length) panel.appendChild(hallEmptyNode("進行中オーダーはありません"));
+      else orders.forEach(function (order) { panel.appendChild(buildHallOrderCard(order, compact)); });
+      // A/Bでは2ペイン構成を保ちながら、hall-ready cueを常時ホールへ提示する。
+      if (panel.id === "hallAOrders" || panel.id === "hallBOrders") {
+        var readyWrap = document.createElement("div");
+        readyWrap.className = "hall-ready-inline";
+        Object.keys(hallReadyMap).map(function (id) { return hallReadyMap[id]; }).filter(function (snapshot) {
+          return snapshot && snapshot.orderId != null && snapshot.status === "active";
+        }).forEach(function (snapshot) { readyWrap.appendChild(buildHallReadyCard(snapshot)); });
+        if (readyWrap.children.length) panel.appendChild(readyWrap);
+      }
+    }
+    function renderHallReadyPanel() {
+      var panel = document.getElementById("hallCReady");
+      var countEl = document.getElementById("hallCReadyCount");
+      if (!panel) return;
+      panel.innerHTML = "";
+      // dismissed は当日中の再通知を止めるtombstoneとして保存するが、cue面からは消す。
+      var snapshots = Object.keys(hallReadyMap).map(function (id) { return hallReadyMap[id]; }).filter(function (x) {
+        return x && x.orderId != null && x.status === "active";
+      });
+      snapshots.sort(function (a, b) { return Number(b.completedAt) - Number(a.completedAt); });
+      if (countEl) countEl.textContent = String(snapshots.length);
+      if (!snapshots.length) { panel.appendChild(hallEmptyNode("提供準備完了はありません")); return; }
+      snapshots.forEach(function (snapshot) { panel.appendChild(buildHallReadyCard(snapshot)); });
+    }
+    function renderHallViews() {
+      if (!hallProtoViewEl) return;
+      applyHallLayout();
+      renderHallOrderPanel(document.getElementById("hallAOrders"), document.getElementById("hallACount"), false);
+      renderHallStockPanel(document.getElementById("hallAStock"), document.getElementById("hallAStockCount"));
+      renderHallStockPanel(document.getElementById("hallBStock"), document.getElementById("hallBStockCount"));
+      renderHallOrderPanel(document.getElementById("hallBOrders"), document.getElementById("hallBCount"), true);
+      renderHallReadyPanel();
+      renderHallStockPanel(document.getElementById("hallCStock"), document.getElementById("hallCStockCount"));
+      renderHallOrderPanel(document.getElementById("hallCOrders"), document.getElementById("hallCCount"), true);
     }
 
     function deleteRes(rid) {
@@ -3308,6 +3986,7 @@
       if (e.key !== "Tab") return;
       var container = document.body.classList.contains("slip-open") ? slipBackdrop
                     : document.body.classList.contains("seat-dial-open") ? seatBackdrop
+                    : document.body.classList.contains("table-override-confirm-open") ? tableOverrideConfirmBackdrop
                     : document.body.classList.contains("modal-open") ? modalBackdrop
                     : null;
       if (!container) return;
@@ -3428,7 +4107,7 @@
       var pad = function (n) { return (n < 10 ? "0" : "") + n; };
       return {
         store: slipStoreEl.textContent,
-        table: order.table != null ? String(order.table) : "--",
+        table: effectiveTable(order) || "--",
         meta: hhmm(order.start),
         metaDate: (function () {                       // 受付「日」。日を跨いだ卓かどうかが伝票で分かるように
           var d = new Date(order.start);
@@ -3465,7 +4144,7 @@
 
       var st = loadSlipStyle();
       applySlipStyle(st);
-      slipTableEl.textContent = order.table != null ? String(order.table) : "--";
+      slipTableEl.textContent = effectiveTable(order) || "--";
       slipMetaEl.textContent = t("slipMeta") + " " + hhmm(order.start);
       slipItemsEl.innerHTML = "";
       (order.items || []).forEach(function (it) {
@@ -3633,7 +4312,7 @@
       }).then(function () {
         setPrintBusy(false);
         closeSlip();                       // 印字できたらプレビューは役目を終える
-        showPrintToast("卓 " + (order.table != null ? order.table : "--") + " の伝票を印刷しました");
+        showPrintToast("卓 " + (effectiveTable(order) || "--") + " の伝票を印刷しました");
       }).catch(function (err) {
         setPrintBusy(false);
         console.error("[チビ伝] 実機印刷に失敗。ブラウザ印刷にフォールバック:", err);
@@ -3662,8 +4341,20 @@
     }
 
     function openSeatDial(rid) {
+      seatDialContext = "reservation";
       seatDialRid = String(rid);
       seatDialBuf = seatDrafts[seatDialRid] || "";
+      renderSeatDialDisplay();
+      document.body.classList.add("seat-dial-open");
+    }
+
+    function openTableOverride(orderId) {
+      if (mode !== "kitchen") return;
+      closeTableOverrideConfirm();
+      seatDialContext = "tableOverride";
+      seatDialRid = String(orderId);
+      var entry = cards[seatDialRid];
+      seatDialBuf = entry && entry.order ? effectiveTable(entry.order) : (tableOverrideMap[seatDialRid] || "");
       renderSeatDialDisplay();
       document.body.classList.add("seat-dial-open");
     }
@@ -3672,6 +4363,7 @@
       document.body.classList.remove("seat-dial-open");
       seatDialRid = null;
       seatDialBuf = "";
+      seatDialContext = "reservation";
     }
 
     /* 卓番ボタンの表示をダイヤルの下書きへ同期 (カードが再描画されず残っている場合のみ) */
@@ -3688,9 +4380,61 @@
       if (!seatDialRid) { closeSeatDial(); return; }
       var rid = seatDialRid;
       var val = seatDialBuf.trim();
+      if (seatDialContext === "tableOverride") {
+        closeSeatDial();
+        commitTableOverride(rid, val);
+        return;
+      }
       if (val) seatDrafts[rid] = val; else delete seatDrafts[rid];
       closeSeatDial();
       refreshSeatButton(rid);
+    }
+
+    function hasTableConflict(orderId, candidate) {
+      if (!candidate) return false;
+      var id = String(orderId), orders = getOrders();
+      return orders.some(function (order) {
+        return String(order.id) !== id && !isOrderAllDone(order) && effectiveTable(order) === candidate;
+      });
+    }
+    function showTableOverrideConfirm(id, candidate) {
+      tableOverridePending = { id: String(id), candidate: String(candidate) };
+      if (tableOverrideConfirmMessage) {
+        tableOverrideConfirmMessage.textContent = "卓 " + candidate + " は別の進行中オーダーで使用中です。" +
+          "同じ卓番へ変更する場合は、下のボタンをもう一度押してください。";
+      }
+      document.body.classList.add("table-override-confirm-open");
+    }
+    function closeTableOverrideConfirm() {
+      tableOverridePending = null;
+      document.body.classList.remove("table-override-confirm-open");
+    }
+    function saveTableOverride(id, candidate) {
+      var key = String(id), value = String(candidate || "").trim();
+      if (value) tableOverrideMap[key] = value;
+      else delete tableOverrideMap[key];
+      saveTableOverrides();
+      broadcastTableOverride(key, value || null, !value);
+      applyTableOverrideToCard(key);
+      refreshAllKonro();
+      renderHallViews();
+    }
+    function commitTableOverride(id, candidate) {
+      if (mode !== "kitchen") return;
+      var key = String(id), value = String(candidate || "").trim();
+      if (hasTableConflict(key, value)) {
+        showTableOverrideConfirm(key, value);
+        return;
+      }
+      closeTableOverrideConfirm();
+      saveTableOverride(key, value);
+    }
+    function allowTableOverride() {
+      if (mode !== "kitchen" || !tableOverridePending) return;
+      var pending = tableOverridePending;
+      closeTableOverrideConfirm();
+      // 同じ候補を明示許可した2回目だけ保存する。候補が変わったら再度警告へ戻る。
+      saveTableOverride(pending.id, pending.candidate);
     }
 
     /* ゾーンタップ = 新規入力開始 (「A1」の英字部分をセットし、番号部分はリセット) */
@@ -3782,11 +4526,14 @@
       modeBtns.forEach(function (b) {
         b.setAttribute("aria-pressed", b.getAttribute("data-mode") === mode ? "true" : "false");
       });
+      if (mode === "hall") renderHallViews();
     }
     function setMode(next) {
       mode = (next === "hall") ? "hall" : "kitchen";
       lsSet(LS_MODE, mode);
       if (mode === "hall" && grab) cancelReorder();
+      if (mode !== "kitchen") closeTableOverrideConfirm();
+      if (mode !== "kitchen" && seatDialContext === "tableOverride") closeSeatDial();
       applyMode();
     }
     /* ===================== タイマー (経過時間 / 時計) ===================== */
@@ -3885,7 +4632,7 @@
     }
     function ownerTable(cardId) {
       var e = cards[cardId];
-      return (e && e.order && e.order.table != null) ? String(e.order.table) : "";
+      return e && e.order ? effectiveTable(e.order) : "";
     }
 
     function updateClock() {
@@ -3991,6 +4738,9 @@
     function poll() {
       loadDeleted();              // 削除済みIDを LS から取り込み (#67)
       pruneDeleted();             // フィードから消えた削除済みIDは掃除
+      loadRiceCues();             // BC非対応時の同一ブラウザLSフォールバック
+      loadTableOverrides();
+      loadHallReady();
       var orders = getOrders();
       loadDone();                 // 他タブ/リロードで更新された LS を取り込む (フォールバック同期)
       loadKonro();                // コンロ状態も LS から取り込む (BroadcastChannel 非対応時のフォールバック同期)
@@ -4009,10 +4759,14 @@
       loadOrderSeq();
       loadLocked();
       loadStock();
+      loadRiceCues();
+      loadTableOverrides();
+      loadHallReady();
       loadPrefs();
       loadPrinterIp();
       refreshSlipStyleFromServer();   // 印刷スタイルをサーバーから取得しておく (#144追補)
       loadView();
+      loadHallLayout();
       applyMode();
       applyView();
       buildKonroHud();
@@ -4021,10 +4775,22 @@
       modeBtns.forEach(function (b) {
         b.addEventListener("click", function () { setMode(b.getAttribute("data-mode")); });
       });
+      hallProtoBtns.forEach(function (b) {
+        b.addEventListener("click", function () { setHallLayout(b.getAttribute("data-hall-layout")); });
+      });
+      hallStockAddBtns.forEach(function (b) {
+        b.addEventListener("click", function () { if (mode === "hall") openModal(); });
+      });
       viewBtns.forEach(function (b) {
         b.addEventListener("click", function () { setView(b.getAttribute("data-view")); });
       });
       if (undoToastBtn) undoToastBtn.addEventListener("click", undoComplete);
+      if (hallReadyUndoBtn) hallReadyUndoBtn.addEventListener("click", undoHallReady);
+      if (tableOverrideConfirmCancel) tableOverrideConfirmCancel.addEventListener("click", closeTableOverrideConfirm);
+      if (tableOverrideConfirmAllow) tableOverrideConfirmAllow.addEventListener("click", allowTableOverride);
+      if (tableOverrideConfirmBackdrop) tableOverrideConfirmBackdrop.addEventListener("click", function (e) {
+        if (e.target === tableOverrideConfirmBackdrop) closeTableOverrideConfirm();
+      });
       if (demoBtn) demoBtn.addEventListener("click", injectDemo);
 
       // 予約ストック操作
@@ -4064,6 +4830,7 @@
         if (e.key !== "Escape") return;
         if (document.body.classList.contains("slip-open")) closeSlip();
         else if (document.body.classList.contains("seat-dial-open")) closeSeatDial();
+        else if (document.body.classList.contains("table-override-confirm-open")) closeTableOverrideConfirm();
         else if (document.body.classList.contains("modal-open")) closeModal();
         else if (isReordering) cancelReorder();
         else if (reorderUndoSnapshot) hideReorderUndoBar();
@@ -4087,7 +4854,12 @@
       setInterval(poll, POLL_MS);
       setInterval(function () { updateTimers(); updateClock(); }, TICK_MS);
       // 予約30分前通知は毎分判定 (秒更新は不要)
-      setInterval(updateStockSoon, 30000);
+      setInterval(function () {
+        updateStockSoon();
+        // 30分境界を跨いだときも炊飯cueの表示を更新する
+        renderStock();
+        renderHallViews();
+      }, 30000);
     }
 
     if (document.readyState === "loading") {
