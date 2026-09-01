@@ -401,6 +401,7 @@ test("注文APIは投入・配信・再送・取消をこなし、予約同期�
   var created = await post({ orderId: "t12-1", table: "12", people: 3, items: [{ name: "土鍋御膳", qty: 2, note: "塩少なめ" }] });
   assert.equal(created.status, 201);
   assert.equal(JSON.parse(created.text).duplicate, false);
+  assert.equal(JSON.parse(created.text).updated, false);
 
   var feed = JSON.parse((await requestRaw(relay.server, "/api/orders")).text);
   assert.equal(feed.length, 1);
@@ -411,10 +412,47 @@ test("注文APIは投入・配信・再送・取消をこなし、予約同期�
   assert.deepEqual(feed[0].items, [{ name: "土鍋御膳", qty: 2, options: "塩少なめ", allergies: null, done: false }]);
 
   // 通信断の再送: 200 + duplicate。カードは増えない
-  var retry = await post({ orderId: "t12-1", table: "12", items: [{ name: "土鍋御膳", qty: 2 }] });
+  var retry = await post({ orderId: "t12-1", table: "12", people: 3, items: [{ name: "土鍋御膳", qty: 2, note: "塩少なめ" }] });
   assert.equal(retry.status, 200);
   assert.equal(JSON.parse(retry.text).duplicate, true);
+  assert.equal(JSON.parse(retry.text).updated, false);
   assert.equal(JSON.parse((await requestRaw(relay.server, "/api/orders")).text).length, 1);
+
+  // 同じ orderId の内容変更: 200 + updated。同じカードの内容を置き換え、受付時刻は維持する
+  var originalStart = feed[0].start;
+  var update = await post({
+    orderId: "t12-1",
+    table: "15",
+    people: 4,
+    items: [
+      { name: "土鍋御膳", qty: 1, note: "塩少なめ" },
+      { name: "ウーロン茶", qty: 2, note: "氷なし" },
+    ],
+  });
+  var updateBody = JSON.parse(update.text);
+  assert.equal(update.status, 200);
+  assert.equal(updateBody.duplicate, false);
+  assert.equal(updateBody.updated, true);
+  var updatedFeed = JSON.parse((await requestRaw(relay.server, "/api/orders")).text);
+  assert.equal(updatedFeed.length, 1);
+  assert.equal(updatedFeed[0].start, originalStart);
+  assert.equal(updatedFeed[0].table, "15");
+  assert.equal(updatedFeed[0].people, 4);
+  assert.deepEqual(updatedFeed[0].items.map(function (item) { return [item.name, item.qty, item.options]; }),
+    [["土鍋御膳", 1, "塩少なめ"], ["ウーロン茶", 2, "氷なし"]]);
+
+  // 更新後の同一内容再送も duplicate になり、更新を繰り返さない
+  var updateRetry = await post({
+    orderId: "t12-1",
+    table: "15",
+    people: 4,
+    items: [
+      { name: "土鍋御膳", qty: 1, note: "塩少なめ" },
+      { name: "ウーロン茶", qty: 2, note: "氷なし" },
+    ],
+  });
+  assert.equal(JSON.parse(updateRetry.text).duplicate, true);
+  assert.equal(JSON.parse(updateRetry.text).updated, false);
 
   // 卓番の欠落は 400 で理由を返す (別チームが送信側を直せるように)
   var invalid = await post({ orderId: "t13-1", items: [{ name: "茶" }] });
@@ -424,6 +462,11 @@ test("注文APIは投入・配信・再送・取消をこなし、予約同期�
   assert.equal((await requestRaw(relay.server, "/api/orders/t12-1", { method: "DELETE" })).status, 204);
   assert.equal((await requestRaw(relay.server, "/api/orders/t12-1", { method: "DELETE" })).status, 404);
   assert.deepEqual(JSON.parse((await requestRaw(relay.server, "/api/orders")).text), []);
+
+  // 取消後に明示的な POST が届けば最後の操作を正として再作成する
+  var recreated = await post({ orderId: "t12-1", table: "16", items: [{ name: "茶", qty: 1 }] });
+  assert.equal(recreated.status, 201);
+  assert.equal(JSON.parse(recreated.text).order.table, "16");
 
   assert.equal((await requestRaw(relay.server, "/api/orders", { method: "PATCH" })).status, 405);
 

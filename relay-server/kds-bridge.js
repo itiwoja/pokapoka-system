@@ -19,6 +19,9 @@
  *
  * マージ規則 (注文フィード):
  *   - サーバー由来の注文は毎回サーバーの内容で置き換える
+ *   - 同じ id の更新では、コンロ・タイマーロック・並び順は id に紐づくためそのまま維持する
+ *   - 品目完了数は「品名・オプション・アレルギー」が同じ行へ追従し、数量減では新数量を上限にする
+ *     (新規行または内容が訂正された行は未完了から開始する)
  *   - KDS 内で発生した注文 (予約→着手の "res-*" カード) は残す。消してしまうと
  *     ホールが着手した予約カードが次のポーリングで消える
  *   - 取得に失敗したときは window.KDS_ORDERS に触らない (直前の表示を保持)
@@ -36,6 +39,7 @@
   var LS_LOCKED = "kds_locked_v1";
   var LS_ORDER = "kds_order_v1";
   var LS_DELETED = "kds_deleted_v1";
+  var LS_SERVER_ORDERS = "kds_server_orders_v1"; // 前回フィード。再読込・通信断をまたぐ品目状態移行に使う
   var BC_NAME = "kds_sync";
   var POLL_MS = 5000;                        // 店内 LAN なので短くてよい (対 TableCheck の30秒とは別物)
   var ORDER_POLL_MS = 2000;                  // 注文は厨房の着手速度に効くので予約より短く
@@ -279,8 +283,84 @@
   /* ---- 注文フィード (#139) ---- */
   var serverOrderIds = {};   // 直近のサーバー由来 id。KDS 内で生まれた注文と区別するために持つ
 
+  function itemStateKey(item) {
+    item = item || {};
+    return JSON.stringify([
+      String(item.name || ""),
+      item.options == null ? null : String(item.options),
+      item.allergies == null ? null : String(item.allergies),
+    ]);
+  }
+
+  function normalizedDoneCount(value, qty) {
+    var q = Math.max(0, Number(qty) || 0);
+    if (value === true) return q;
+    if (value === false || value == null) return 0;
+    var count = Number(value);
+    if (!Number.isFinite(count) || count < 0) return 0;
+    return Math.min(count, q);
+  }
+
+  /**
+   * 更新前の品目完了数を更新後の行へ移す。
+   * 行番号ではなく内容で対応づけるため、途中への品目追加や並べ替えで別品目の完了が移らない。
+   * 同じ内容の行が複数ある場合は出現順で対応づける。
+   */
+  function reconcileDoneCounts(previousOrder, nextOrder, savedCounts) {
+    var queues = {};
+    var previousItems = previousOrder && Array.isArray(previousOrder.items) ? previousOrder.items : [];
+    var counts = Array.isArray(savedCounts) ? savedCounts : [];
+    previousItems.forEach(function (item, index) {
+      var key = itemStateKey(item);
+      if (!queues[key]) queues[key] = [];
+      queues[key].push(normalizedDoneCount(counts[index], item && item.qty));
+    });
+
+    var nextItems = nextOrder && Array.isArray(nextOrder.items) ? nextOrder.items : [];
+    return nextItems.map(function (item) {
+      var queue = queues[itemStateKey(item)];
+      var carried = queue && queue.length ? queue.shift() : 0;
+      return normalizedDoneCount(carried, item && item.qty);
+    });
+  }
+
+  function itemsStateSignature(order) {
+    return JSON.stringify((order && order.items || []).map(function (item) {
+      return [itemStateKey(item), Number(item && item.qty) || 0];
+    }));
+  }
+
   function applyOrders(incoming) {
     var current = Array.isArray(window.KDS_ORDERS) ? window.KDS_ORDERS : [];
+    var previousFeed = load(LS_SERVER_ORDERS, []);
+    if (!Array.isArray(previousFeed)) previousFeed = [];
+    var previousById = {};
+    previousFeed.forEach(function (order) {
+      if (order && order.id != null) previousById[String(order.id)] = order;
+    });
+
+    var done = load(LS_DONE, {});
+    if (!done || typeof done !== "object" || Array.isArray(done)) done = {};
+    var reconciledEvents = [];
+    incoming.forEach(function (order) {
+      if (!order || order.id == null) return;
+      var id = String(order.id);
+      var previous = previousById[id];
+      if (!previous || itemsStateSignature(previous) === itemsStateSignature(order)) return;
+      var nextCounts = reconcileDoneCounts(previous, order, done[id]);
+      done[id] = nextCounts;
+      nextCounts.forEach(function (count, index) {
+        reconciledEvents.push({ type: "toggle", id: id, index: index, doneCount: count });
+      });
+    });
+    if (reconciledEvents.length) {
+      save(LS_DONE, done);
+      // relay の厨房状態にも絶対値を送り、次の同期で古い行番号へ巻き戻されないようにする。
+      pending = pending.concat(reconciledEvents);
+      flushKitchen();
+    }
+    if (JSON.stringify(previousFeed) !== JSON.stringify(incoming)) save(LS_SERVER_ORDERS, incoming);
+
     var nextIds = {};
     incoming.forEach(function (o) { if (o && o.id != null) nextIds[String(o.id)] = 1; });
     // KDS 内で発生した注文 (予約→着手カード等) を先頭に残す。
@@ -306,7 +386,12 @@
   }
 
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { mergeStock: mergeStock }; // Node (テスト) から require された場合はポーリングしない
+    // Node (テスト) から require された場合はポーリングしない
+    module.exports = {
+      mergeStock: mergeStock,
+      itemStateKey: itemStateKey,
+      reconcileDoneCounts: reconcileDoneCounts,
+    };
   } else {
     try { bc = new BroadcastChannel(BC_NAME); } catch (e) {}
     if (bc) {

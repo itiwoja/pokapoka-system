@@ -715,7 +715,7 @@ function handleKitchenState(req, res, context) {
 /**
  * 注文端末 → relay → KDS の受け口 (#139)。
  * 卓番はペイロードで受け取る (送信元IPからは引かない)。
- * 継ぎ足し注文は別の orderId で送ってもらい、KDS では別カードとして出す。
+ * 同じ orderId の同一内容は冪等再送、内容差分は既存注文の更新として扱う。
  */
 function handleOrders(req, res, url, context) {
   if (url.pathname === "/api/orders" && req.method === "GET") {
@@ -726,8 +726,13 @@ function handleOrders(req, res, url, context) {
       var result = orderIntake.normalizeOrder(body, Date.now());
       if (result.error) return json(res, { ok: false, error: result.error }, 400);
       var put = orderIntake.putOrder(context.orders, result.order);
-      // 再送は成功として返す。エラーにすると注文端末側が延々リトライして二重注文を誘発する
-      return json(res, { ok: true, duplicate: !put.created, order: put.order }, put.created ? 201 : 200);
+      // 冪等再送も更新も成功として返す。注文端末は duplicate / updated で結果を識別できる。
+      return json(res, {
+        ok: true,
+        duplicate: put.duplicate,
+        updated: put.updated,
+        order: put.order,
+      }, put.created ? 201 : 200);
     });
   }
   if (url.pathname.indexOf("/api/orders/") === 0 && req.method === "DELETE") {
