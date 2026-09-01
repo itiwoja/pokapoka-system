@@ -114,7 +114,8 @@ test("書き込み失敗をloggerへ出し、業務処理へ例外を投げな�
   });
   assert.doesNotThrow(function () { assert.equal(log.record(event()), null); });
   assert.equal(log.query().length, 0, "永続化できなかったイベントを保存済みとして見せない");
-  assert.match(errors[0], /書き込めない/);
+  assert.ok(errors.some(function (message) { return /書き込めない/.test(message); }),
+    "OSごとの先行read errorに関係なく、write errorも報告する");
 });
 
 test("壊れた行は読み飛ばして正常行を利用し続ける", function (t) {
