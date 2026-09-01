@@ -119,6 +119,7 @@ cp config/config.example.json config/config.json
 | `order.ttlMin` | `ORDER_TTL_MIN` | 720 | 注文(`/api/orders`)の保持時間(1〜1440分)。日跨ぎで前日分が残らないための上限 |
 | `auth.token` | `RELAY_TOKEN` | — | **共有トークン**(8文字以上)。設定すると他端末はトークン必須になる。未設定なら認証なし(従来どおり) #174 |
 | `auth.trustLoopback` | `RELAY_TRUST_LOOPBACK` | 1 | ミニPC自身(127.0.0.1)をトークン無しで通すか。`0` で無効 |
+| `auth.cookieSecure` | `RELAY_COOKIE_SECURE` | `auto` | 認証Cookieの`Secure`属性。`auto` / `true` / `false` (環境変数は`auto` / `1` / `0`) |
 | **(不可)** | `TABLECHECK_API_KEY` | — | secret_key。**環境変数のみ**。未設定ならモック |
 | **(不可)** | `MOCK` | — | `1` でモック強制 |
 
@@ -188,7 +189,15 @@ cd relay-server && npm run preflight
 - **未設定なら従来どおり認証なし**。開発・検証の手順は何も変わらない
 - 設定すると、**ページもAPIもトークンが必要**になる(ページだけ素通しにすると、
   そのページからトークンを読み出されて意味がない)
-- 端末は次のいずれかで通る: `Authorization: Bearer <token>` / `?token=<token>` / Cookie `relay_token`
+- 端末は次のいずれかで通る: `Authorization: Bearer <token>` / GET・HEADのQR導線`?token=<token>` / Cookie `relay_token`
+- `?token=`を受け取ったGET/HEADは、`HttpOnly; Path=/; Max-Age=...; SameSite=Lax`のCookieを発行し、
+  `token`パラメータだけを除いた同じパスへ`303`リダイレクトする。他のクエリは保持し、token付きの
+  リクエストではページ本文を配信しないため、表示URL・履歴・Refererへ残りにくい
+- Cookieの`Secure`は`auth.cookieSecure`で制御する。既定の`auto`は、relayが**実際にTLSソケットで
+  受信した場合だけ**付与するため、通常の店内HTTPではログイン不能にならない。HTTPSリバースプロキシで
+  TLS終端する構成は`true`を明示する。この場合`/qr`も`https://`の接続先を生成する。偽装可能な
+  `X-Forwarded-Proto`等の転送ヘッダは自動判定に使わない
+- APIのPOST/DELETEではtoken付きURLを受理しない。Cookieまたは`Authorization: Bearer`を使う
 - **ミニPC自身(127.0.0.1)はトークン無しで通る**。QRでトークンを配る導線がミニPC上の
   `/qr` から始まるため。ミニPCを他人が触る運用なら `auth.trustLoopback` を `false` にする
 - **`/api/health` だけは認証なしで読める**。疎通確認を詰まらせないため(読み取り専用)

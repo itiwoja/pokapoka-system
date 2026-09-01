@@ -144,7 +144,7 @@ function createTestRelay(source, intervalCalls) {
   });
 }
 
-test("トークンを設定すると他端末はページもAPIも401、QR経由(?token=)でCookieが入る", async function (t) {
+test("トークン認証は401を維持し、QRのGET/HEADはCookie発行後clean URLへリダイレクトする", async function (t) {
   var TOKEN = "pokapoka-kitchen-2026";
   var resolveReservations;
   // RELAY_TRUST_LOOPBACK=0 でループバック免除を切り、127.0.0.1 から「他端末」として叩く
@@ -183,10 +183,28 @@ test("トークンを設定すると他端末はページもAPIも401、QR経由
     headers: { Authorization: "Bearer " + TOKEN },
   })).status, 200);
 
-  // QR経由: ?token= で通り、Cookie が返る
-  var viaQuery = await requestRaw(relay.server, "/?token=" + encodeURIComponent(TOKEN));
-  assert.equal(viaQuery.status, 200);
-  assert.match(String(viaQuery.headers["set-cookie"]), /relay_token=/);
+  // QR経由: Cookieへ移したら、保護対象の本文を返さずtokenだけ除いたURLへ遷移する
+  var viaQuery = await requestRaw(relay.server,
+    "/kds-a-grid.html?view=compact&token=" + encodeURIComponent(TOKEN) + "&table=5", {
+      headers: { "X-Forwarded-Proto": "https" },
+    });
+  assert.equal(viaQuery.status, 303);
+  assert.equal(viaQuery.headers.location, "/kds-a-grid.html?view=compact&table=5");
+  assert.equal(viaQuery.text, "", "token付きリクエストで保護対象の本文を配信しない");
+  assert.doesNotMatch(String(viaQuery.headers.location), new RegExp(TOKEN));
+  assert.doesNotMatch(viaQuery.text, new RegExp(TOKEN));
+  var cookie = String(viaQuery.headers["set-cookie"]);
+  assert.match(cookie, /relay_token=/);
+  assert.match(cookie, /HttpOnly/);
+  assert.match(cookie, /Path=\//);
+  assert.match(cookie, /Max-Age=\d+/);
+  assert.match(cookie, /SameSite=Lax/);
+  assert.doesNotMatch(cookie, /; Secure/, "任意の転送ヘッダからSecureを推測しない");
+
+  var viaHead = await requestRaw(relay.server, "/?keep=yes&token=" + encodeURIComponent(TOKEN), { method: "HEAD" });
+  assert.equal(viaHead.status, 303);
+  assert.equal(viaHead.headers.location, "/?keep=yes");
+  assert.equal(viaHead.text, "");
 
   // 以後は Cookie だけで通る
   assert.equal((await requestRaw(relay.server, "/api/stock", {
@@ -197,6 +215,41 @@ test("トークンを設定すると他端末はページもAPIも401、QR経由
   assert.equal((await requestRaw(relay.server, "/api/stock", {
     headers: { Authorization: "Bearer wrong-token-value" },
   })).status, 401);
+
+  // query tokenが明示された場合、その不正値を有効なCookieで迂回できない
+  assert.equal((await requestRaw(relay.server, "/?token=wrong-token-value", {
+    headers: { Cookie: "relay_token=" + encodeURIComponent(TOKEN) },
+  })).status, 401);
+});
+
+test("RELAY_COOKIE_SECURE=1ならHTTPバックエンドでもSecure Cookieを明示発行できる", async function (t) {
+  var TOKEN = "pokapoka-kitchen-2026";
+  var relay = serverModule.createRelay({
+    port: 0,
+    env: { MOCK: "1", RELAY_TOKEN: TOKEN, RELAY_TRUST_LOOPBACK: "0", RELAY_COOKIE_SECURE: "1" },
+    source: {
+      listReservations: async function () { return []; },
+      listSyncEvents: async function () { return []; },
+      getReservation: async function () { return null; },
+    },
+    mockSource: {}, log: function () {}, setInterval: function () { return 0; }, clearInterval: function () {},
+  });
+  t.after(function () { return relay.stop(); });
+  relay.start();
+  await events.once(relay.server, "listening");
+  await relay.whenInitialSync();
+
+  var response = await requestRaw(relay.server, "/?token=" + encodeURIComponent(TOKEN));
+  assert.equal(response.status, 303);
+  assert.match(String(response.headers["set-cookie"]), /; Secure$/);
+
+  var qr = await requestRaw(relay.server, "/qr", {
+    headers: { Host: "relay.example.test", Authorization: "Bearer " + TOKEN },
+  });
+  assert.equal(qr.status, 200);
+  assert.match(qr.text, /https:\/\/relay\.example\.test\//);
+  assert.doesNotMatch(qr.text, /http:\/\/relay\.example\.test\//,
+    "Secure Cookie運用のQRが平文HTTPへtokenを送っている");
 });
 
 test("トークン未設定なら従来どおり認証なしで通る", async function (t) {
@@ -214,6 +267,8 @@ test("トークン未設定なら従来どおり認証なしで通る", async fu
 
   assert.equal((await requestRaw(relay.server, "/")).status, 200);
   assert.equal((await requestRaw(relay.server, "/api/stock")).status, 200);
+  assert.equal((await requestRaw(relay.server, "/api/audit")).status, 403,
+    "認証無効時に監査ログをHTTP公開しない");
 });
 
 test("初回全件リシンク中は/api/stockが503、成功後は200になる", async function (t) {

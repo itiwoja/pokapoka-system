@@ -10,10 +10,11 @@
  *
  * 判定の順序:
  *   1. トークン未設定 → 全て許可 (従来どおり。開発・検証は無設定のまま何も変わらない)
- *   2. ループバック(ミニPC自身) → 許可。QRページを開いてトークンを配る導線を塞がないため。
+ *   2. ?token= がある場合は、その値だけを検証 (不正値を他の認証方法で迂回させない)
+ *   3. ループバック(ミニPC自身) → 許可。QRページを開いてトークンを配る導線を塞がないため。
  *      ミニPCを他人が触る運用なら auth.trustLoopback:false で無効にできる
- *   3. 除外パス(/api/health) → 許可。疎通診断を認証で詰まらせないため (読み取り専用)
- *   4. Authorization: Bearer / ?token= / Cookie のいずれかが一致 → 許可
+ *   4. 除外パス(/api/health) → 許可。疎通診断を認証で詰まらせないため (読み取り専用)
+ *   5. Authorization: Bearer / Cookie のいずれかが一致 → 許可
  *
  * `?token=` で来た場合は Cookie を発行する。iPad は QR を1回読めば、以後はURLに
  * トークンを付けなくても操作できる。
@@ -67,25 +68,34 @@ function bearer(header) {
  */
 function check(req, url, token, remoteAddress, trustLoopback) {
   if (!token) return { ok: true, reason: "disabled" };
+
+  // クエリに token が明示された場合は先に検証する。無効な query token を
+  // 有効な Cookie・Bearer・ループバック免除で迂回するとURLに残留するため許可しない。
+  if (url.searchParams.has("token")) {
+    var queryTokens = url.searchParams.getAll("token");
+    var method = String(req.method || "GET").toUpperCase();
+    if ((method === "GET" || method === "HEAD") &&
+        queryTokens.length === 1 && sameToken(queryTokens[0], token)) {
+      return { ok: true, reason: "query", setCookie: true };
+    }
+    return { ok: false, reason: "missing or invalid token" };
+  }
+
   if (trustLoopback !== false && isLoopback(remoteAddress)) return { ok: true, reason: "loopback" };
   if (OPEN_PATHS[url.pathname]) return { ok: true, reason: "open" };
 
   var headers = req.headers || {};
   if (sameToken(bearer(headers.authorization), token)) return { ok: true, reason: "header" };
 
-  var query = url.searchParams.get("token") || "";
-  if (sameToken(query, token)) return { ok: true, reason: "query", setCookie: true };
-
   if (sameToken(readCookie(headers.cookie, COOKIE_NAME), token)) return { ok: true, reason: "cookie" };
 
   return { ok: false, reason: "missing or invalid token" };
 }
 
-function cookieHeader(token) {
-  // HttpOnly は付けない (ページ内の fetch には自動で乗るが、JS から読みたくなる余地を残す)。
-  // Secure も付けない: 店内は HTTP 運用で、付けると Cookie がそもそも保存されない
-  return COOKIE_NAME + "=" + encodeURIComponent(token) +
-    "; Path=/; Max-Age=" + COOKIE_MAX_AGE + "; SameSite=Lax";
+function cookieHeader(token, secure) {
+  var header = COOKIE_NAME + "=" + encodeURIComponent(token) +
+    "; HttpOnly; Path=/; Max-Age=" + COOKIE_MAX_AGE + "; SameSite=Lax";
+  return secure ? header + "; Secure" : header;
 }
 
 /* config.json / 環境変数から受け取ったトークンを正規化する。
