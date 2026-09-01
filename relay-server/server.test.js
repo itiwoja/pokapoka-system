@@ -689,6 +689,10 @@ test("静的配信・demo・404・不正URLを維持する", async function (t) 
   assert.equal(root.status, 200);
   var bridgeTags = root.text.match(/<script\b[^>]*\bsrc=["']\/relay-server\/kds-bridge\.js["'][^>]*><\/script>/gi) || [];
   assert.equal(bridgeTags.length, 1, "KDS bridge scriptがちょうど1件だけ注入される");
+  var sound = await requestRaw(relay.server, "/assets/sounds/shishiodoshi.ogg");
+  assert.equal(sound.status, 200);
+  assert.equal(sound.headers["content-type"], "audio/ogg");
+  assert.ok(sound.text && sound.text.length > 1000, "ししおどし音源が配信される");
   assert.equal((await requestRaw(relay.server, "/demo")).status, 200);
   assert.equal((await requestRaw(relay.server, "/relay-server/not-found.js")).status, 404);
   assert.equal((await requestRaw(relay.server, "/%E0%A4%A")).status, 400);

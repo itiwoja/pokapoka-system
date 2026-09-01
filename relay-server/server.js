@@ -46,6 +46,7 @@ var MIME = {
   ".css": "text/css",
   ".json": "application/json",
   ".md": "text/markdown; charset=utf-8",
+  ".ogg": "audio/ogg",
   ".svg": "image/svg+xml",
   ".png": "image/png",
 };
@@ -66,6 +67,7 @@ function createRelay(options) {
     "kds-a-grid.html",
     "slip-style-designer.html",   // 印刷スタイル設定ツール。KDSと同一オリジンで配信しlocalStorageを共有する
     "slip-renderer.js",           // 伝票レイアウトの描画エンジン。フォーマッターとKDSで同じ絵を出すため共有する
+    path.join("assets", "sounds", "shishiodoshi.ogg"), // 新規注文通知音。出典は assets/sounds/README.md
     path.join("relay-server", "kds-bridge.js"),
   ];
   var timers = [];

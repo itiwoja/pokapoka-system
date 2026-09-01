@@ -278,11 +278,42 @@
 
   /* ---- 注文フィード (#139) ---- */
   var serverOrderIds = {};   // 直近のサーバー由来 id。KDS 内で生まれた注文と区別するために持つ
+  var hasOrderSnapshot = false;
+
+  function findNewOrders(previousIds, incoming) {
+    var added = [];
+    var found = {};
+    previousIds = previousIds || {};
+    (incoming || []).forEach(function (order) {
+      if (!order || order.id == null) return;
+      var id = String(order.id);
+      if (!previousIds[id] && !found[id]) {
+        found[id] = 1;
+        added.push(order);
+      }
+    });
+    return added;
+  }
+
+  function announceNewOrders(orders) {
+    if (!orders.length || typeof window === "undefined" || !window.dispatchEvent) return;
+    var event;
+    try {
+      if (typeof window.CustomEvent === "function") {
+        event = new window.CustomEvent("kds:order-added", { detail: { orders: orders } });
+      } else if (typeof document !== "undefined" && document.createEvent) {
+        event = document.createEvent("CustomEvent");
+        event.initCustomEvent("kds:order-added", false, false, { orders: orders });
+      }
+      if (event) window.dispatchEvent(event);
+    } catch (e) {}
+  }
 
   function applyOrders(incoming) {
     var current = Array.isArray(window.KDS_ORDERS) ? window.KDS_ORDERS : [];
     var nextIds = {};
     incoming.forEach(function (o) { if (o && o.id != null) nextIds[String(o.id)] = 1; });
+    var newOrders = findNewOrders(serverOrderIds, incoming);
     // KDS 内で発生した注文 (予約→着手カード等) を先頭に残す。
     // サーバー側にも同じ id があればサーバーを正とする
     var local = current.filter(function (o) {
@@ -292,6 +323,9 @@
     });
     serverOrderIds = nextIds;
     window.KDS_ORDERS = local.concat(incoming);
+    // 初回スナップショットは「新着」ではない。以降の新しい orderId だけを通知する。
+    if (hasOrderSnapshot && newOrders.length) announceNewOrders(newOrders);
+    hasOrderSnapshot = true;
   }
 
   async function tickOrders() {
@@ -306,7 +340,7 @@
   }
 
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { mergeStock: mergeStock }; // Node (テスト) から require された場合はポーリングしない
+    module.exports = { mergeStock: mergeStock, findNewOrders: findNewOrders }; // Node (テスト) から require された場合はポーリングしない
   } else {
     try { bc = new BroadcastChannel(BC_NAME); } catch (e) {}
     if (bc) {
