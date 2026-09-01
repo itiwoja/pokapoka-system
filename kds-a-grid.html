@@ -398,6 +398,72 @@
   .hud-stat.warn-on .k, .hud-stat.warn-on .v { color: var(--on-u-warn); }
   .hud-sep { width: 1px; align-self: stretch; margin: 8px 2px; background: var(--border); flex: 0 0 auto; }
 
+  /* relay同期状態 (#207)。色だけで判断させず、状態名と経路別の時刻を常時表示する。 */
+  .sync-status {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 52px;
+    padding: 6px var(--pad-shell);
+    background: var(--bg-base);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sync-status[hidden] { display: none; }
+  .sync-status-main {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    min-height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-chip);
+    background: #FFFFFF;
+    white-space: nowrap;
+  }
+  .sync-status-indicator { width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); flex: 0 0 auto; }
+  .sync-status-label { font-size: 14px; font-weight: 900; color: var(--text-primary); }
+  .sync-status[data-state="normal"] .sync-status-indicator { background: var(--u-ok); }
+  .sync-status[data-state="delayed"] .sync-status-indicator { background: var(--u-warn); }
+  .sync-status[data-state="offline"] .sync-status-indicator { background: var(--u-alert); }
+  .sync-status-relay {
+    flex: 0 0 auto;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .sync-status-routes { display: flex; align-items: stretch; gap: 8px; flex: 0 0 auto; }
+  .sync-route {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-items: center;
+    column-gap: 7px;
+    min-width: 210px;
+    min-height: 38px;
+    padding: 3px 9px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-chip);
+    background: #FFFFFF;
+    white-space: nowrap;
+  }
+  .sync-route-name { font-size: 12px; font-weight: 900; color: var(--text-primary); }
+  .sync-route-state { font-size: 12px; font-weight: 900; color: var(--text-secondary); }
+  .sync-route-meta { grid-column: 1 / -1; color: var(--text-secondary); font-size: 10px; font-weight: 700; }
+  .sync-route[data-state="normal"] { border-color: var(--u-ok); }
+  .sync-route[data-state="normal"] .sync-route-state { color: var(--u-ok); }
+  .sync-route[data-state="delayed"] { border-color: var(--u-warn); }
+  .sync-route[data-state="delayed"] .sync-route-state { color: var(--on-u-warn); }
+  .sync-route[data-state="offline"] { border-color: var(--u-alert); background: #FFF4F2; }
+  .sync-route[data-state="offline"] .sync-route-state { color: var(--u-alert); }
+  @media (max-width: 760px) {
+    .sync-status { align-items: flex-start; flex-wrap: wrap; }
+    .sync-status-routes { width: 100%; overflow-x: auto; padding-bottom: 2px; }
+  }
+
   /* コンロ列とタイマー列を横に並べる (#145)。HUD は overflow-x:auto なので溢れても横に流れる */
   .konro-hud { display: flex; align-items: center; gap: 14px; flex: 0 0 auto; }
   .kh-row { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
@@ -1529,6 +1595,31 @@
     <div class="konro-hud" id="konroHud" role="group" aria-label="コンロ・タイマー使用状況"></div>
   </div>
 
+  <section class="sync-status" id="syncStatus" data-state="pending" role="status" aria-live="polite" aria-label="relay同期状態" hidden>
+    <div class="sync-status-main">
+      <span class="sync-status-indicator" aria-hidden="true"></span>
+      <strong class="sync-status-label" id="syncStatusLabel">relay同期: 接続待ち</strong>
+    </div>
+    <span class="sync-status-relay" id="syncRelayState">中継確認中</span>
+    <div class="sync-status-routes" aria-label="同期経路別の状態">
+      <div class="sync-route" id="syncRouteReservations" data-sync-source="reservations" data-state="pending">
+        <span class="sync-route-name">予約同期</span>
+        <strong class="sync-route-state" id="syncReservationsState">接続待ち</strong>
+        <small class="sync-route-meta" id="syncReservationsMeta">最終成功 -- / 最終失敗 --</small>
+      </div>
+      <div class="sync-route" id="syncRouteOrders" data-sync-source="orders" data-state="pending">
+        <span class="sync-route-name">注文同期</span>
+        <strong class="sync-route-state" id="syncOrdersState">接続待ち</strong>
+        <small class="sync-route-meta" id="syncOrdersMeta">最終成功 -- / 最終失敗 --</small>
+      </div>
+      <div class="sync-route" id="syncRouteKitchen" data-sync-source="kitchen" data-state="pending">
+        <span class="sync-route-name">厨房同期</span>
+        <strong class="sync-route-state" id="syncKitchenState">接続待ち</strong>
+        <small class="sync-route-meta" id="syncKitchenMeta">最終成功 -- / 最終失敗 --</small>
+      </div>
+    </div>
+  </section>
+
   <div class="shell">
     <main>
       <div class="board" id="board" aria-live="polite" aria-relevant="additions removals"></div>
@@ -1901,6 +1992,26 @@
     var hudSoonEl = document.getElementById("hudSoon");
     var hudSoonWrap = document.getElementById("hudSoonWrap");
     var konroHudEl = document.getElementById("konroHud");
+    var syncStatusEl = document.getElementById("syncStatus");
+    var syncStatusLabelEl = document.getElementById("syncStatusLabel");
+    var syncRelayStateEl = document.getElementById("syncRelayState");
+    var syncRouteEls = {
+      reservations: {
+        root: document.getElementById("syncRouteReservations"),
+        state: document.getElementById("syncReservationsState"),
+        meta: document.getElementById("syncReservationsMeta")
+      },
+      orders: {
+        root: document.getElementById("syncRouteOrders"),
+        state: document.getElementById("syncOrdersState"),
+        meta: document.getElementById("syncOrdersMeta")
+      },
+      kitchen: {
+        root: document.getElementById("syncRouteKitchen"),
+        state: document.getElementById("syncKitchenState"),
+        meta: document.getElementById("syncKitchenMeta")
+      }
+    };
     var undoToastEl = document.getElementById("undoToast");
     var undoToastMsgEl = document.getElementById("undoToastMsg");
     var undoToastBtn = document.getElementById("undoToastBtn");
@@ -1919,6 +2030,53 @@
 
     /* ===================== ユーティリティ ===================== */
     function t(key) { return LABELS[key] || key; }
+
+    /* ===================== relay同期状態 (#207) =====================
+       ブリッジからのイベントとwindow初期値の両方を受け取れるようにする。
+       最終失敗の本文は表示せず、時刻だけを出す (認証情報を含む例外の漏えい防止)。 */
+    var SYNC_STATE_LABELS = {
+      pending: "接続待ち", normal: "正常", delayed: "同期遅延", offline: "オフライン"
+    };
+    function syncStateLabel(state) { return SYNC_STATE_LABELS[state] || SYNC_STATE_LABELS.pending; }
+    function syncTimeLabel(value) {
+      var n = Number(value);
+      if (!isFinite(n) || n <= 0) return "--";
+      var d = new Date(n);
+      if (isNaN(d.getTime())) return "--";
+      return pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds());
+    }
+    function renderSyncStatus(status) {
+      if (!syncStatusEl || !status || !status.channels) return;
+      var state = SYNC_STATE_LABELS[status.state] ? status.state : "pending";
+      syncStatusEl.hidden = false;
+      syncStatusEl.setAttribute("data-state", state);
+      if (syncStatusLabelEl) syncStatusLabelEl.textContent = "relay同期: " + syncStateLabel(state);
+      if (syncRelayStateEl) {
+        var relay = status.relay || {};
+        syncRelayStateEl.textContent = "中継: " + syncStateLabel(relay.state);
+      }
+
+      Object.keys(syncRouteEls).forEach(function (name) {
+        var els = syncRouteEls[name];
+        var channel = status.channels[name] || {};
+        var channelState = SYNC_STATE_LABELS[channel.state] ? channel.state : "pending";
+        if (els.root) els.root.setAttribute("data-state", channelState);
+        if (els.state) els.state.textContent = syncStateLabel(channelState);
+        if (els.meta) {
+          var meta = "最終成功 " + syncTimeLabel(channel.lastSuccessAt) +
+            " / 最終失敗 " + syncTimeLabel(channel.lastFailureAt);
+          if (channel.retrying && Number(channel.failureCount) > 0) meta += " / 再試行中";
+          els.meta.textContent = meta;
+        }
+      });
+    }
+    function listenSyncStatus() {
+      if (typeof window === "undefined") return;
+      if (window.__KDS_SYNC_STATUS__) renderSyncStatus(window.__KDS_SYNC_STATUS__);
+      window.addEventListener("kds-sync-status", function (ev) {
+        renderSyncStatus(ev && ev.detail);
+      });
+    }
 
     function pad2(n) { return n < 10 ? "0" + n : "" + n; }
 
@@ -4736,6 +4894,7 @@
 
     /* ===================== ポーリング ===================== */
     function poll() {
+      renderSyncStatus(window.__KDS_SYNC_STATUS__);
       loadDeleted();              // 削除済みIDを LS から取り込み (#67)
       pruneDeleted();             // フィードから消えた削除済みIDは掃除
       loadRiceCues();             // BC非対応時の同一ブラウザLSフォールバック
@@ -4770,6 +4929,7 @@
       applyMode();
       applyView();
       buildKonroHud();
+      listenSyncStatus();
       initSync();
 
       modeBtns.forEach(function (b) {

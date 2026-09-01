@@ -13,6 +13,7 @@ var mergeStock = bridge.mergeStock;
 var reconcileDoneCounts = bridge.reconcileDoneCounts;
 var createKitchenQueue = bridge.createKitchenQueue;
 var postKitchenBatch = bridge.postKitchenBatch;
+var createSyncStatusTracker = bridge.createSyncStatusTracker;
 
 function delay(ms) {
   return new Promise(function (resolve) { setTimeout(resolve, ms); });
@@ -242,4 +243,53 @@ test("HTTPエラー時は待機して再送し、通信断中に高速ループ�
 
   await waitUntil(function () { return attempts === 2 && !queue.isBusy(); });
   assert.equal(attempts, 2);
+});
+
+/* ---- Issue #207: relay接続・経路別同期状態 ---- */
+
+test("同期状態は一時失敗をすぐ警告せず、10秒で遅延・30秒でオフラインにする", function () {
+  var tracker = createSyncStatusTracker({ delayedMs: 10, offlineMs: 30 });
+  ["relay", "reservations", "orders", "kitchen"].forEach(function (name) {
+    tracker.attempt(name, 0);
+    tracker.success(name, 0);
+  });
+
+  tracker.attempt("orders", 5);
+  tracker.failure("orders", 5, 503);
+  var transient = tracker.snapshot(9);
+  assert.equal(transient.channels.orders.state, "normal");
+  assert.equal(transient.channels.orders.retrying, true);
+  assert.equal(transient.channels.orders.lastFailureAt, 5);
+  assert.equal(transient.channels.orders.error, "HTTP 503");
+
+  assert.equal(tracker.snapshot(10).channels.orders.state, "delayed");
+  assert.equal(tracker.snapshot(30).channels.orders.state, "offline");
+
+  tracker.attempt("orders", 31);
+  tracker.success("orders", 31);
+  var recovered = tracker.snapshot(31);
+  assert.equal(recovered.channels.orders.state, "normal");
+  assert.equal(recovered.channels.orders.retrying, false);
+  assert.equal(recovered.channels.orders.lastSuccessAt, 31);
+  assert.equal(recovered.channels.orders.lastFailureAt, 5);
+});
+
+test("同期状態の集約は経路別の障害を隠さず、全経路停止時だけオフラインになる", function () {
+  var tracker = createSyncStatusTracker({ delayedMs: 10, offlineMs: 30 });
+  ["relay", "reservations", "orders", "kitchen"].forEach(function (name) {
+    tracker.attempt(name, 0);
+    tracker.success(name, 0);
+  });
+
+  tracker.attempt("orders", 5);
+  tracker.failure("orders", 5, 502);
+  assert.equal(tracker.snapshot(10).state, "delayed");
+  assert.equal(tracker.snapshot(10).channels.orders.state, "delayed");
+  assert.equal(tracker.snapshot(10).channels.kitchen.state, "delayed");
+  assert.equal(tracker.snapshot(30).state, "offline");
+
+  var safe = createSyncStatusTracker({ delayedMs: 10, offlineMs: 30 });
+  safe.failure("orders", 1, "https://example.test/?token=secret-value");
+  assert.equal(safe.snapshot(1).channels.orders.error, "通信エラー");
+  assert.doesNotMatch(JSON.stringify(safe.snapshot(1)), /secret-value/);
 });
