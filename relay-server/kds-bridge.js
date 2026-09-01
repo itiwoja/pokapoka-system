@@ -45,6 +45,7 @@
   var ORDER_POLL_MS = 2000;                  // 注文は厨房の着手速度に効くので予約より短く
   var KITCHEN_POLL_MS = 1500;                // コンロの取り合いに効くので短め
   var KITCHEN_FLUSH_MS = 200;                // 連打はまとめて送る
+  var KITCHEN_RETRY_MS = 1000;               // 通信断中の高速ループを避けつつ、復旧後は速やかに追いつく
   var KITCHEN_EVENTS = { konro: 1, toggle: 1, timerLock: 1, order: 1, deleteOrder: 1 };
 
   var bc = null; // ブラウザで動く時だけ末尾で生成 (Node にも BroadcastChannel があり、生成するとテストプロセスが終了しなくなる)
@@ -172,42 +173,94 @@
      取り込みは localStorage へ書くだけでよい: KDS 本体は 1秒ごとの poll() で
      loadKonro()/loadDone()/loadLocked()/loadOrderSeq()/loadDeleted() を実行しており、
      書き換えた内容がそのまま次の描画に乗る (KDS 本体は無改修のまま)。 */
-  var pending = [];          // 未送信のローカルイベント
-  var flushTimer = null;
-  var sending = false;
   var appliedRev = -1;       // 取り込み済みの relay rev
   var kitchenSession = null; // relay の起動識別子。再起動で rev が戻るのを検出する
   var seeded = false;        // 空の relay へ手元の状態を渡し済みか
 
-  function onLocalKitchenEvent(msg) {
-    if (!msg || !KITCHEN_EVENTS[msg.type]) return;
-    pending.push(msg);
-    if (flushTimer) return;
-    flushTimer = setTimeout(function () { flushTimer = null; flushKitchen(); }, KITCHEN_FLUSH_MS);
+  /**
+   * 厨房イベントを順序どおりに送るキュー。
+   * 失敗した batch は、その送信中に追加されたイベントより前へ戻して retryMs 後に再送する。
+   * イベントは絶対状態を表すため、応答喪失による同一 batch の再送も relay 側で安全に再適用できる。
+   */
+  function createKitchenQueue(sendBatch, options) {
+    options = options || {};
+    var flushMs = options.flushMs == null ? KITCHEN_FLUSH_MS : options.flushMs;
+    var retryMs = options.retryMs == null ? KITCHEN_RETRY_MS : options.retryMs;
+    var batchSize = options.batchSize || 200;
+    var queue = [];
+    var timer = null;
+    var inFlight = false;
+
+    function schedule(delay) {
+      if (timer || inFlight || !queue.length) return;
+      timer = setTimeout(function () {
+        timer = null;
+        flush();
+      }, delay);
+    }
+
+    async function flush() {
+      if (inFlight || !queue.length) return;
+      var batch = queue.splice(0, batchSize);
+      var succeeded = false;
+      inFlight = true;
+      try {
+        await sendBatch(batch);
+        succeeded = true;
+      } catch (e) {
+        // 後続イベントの前へ戻すことで、失敗前後の操作順を維持する。
+        queue = batch.concat(queue);
+      } finally {
+        inFlight = false;
+        if (queue.length) schedule(succeeded ? 0 : retryMs);
+      }
+    }
+
+    function enqueue(event) {
+      queue.push(event);
+      schedule(flushMs);
+    }
+
+    function enqueueAll(events) {
+      if (!events || !events.length) return;
+      queue = queue.concat(events);
+      schedule(flushMs);
+    }
+
+    function flushNow() {
+      if (timer) { clearTimeout(timer); timer = null; }
+      return flush();
+    }
+
+    return {
+      enqueue: enqueue,
+      enqueueAll: enqueueAll,
+      flushNow: flushNow,
+      isBusy: function () { return inFlight || queue.length > 0; },
+      pending: function () { return queue.slice(); },
+    };
   }
 
-  async function flushKitchen() {
-    if (sending || !pending.length) return;
-    var batch = pending.splice(0, 200);   // relay 側の受理上限に合わせて分割する
-    sending = true;
-    try {
-      var res = await fetch(API_KITCHEN, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ events: batch }),
-      });
-      if (!res.ok) throw new Error(res.status);
-      var body = await res.json();
-      // 自分の変更が relay に載った時点の rev。これより古いスナップショットは取り込まない
-      // (取り込むと、送った直後の操作が一瞬巻き戻って見える)
-      if (body && typeof body.rev === "number") appliedRev = Math.max(appliedRev, body.rev - 1);
-    } catch (e) {
-      // 送信失敗: relay が落ちていても手元の KDS は動き続ける。イベントは捨てる
-      // (状態は絶対値なので、次の操作で最新値が送られて追いつく)
-    } finally {
-      sending = false;
-      if (pending.length) flushKitchen();
-    }
+  async function postKitchenBatch(fetchFn, batch) {
+    var res = await fetchFn(API_KITCHEN, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ events: batch }),
+    });
+    if (!res.ok) throw new Error(res.status);
+    return res.json();
+  }
+
+  var kitchenQueue = createKitchenQueue(async function (batch) {
+    var body = await postKitchenBatch(fetch, batch);
+    // 自分の変更が relay に載った時点の rev。これより古いスナップショットは取り込まない
+    // (取り込むと、送った直後の操作が一瞬巻き戻って見える)
+    if (body && typeof body.rev === "number") appliedRev = Math.max(appliedRev, body.rev - 1);
+  });
+
+  function onLocalKitchenEvent(msg) {
+    if (!msg || !KITCHEN_EVENTS[msg.type]) return;
+    kitchenQueue.enqueue(msg);
   }
 
   /* relay がまだ空のときに、この端末の手元の状態をイベント列にして送る。
@@ -241,8 +294,8 @@
     if (Array.isArray(seq) && seq.length) events.push({ type: "order", seq: seq.map(String) });
 
     if (!events.length) return false;
-    pending = pending.concat(events);
-    flushKitchen();
+    kitchenQueue.enqueueAll(events);
+    kitchenQueue.flushNow();
     return true;
   }
 
@@ -255,7 +308,7 @@
   }
 
   async function tickKitchen() {
-    if (sending || pending.length) return;      // 送信中は自分の変更が反映される前なので取り込まない
+    if (kitchenQueue.isBusy()) return;          // 未送信分がある間は古い relay 状態を取り込まない
     var snap;
     try {
       var res = await fetch(API_KITCHEN, { cache: "no-store" });
@@ -356,8 +409,8 @@
     if (reconciledEvents.length) {
       save(LS_DONE, done);
       // relay の厨房状態にも絶対値を送り、次の同期で古い行番号へ巻き戻されないようにする。
-      pending = pending.concat(reconciledEvents);
-      flushKitchen();
+      // 通信断中も #205 の再送キューに残し、復旧後に順序どおり反映する。
+      kitchenQueue.enqueueAll(reconciledEvents);
     }
     if (JSON.stringify(previousFeed) !== JSON.stringify(incoming)) save(LS_SERVER_ORDERS, incoming);
 
@@ -391,6 +444,8 @@
       mergeStock: mergeStock,
       itemStateKey: itemStateKey,
       reconcileDoneCounts: reconcileDoneCounts,
+      createKitchenQueue: createKitchenQueue,
+      postKitchenBatch: postKitchenBatch,
     };
   } else {
     try { bc = new BroadcastChannel(BC_NAME); } catch (e) {}

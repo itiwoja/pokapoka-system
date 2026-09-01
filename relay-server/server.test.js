@@ -730,7 +730,8 @@ test("静的配信・demo・404・不正URLを維持する", async function (t) 
 
   var root = await requestRaw(relay.server, "/");
   assert.equal(root.status, 200);
-  assert.match(root.text, /kds-bridge\.js/);
+  var bridgeTags = root.text.match(/<script\b[^>]*\bsrc=["']\/relay-server\/kds-bridge\.js["'][^>]*><\/script>/gi) || [];
+  assert.equal(bridgeTags.length, 1, "KDS bridge scriptがちょうど1件だけ注入される");
   assert.equal((await requestRaw(relay.server, "/demo")).status, 200);
   assert.equal((await requestRaw(relay.server, "/relay-server/not-found.js")).status, 404);
   assert.equal((await requestRaw(relay.server, "/%E0%A4%A")).status, 400);
