@@ -434,12 +434,14 @@ KDS 本体は無改修。**このサーバー経由で `/` を開くと、配信
 ## テスト
 
 ```sh
-node relay-server/tablecheck-sync.test.js
-node --test relay-server/booking-resync.test.js relay-server/server.test.js \
-  relay-server/seat-occupancy.test.js relay-server/load-config.test.js \
-  relay-server/printer.test.js relay-server/auth.test.js \
-  relay-server/order-intake.test.js
+cd relay-server
+npm ci
+npm test
 ```
+
+Node.js 22 を使用する GitHub Actions と同じく、`npm ci` は lockfile に固定された依存関係を
+導入し、`npm test` はこのディレクトリの全 `*.test.js` を実行する。テストは店舗の設定ファイル、
+認証情報、TableCheck などの実 API を必要とせず、失敗時は非ゼロ終了する。
 
 正規化(スキーマ候補キー・pax→adults フォールバック)、memo パーサ、
 upsert/404削除/当日パージ/KDS形式変換に加え、全件ページング、原子的なstore差替え、

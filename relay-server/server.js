@@ -199,6 +199,9 @@ function createRelay(options) {
     var rel;
     try { rel = url.pathname === "/" ? "/kds-a-grid.html" : decodeURIComponent(url.pathname); }
     catch (err) { res.writeHead(400); return res.end("bad request"); }
+    // URL内のWindows/POSIX両方の区切りを同じものとして扱い、実行OSに関係なく
+    // エンコードされたパストラバーサルをallowlist判定より先に拒否する。
+    rel = rel.replace(/[\\/]/g, path.sep);
     var file = path.normalize(path.join(root, rel));
     var relativePath = path.relative(root, file);
     if (relativePath === ".." || relativePath.indexOf(".." + path.sep) === 0 || path.isAbsolute(relativePath)) {
