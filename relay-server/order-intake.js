@@ -11,7 +11,7 @@
  *
  * 方針:
  *   - 卓番はペイロードで受け取る。送信元IPからは引かない (DHCPで入れ替わると注文が黙って別の卓に付く)
- *   - orderId で冪等化する。通信断の再送で二重注文にしない
+ *   - orderId で冪等化する。同じ内容の再送は無変更、内容が違えば同じ注文を更新する
  *   - 保存しない (#115)。プロセスのメモリのみ・TTL 経過で自然に落ちる
  */
 "use strict";
@@ -113,15 +113,43 @@ function normalizeOrder(body, now) {
   return { order: { id: orderId, table: table, type: "new", start: start, people: people, items: items } };
 }
 
+/* 更新対象だけを安定した形へ寄せる。start は初回受付時刻として不変にするため比較しない。 */
+function mutableOrderContent(order) {
+  return {
+    table: order.table,
+    people: order.people,
+    items: (order.items || []).map(function (item) {
+      return {
+        name: item.name,
+        qty: item.qty,
+        options: item.options == null ? null : item.options,
+        allergies: item.allergies == null ? null : item.allergies,
+      };
+    }),
+  };
+}
+
+function sameOrderContent(a, b) {
+  return JSON.stringify(mutableOrderContent(a)) === JSON.stringify(mutableOrderContent(b));
+}
+
 /**
- * 注文を投入する。同じ orderId は上書きせず既存を返す (再送で二重注文にしない)。
- * 戻り値は { created, order }。
+ * 注文を投入する。同じ orderId・同じ内容は既存を返し、内容が違えば既存注文を置換する。
+ * 更新でも初回の start を維持し、KDS のタイマーと受付順を巻き戻さない。
+ * 戻り値は { created, updated, duplicate, order }。
  */
 function putOrder(orders, order) {
   var existing = orders.get(order.id);
-  if (existing) return { created: false, order: existing };
+  if (existing) {
+    if (sameOrderContent(existing, order)) {
+      return { created: false, updated: false, duplicate: true, order: existing };
+    }
+    var updated = Object.assign({}, order, { start: existing.start });
+    orders.set(order.id, updated);
+    return { created: false, updated: true, duplicate: false, order: updated };
+  }
   orders.set(order.id, order);
-  return { created: true, order: order };
+  return { created: true, updated: false, duplicate: false, order: order };
 }
 
 function removeOrder(orders, orderId) {
@@ -148,6 +176,8 @@ module.exports = {
   validateTable: validateTable,
   validateOrderId: validateOrderId,
   normalizeOrder: normalizeOrder,
+  mutableOrderContent: mutableOrderContent,
+  sameOrderContent: sameOrderContent,
   putOrder: putOrder,
   removeOrder: removeOrder,
   purgeExpired: purgeExpired,

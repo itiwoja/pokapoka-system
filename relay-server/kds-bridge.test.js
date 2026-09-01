@@ -10,6 +10,7 @@ var test = require("node:test");
 var assert = require("node:assert/strict");
 var bridge = require("./kds-bridge");
 var mergeStock = bridge.mergeStock;
+var reconcileDoneCounts = bridge.reconcileDoneCounts;
 var createKitchenQueue = bridge.createKitchenQueue;
 var postKitchenBatch = bridge.postKitchenBatch;
 
@@ -137,6 +138,37 @@ test("着手済み予約は seen 記録の変更が無く seenChanged = false (�
   assert.equal(out.changed, false);
   assert.equal(out.seenChanged, false);
   assert.deepEqual(out.stock, []);                      // 復活させない挙動は維持
+});
+
+/* ---- Issue #206: 注文更新時の KDS ローカル完了状態 ---- */
+
+test("注文更新で同じ品目の完了数を追従し、新規・訂正品目は未完了にする", function () {
+  var previous = { items: [
+    { name: "土鍋御膳", qty: 3, options: "塩少なめ", allergies: null },
+    { name: "ウーロン茶", qty: 1, options: null, allergies: null },
+  ] };
+  var next = { items: [
+    { name: "新規デザート", qty: 1, options: null, allergies: null },
+    { name: "土鍋御膳", qty: 2, options: "塩少なめ", allergies: null },
+    { name: "ウーロン茶", qty: 1, options: "氷なし", allergies: null },
+  ] };
+
+  assert.deepEqual(reconcileDoneCounts(previous, next, [3, 1]), [0, 2, 0]);
+});
+
+test("注文更新の並べ替えでは品目ごとの完了数を保ち、同一品目は出現順で対応づける", function () {
+  var previous = { items: [
+    { name: "茶", qty: 2, options: null, allergies: null },
+    { name: "汁", qty: 1, options: null, allergies: null },
+    { name: "茶", qty: 3, options: null, allergies: null },
+  ] };
+  var next = { items: [
+    { name: "汁", qty: 1, options: null, allergies: null },
+    { name: "茶", qty: 4, options: null, allergies: null },
+    { name: "茶", qty: 1, options: null, allergies: null },
+  ] };
+
+  assert.deepEqual(reconcileDoneCounts(previous, next, [1, true, 2]), [1, 1, 1]);
 });
 
 /* ---- Issue #205: 厨房同期イベントの送信失敗・再送 ---- */

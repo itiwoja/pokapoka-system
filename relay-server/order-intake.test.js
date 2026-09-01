@@ -57,16 +57,57 @@ test("検証エラーは直す場所が分かる文言を返す", function () {
   assert.match(intake.normalizeOrder([], NOW).error, /^body/);
 });
 
-test("同じ orderId の再送は二重注文にならない", function () {
+test("同じ orderId・同じ内容の再送は二重注文にも更新にもならない", function () {
   var orders = new Map();
   var first = intake.putOrder(orders, intake.normalizeOrder(body(), NOW).order);
   assert.equal(first.created, true);
 
-  // 通信断のリトライ: 内容が違っても既存を正とし、カードを増やさない
-  var retry = intake.putOrder(orders, intake.normalizeOrder(body({ items: [{ name: "別物" }] }), NOW).order);
+  // orderedAt 省略時は再正規化の start が変わっても、更新対象の内容が同じなら冪等再送
+  var retry = intake.putOrder(orders, intake.normalizeOrder(body(), NOW + 5000).order);
   assert.equal(retry.created, false);
+  assert.equal(retry.updated, false);
+  assert.equal(retry.duplicate, true);
   assert.equal(orders.size, 1);
-  assert.equal(retry.order.items[0].name, "土鍋御膳");
+  assert.equal(retry.order.start, NOW);
+});
+
+test("同じ orderId で内容が違えば既存注文を更新し、初回受付時刻を維持する", function () {
+  var orders = new Map();
+  intake.putOrder(orders, intake.normalizeOrder(body({
+    people: 2,
+    orderedAt: NOW - 60000,
+  }), NOW).order);
+
+  var changed = intake.putOrder(orders, intake.normalizeOrder(body({
+    table: "15",
+    people: 3,
+    orderedAt: NOW,
+    items: [
+      { name: "土鍋御膳", qty: 1, note: "塩少なめ" },
+      { name: "ウーロン茶", qty: 2 },
+    ],
+  }), NOW).order);
+
+  assert.equal(changed.created, false);
+  assert.equal(changed.updated, true);
+  assert.equal(changed.duplicate, false);
+  assert.equal(orders.size, 1);
+  assert.equal(changed.order.start, NOW - 60000);
+  assert.equal(changed.order.table, "15");
+  assert.equal(changed.order.people, 3);
+  assert.deepEqual(changed.order.items.map(function (item) {
+    return [item.name, item.qty, item.options];
+  }), [["土鍋御膳", 1, "塩少なめ"], ["ウーロン茶", 2, null]]);
+});
+
+test("取消後の同じ orderId の POST は新規注文として再作成する", function () {
+  var orders = new Map();
+  intake.putOrder(orders, intake.normalizeOrder(body(), NOW).order);
+  assert.equal(intake.removeOrder(orders, "t12-0001"), true);
+
+  var recreated = intake.putOrder(orders, intake.normalizeOrder(body({ table: "13" }), NOW).order);
+  assert.equal(recreated.created, true);
+  assert.equal(recreated.order.table, "13");
 });
 
 test("取消は orderId で消え、未知のIDは false", function () {
