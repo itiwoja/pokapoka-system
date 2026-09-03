@@ -1319,6 +1319,11 @@
     padding: 20px;
   }
   body.slip-open .slip-backdrop { display: flex; }
+  /* ブラウザ印刷へフォールバックするときは、プレビューを見せずに .slip だけ描画させる (#224)。
+     .slip は .slip-backdrop (display:none) の中にあり、開かないまま window.print() すると
+     白紙が出る。display は必要だが画面には出したくないので visibility で隠す。
+     印刷CSS側の .slip への visibility: visible !important が印字対象だけを復活させる。 */
+  body.slip-printing .slip-backdrop { display: flex; visibility: hidden; pointer-events: none; }
   .slip {
     width: min(320px, 100%);
     background: #ffffff;
@@ -4550,10 +4555,14 @@
        (印刷ダイアログは同期的に画面を止めるので、トーストを描画させる猶予を挟む) */
     function fallbackToBrowserPrint(message) {
       showPrintToast(message);
-      // .slip は .slip-backdrop (display:none) の中にある。開いていないと描画されず
-      // 白紙が出るため、ブラウザ印刷のときだけプレビューを開く (#224)
-      document.body.classList.add("slip-open");
-      setTimeout(function () { window.print(); }, 600);
+      /* 印刷対象の .slip を描画させるだけで、プレビューは見せない (#224)。
+         slip-open を付けるとプレビューが1〜2秒表示されてしまい、長押しで即印刷にした
+         意味が無くなる。印刷ダイアログは同期的に画面を止めるので、解除はその後に行う。 */
+      document.body.classList.add("slip-printing");
+      setTimeout(function () {
+        window.print();
+        document.body.classList.remove("slip-printing");
+      }, 600);
     }
 
     /** 印刷ボタン押下時の実処理。この端末がIPを知らなくてもサーバー保存IPで印字を試み、
