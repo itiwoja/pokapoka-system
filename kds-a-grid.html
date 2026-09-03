@@ -166,11 +166,17 @@
     overflow-x: auto;          /* 狭幅でツール群が溢れてもページ横スクロールを出さない */
   }
 
+  /* 店名がページ唯一の h1。従来 div だったため見出しが h2 から始まっており、
+     支援技術がページの主題を取れなかった。見た目は変えないので既定の余白と
+     文字サイズは打ち消す (実サイズは .brand .mark 側で指定している)。 */
   .brand {
     display: flex;
     align-items: baseline;
     gap: 10px;
     min-width: 0;
+    margin: 0;
+    font-size: inherit;
+    font-weight: inherit;
   }
   .brand .mark {
     font-family: var(--font-brand);
@@ -356,6 +362,26 @@
     color: var(--chrome);
     background: #fff;
   }
+  /* プリンター設定。CSSが無くブラウザ既定のボタン(高さ24px)のままで、
+     タップ下限44px (#58) を満たさず、黒いヘッダーの中で浮いていた。 */
+  .head-toggle {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--chrome-line);
+    border-radius: var(--r-chip);
+    background: transparent;
+    color: var(--on-chrome-dim);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    cursor: pointer;
+    transition: background-color .12s ease, color .12s ease;
+  }
+  .head-toggle:hover  { color: var(--on-chrome); }
+  .head-toggle:active { transform: translateY(1px); }
+
   :focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
 
   /* ============================================================ HUD (ヘッダー下サマリー帯)
@@ -388,7 +414,7 @@
     flex: 0 0 auto;
   }
   .hud-stat .k {
-    font-size: 11px;
+    font-size: 12px;
     letter-spacing: .1em;
     font-weight: 800;
     color: var(--text-secondary);
@@ -494,7 +520,7 @@
   }
   .kh-row { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
   .konro-hud .kh-label {
-    font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
     color: var(--text-secondary); font-weight: 800; margin-right: 4px;
     white-space: nowrap;
   }
@@ -638,8 +664,8 @@
     font-size: 13px; font-weight: 800; color: inherit; line-height: 1.05;
   }
   .people .n { font-family: var(--font-num); font-size: 17px; }
-  .people .unit { opacity: .85; font-size: 11px; margin-left: 1px; }
-  .people .kids-inline { opacity: .85; font-size: 11px; font-weight: 800; }
+  .people .unit { opacity: .85; font-size: 12px; margin-left: 1px; }
+  .people .kids-inline { opacity: .85; font-size: 12px; font-weight: 800; }
 
   /* 経過時間 = バナー内の特大数字 (砂時計付き) */
   .elapsed {
@@ -670,7 +696,7 @@
   .card.new      .badge-type { background: var(--type-new);      border-radius: var(--r-chip); }
   .card.reserved .badge-type { background: var(--type-reserved); border-radius: var(--r-pill); }
   .recv { font-size: 12px; color: var(--text-secondary); white-space: nowrap; margin-right: auto; }
-  .recv .label { letter-spacing: .08em; font-size: 10px; font-weight: 700; }
+  .recv .label { letter-spacing: .08em; font-size: 12px; font-weight: 700; }
   .recv .hhmm { font-family: var(--font-num); font-size: 14px; color: var(--text-primary); font-weight: 800; font-variant-numeric: tabular-nums; margin-left: 4px; }
 
   /* チビ伝プレビュー (ゴースト・ホール=読取専用では非表示) */
@@ -682,7 +708,22 @@
     cursor: pointer; transition: color .1s ease, background .1s ease;
   }
   .slip-btn:hover { color: var(--text-primary); background: rgba(0,0,0,.06); }
-  body.mode-hall .slip-btn { display: none; }
+  /* 長押し印刷の進捗 (#224)。押している間だけ下辺が伸び、離すと0に戻る */
+  .slip-btn { position: relative; overflow: hidden; }
+  .slip-btn .slip-btn-progress {
+    position: absolute; left: 0; bottom: 0; height: 3px; width: 0%;
+    background: var(--cta); pointer-events: none; opacity: 0;
+  }
+  .slip-btn.printing .slip-btn-progress { opacity: 1; }
+  /* 印刷済みは「再伝」。二重印字を避けるため、刷ったことが一目で分かるようにする */
+  .slip-btn.printed { border-color: var(--cta); color: var(--cta); }
+  /* チビ伝はホール専用 (#226)。配膳のお膳にテーブル番号と一緒にチビ伝を乗せて運ぶため、
+     伝票を持って動くのはホールであり、プリンターもホール寄りに置かれる。
+     以前はキッチン専用だったが運用実態と逆だった。
+     調理そのものの操作 (品目完了・コンロ・並べ替え) の主権がキッチンにある点は変えない。 */
+  /* キッチンのカード上の伝ボタンは出さない。ホール専用ビューのものだけを見せる (#226) */
+  body:not(.mode-hall) .slip-btn { display: none; }
+  .hall-order-top .slip-btn { margin-left: auto; }
 
   /* 削除 (バナー内・ゴースト / キッチンモード専用) */
   .delete-btn {
@@ -807,7 +848,7 @@
     white-space: nowrap;
   }
   /* #153: 複数個品目は「完了個数 /全数」を 0/n から併記 (例: 0/3→1/3→2/3)。完了(打消線)になったら非表示 */
-  .item-qty .qty-total { display: none; font-size: 11px; font-weight: 700; margin-left: 1px; }
+  .item-qty .qty-total { display: none; font-size: 12px; font-weight: 700; margin-left: 1px; }
   .item.multi:not(.done) .item-qty .qty-total { display: inline; }
 
   /* 完了状態: 打ち消し線 + 減光 (色だけに頼らず線で示す) */
@@ -847,7 +888,7 @@
     min-height: 44px;
   }
   .konro-label {
-    font-size: 10px;
+    font-size: 12px;
     letter-spacing: .14em;
     text-transform: uppercase;
     color: var(--text-secondary);
@@ -1309,7 +1350,11 @@
     align-items: center; justify-content: center;
     padding: 20px;
   }
-  body.slip-open .slip-backdrop { display: flex; }
+  /* ブラウザ印刷へフォールバックするときは、プレビューを見せずに .slip だけ描画させる (#224)。
+     .slip は .slip-backdrop (display:none) の中にあり、開かないまま window.print() すると
+     白紙が出る。display は必要だが画面には出したくないので visibility で隠す。
+     印刷CSS側の .slip への visibility: visible !important が印字対象だけを復活させる。 */
+  body.slip-printing .slip-backdrop { display: flex; visibility: hidden; pointer-events: none; }
   .slip {
     width: min(320px, 100%);
     background: #ffffff;
@@ -1333,8 +1378,7 @@
   body.slip-tpl .slip-canvas { display: block; }
   body.slip-tpl #slipDom { display: none; }
   body.slip-tpl .slip { padding: 10px; }
-  .slip-actions { display: flex; gap: 10px; margin-top: 14px; }
-  .slip-actions button { flex: 1 1 0; min-height: 48px; border-radius: 0; font-size: 15px; font-weight: 900; cursor: pointer; }
+
   .slip-print { border: 2px solid #1A1612; background: #1A1612; color: #fff; }
   .slip-close { border: 2px solid #1A1612; background: #fff; color: #1A1612; }
 
@@ -1352,7 +1396,6 @@
     .slip .slip-store, .slip ul { border-color: #000; }
     .slip .slip-meta { color: #000; }
     .slip li .o { color: #000; }
-    .slip-actions { display: none !important; }
     .slip-backdrop { background: #fff; }
     /* レイアウト設定がある場合は印字イメージだけを紙いっぱいに出す */
     body.slip-tpl .slip { padding: 0; }
@@ -1530,7 +1573,7 @@
     font: 800 14px var(--font-num); text-align: center;
   }
   .hall-stock-add {
-    min-width: 36px; min-height: 36px; padding: 0 9px;
+    min-width: 44px; min-height: 44px; padding: 0 9px;
     border: 1px solid var(--chrome-line); border-radius: var(--r-chip);
     background: var(--chrome-2); color: var(--on-chrome);
     font-size: 18px; font-weight: 900; cursor: pointer;
@@ -1562,17 +1605,17 @@
     color: var(--text-primary); font-size: 13px; font-weight: 900;
   }
   .hall-cue.acknowledged { border-color: var(--border-strong); background: var(--bg-raise); color: var(--text-secondary); }
-  .hall-cue button { margin-left: auto; min-height: 36px; padding: 0 10px; border: 1px solid var(--cta); background: var(--cta); color: #fff; font-weight: 900; cursor: pointer; }
+  .hall-cue button { margin-left: auto; min-height: 44px; min-width: 44px; padding: 0 10px; border: 1px solid var(--cta); background: var(--cta); color: #fff; font-weight: 900; cursor: pointer; }
   .hall-ready-card { border-left-color: var(--cta); background: var(--cta-soft); }
   .hall-ready-inline { display: flex; flex-direction: column; gap: 8px; margin-bottom: 2px; }
   .hall-ready-inline::before { content: "提供準備完了"; color: var(--cta); font-size: 13px; font-weight: 900; }
   .hall-ready-card.dismissed { border-left-color: var(--border-strong); background: var(--bg-raise); opacity: .78; }
   .hall-ready-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 7px; }
-  .hall-ready-actions button { min-height: 40px; padding: 0 10px; border: 1px solid var(--border-strong); background: #fff; color: var(--text-primary); font-weight: 800; cursor: pointer; }
+  .hall-ready-actions button { min-height: 44px; min-width: 44px; padding: 0 10px; border: 1px solid var(--border-strong); background: #fff; color: var(--text-primary); font-weight: 800; cursor: pointer; }
   .hall-ready-card.dismissed .hall-ready-actions button { display: none; }
   .hall-summary-stat { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid var(--border-soft); font-weight: 800; }
   .hall-summary-stat .v { font: 900 24px var(--font-num); }
-  .table-override-btn { min-height: 36px; padding: 0 8px; border: 1px solid var(--border-strong); background: transparent; color: var(--text-secondary); font-size: 11px; font-weight: 800; cursor: pointer; }
+  .table-override-btn { min-height: 44px; min-width: 44px; padding: 0 8px; border: 1px solid var(--border-strong); background: transparent; color: var(--text-secondary); font-size: 12px; font-weight: 800; cursor: pointer; }
   .table-override-btn[data-overridden="true"] { border-color: var(--cta); color: var(--cta); background: var(--cta-soft); }
   body.mode-hall .table-override-btn { display: none; }
   .table-override-confirm-backdrop { display: none; position: fixed; inset: 0; z-index: 20; align-items: center; justify-content: center; padding: 20px; background: rgba(0,0,0,.52); }
@@ -1586,9 +1629,9 @@
 </head>
 <body class="is-empty">
   <header>
-    <div class="brand">
+    <h1 class="brand">
       <span class="mark">土鍋飯<span class="accent">ぽかぽか</span></span>
-    </div>
+    </h1>
     <time class="clock" id="clock" aria-label="現在時刻">--:--<span class="sec">:--</span></time>
 
     <div class="mode-switch" role="group" aria-label="権限モード切り替え">
@@ -1790,7 +1833,9 @@
 
   <!-- チビ伝印刷プレビュー -->
   <div class="slip-backdrop" id="slipBackdrop">
-    <div class="slip" id="slip" role="dialog" aria-modal="true" aria-label="伝票プレビュー">
+    <!-- 印字専用。画面には出さない (長押し印刷のみ)。ブラウザ印刷のとき body.slip-printing で
+         描画だけさせるため DOM は必要 (#224) -->
+    <div class="slip" id="slip" aria-hidden="true">
       <!-- レイアウト設定(自由配置)があれば、このcanvasが実際の印字画像そのものになる。
            設定が無い場合は従来のDOMプレビュー(#slipDom)を表示する -->
       <canvas class="slip-canvas" id="slipCanvas" aria-label="伝票の印字イメージ"></canvas>
@@ -1800,10 +1845,7 @@
         <div class="slip-meta" id="slipMeta"></div>
         <ul id="slipItems"></ul>
       </div>
-      <div class="slip-actions">
-        <button type="button" class="slip-print" id="slipPrint">印刷</button>
-        <button type="button" class="slip-close" id="slipClose">閉じる</button>
-      </div>
+
     </div>
   </div>
 
@@ -1885,6 +1927,7 @@
     var LS_RICE_CUE = "kds_rice_cue_v1"; // 米料理予約cue (rid -> state, 当日分)
     var LS_TABLE_OVERRIDE = "kds_table_override_v1"; // 厨房限定卓番上書き (order id -> table)
     var LS_HALL_READY = "kds_hall_ready_v1"; // 全品完了ホールcue (order id -> snapshot)
+    var LS_SLIP_PRINTED = "kds_slip_printed_v1"; // 伝票を印刷した注文 (order id -> {day, at}) #224
     // relay-server/kds-bridge.js が所有する取込済みrid記録。書くのは向こうだが、
     // 日次パージの対象に入れる必要があるためキー名だけここでも持つ (#172)
     var LS_BRIDGE_SEEN = "kds_bridge_seen_v1";
@@ -1901,6 +1944,9 @@
     var HALL_READY_UNDO_MS = 6000;
 
     var LONGPRESS_MS = 800;        // 並べ替え長押し (0.8〜2秒の下限)
+    /* 伝票印刷の長押し。プレビューを挟まず直接紙が出るため、通常タップでは成立させない。
+       並べ替え(0.8s)より長く、提供cueの取消より短い中間の重さ (#224) */
+    var SLIP_PRINT_MS = 1200;
     var UNDO_TOAST_MS = 6000;      // 全完了カードの取り消し猶予
     var PRINT_TOAST_MS = 4000;     // チビ伝の印刷結果通知を出しておく時間 (#176)
     var DELETE_ARM_MS = 3000;      // 削除ボタン2段階確認の猶予 (#68)
@@ -1963,6 +2009,10 @@
        「グリッドを表示したまま操作だけ止めた読取専用」に戻る。試作を再開するときは
        true にするだけでよい（HTML・CSS・JSの構造はそのまま残してある）。 */
     var HALL_PROTO_ENABLED = false;
+    /* 伝票を印刷済みの注文 (#224)。プレビューを挟まず長押しで刷るようになったぶん、
+       「もう刷ったか」を画面で分かるようにするための記録。 */
+    var slipPrintedMap = {};
+    var slipPrintTargetId = null;  // いま印刷を投げている注文 (成否の確定後に印刷済みにする)
     var hallLayout = "A";          // ホール比較prototypeの表示案
     var tableOverridePending = null; // { id, candidate }。重複警告の2段階確認
     var hallReadyUndoId = null;
@@ -2015,8 +2065,6 @@
     var slipCanvasEl = document.getElementById("slipCanvas");   // 自由配置レイアウトの印字イメージ
     var slipPageStyleEl = document.createElement("style");   // 用紙幅に応じた @page 上書き (スタイル設定 #144追補)
     document.head.appendChild(slipPageStyleEl);
-    var slipPrintBtn = document.getElementById("slipPrint");
-    var slipCloseBtn = document.getElementById("slipClose");
     var seatBackdrop = document.getElementById("seatBackdrop");
     var seatDialDisplayEl = document.getElementById("seatDialDisplay");
     var seatDialDigitBtns = Array.prototype.slice.call(document.querySelectorAll(".seat-dial-btn[data-digit]"));
@@ -2312,7 +2360,7 @@
           // TableCheck 側で日程変更された予約 (予約IDは不変) が「取込済み」と判定されて
           // 変更後の日に二度と取り込まれない (#172)
           [LS_STOCK, LS_DONE, LS_DONE_V1, LS_ORDER, LS_KONRO, LS_LOCKED, LS_DELETED,
-           LS_BRIDGE_SEEN, LS_RICE_CUE, LS_TABLE_OVERRIDE, LS_HALL_READY].forEach(function (key) {
+           LS_BRIDGE_SEEN, LS_RICE_CUE, LS_TABLE_OVERRIDE, LS_HALL_READY, LS_SLIP_PRINTED].forEach(function (key) {
             localStorage.removeItem(key);
           });
         }
@@ -2456,6 +2504,43 @@
     }
     function saveHallReady() {
       lsSet(LS_HALL_READY, JSON.stringify(hallReadyMap));
+    }
+
+    /* ----- 伝票の印刷済み記録 (#224) ----- */
+    function loadSlipPrinted() {
+      var v = safeParse(localStorage.getItem(LS_SLIP_PRINTED), {}) || {};
+      slipPrintedMap = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+    }
+    function saveSlipPrinted() {
+      lsSet(LS_SLIP_PRINTED, JSON.stringify(slipPrintedMap));
+    }
+    function isSlipPrinted(orderId) {
+      return !!slipPrintedMap[String(orderId)];
+    }
+    /* 印刷を実行した時点で記録する。「紙が確実に出た」ではなく「もう刷りに行った」の意。
+       ブラウザ印刷にフォールバックした場合もダイアログまで到達しているので記録する。 */
+    function markSlipPrinted(orderId, shouldBroadcast) {
+      if (orderId == null) return;
+      var id = String(orderId);
+      slipPrintedMap[id] = { day: todayStr(), at: Date.now() };
+      saveSlipPrinted();
+      if (shouldBroadcast !== false) broadcastSlipPrinted(id);
+      applySlipButton(id);
+      renderHallViews();   // ホールのカードにも「再伝」を反映する (#226)
+    }
+    /* 伝ボタンの文言を印刷済みかどうかで切り替える。カードを作り直さずその場で更新する。 */
+    function applySlipButton(orderId) {
+      var entry = cards[String(orderId)];
+      if (!entry || !entry.el) return;
+      var btn = entry.el.querySelector(".js-slip-btn");
+      if (!btn) return;
+      var printed = isSlipPrinted(orderId);
+      // textContent で置き換えると進捗バーの span まで消えるので、退避して戻す
+      var progress = btn.querySelector(".slip-btn-progress");
+      btn.textContent = printed ? "再伝" : "伝";
+      if (progress) btn.appendChild(progress);
+      btn.classList.toggle("printed", printed);
+      btn.setAttribute("aria-label", (printed ? "伝票を再印刷 (1.2秒長押し)" : "伝票を印刷 (1.2秒長押し)"));
     }
 
     /* ----- 権限モード ----- */
@@ -2631,6 +2716,12 @@
             saveRiceCues();
             renderStock();
             renderHallViews();
+          } else if (msg.type === "slipPrinted" && msg.id != null) {
+            // 別端末で刷ったぶんも「再伝」にする。二重印字を防ぐのが目的 (#224)
+            slipPrintedMap[String(msg.id)] = { day: todayStr(), at: Date.now() };
+            saveSlipPrinted();
+            applySlipButton(String(msg.id));
+            renderHallViews();
           } else if (msg.type === "tableOverride" && msg.id != null) {
             var overrideId = String(msg.id);
             if (msg.removed || msg.table == null || String(msg.table).trim() === "") delete tableOverrideMap[overrideId];
@@ -2703,6 +2794,10 @@
     function broadcastHallReady(id, snapshot) {
       if (!bc) return;
       try { bc.postMessage({ type: "hallReady", id: String(id), snapshot: snapshot }); } catch (e) {}
+    }
+    function broadcastSlipPrinted(id) {
+      if (!bc) return;
+      try { bc.postMessage({ type: "slipPrinted", id: String(id) }); } catch (e) {}
     }
 
     /* ===================== レンダリング ===================== */
@@ -2905,9 +3000,7 @@
       var slipBtn = document.createElement("button");
       slipBtn.type = "button";
       slipBtn.className = "slip-btn js-slip-btn";
-      slipBtn.setAttribute("aria-label", t("print"));
-      slipBtn.textContent = "伝";
-      slipBtn.addEventListener("click", function () { openSlip(order); });
+      decorateSlipButton(slipBtn, order);
       // 卓番overrideは厨房だけの表示上書き。元order.tableや上流APIは変更しない (#160)
       var tableOverrideBtn = document.createElement("button");
       tableOverrideBtn.type = "button";
@@ -3975,7 +4068,14 @@
       var elapsed = document.createElement("span");
       elapsed.className = "hall-order-elapsed";
       elapsed.textContent = elapsedMin(order.start) + t("min");
+      // チビ伝はホールが出す (#226)。ホールモードでは進行中カードごと
+      // ホール専用ビューへ差し替わるため、伝ボタンもこちらに持たせる
+      var hallSlipBtn = document.createElement("button");
+      hallSlipBtn.type = "button";
+      hallSlipBtn.className = "slip-btn js-slip-btn";
+      decorateSlipButton(hallSlipBtn, order);
       top.appendChild(table); top.appendChild(kind); top.appendChild(elapsed);
+      top.appendChild(hallSlipBtn);
       card.appendChild(top);
       var list = document.createElement("ul");
       list.className = "hall-order-items";
@@ -4203,8 +4303,7 @@
        Tab/Shift+Tab をダイアログ内で循環させる。予約追加モーダル・チビ伝プレビュー・卓番ダイヤルに適用 */
     function trapModalFocus(e) {
       if (e.key !== "Tab") return;
-      var container = document.body.classList.contains("slip-open") ? slipBackdrop
-                    : document.body.classList.contains("seat-dial-open") ? seatBackdrop
+      var container = document.body.classList.contains("seat-dial-open") ? seatBackdrop
                     : document.body.classList.contains("table-override-confirm-open") ? tableOverrideConfirmBackdrop
                     : document.body.classList.contains("modal-open") ? modalBackdrop
                     : null;
@@ -4273,9 +4372,8 @@
         var next = JSON.stringify(st);
         var prev = null;
         try { prev = localStorage.getItem(LS_SLIP_STYLE); } catch (e) {}
-        if (next === prev) return;   // 変化なし (openSlip→refresh の再帰もここで止まる)
+        if (next === prev) return;   // 変化なし
         lsSet(LS_SLIP_STYLE, next);
-        if (document.body.classList.contains("slip-open") && currentSlipOrder) openSlip(currentSlipOrder);
       }).catch(function () { /* サーバー未経由(file://等)ではlocalStorageのまま動く */ });
     }
 
@@ -4343,7 +4441,9 @@
       };
     }
 
-    function openSlip(order) {
+    /* 印字用の .slip DOM を組み立てる。画面には出さない。
+       伝票はプレビューを持たず長押し印刷だけなので、常にここだけを使う (#224)。 */
+    function populateSlip(order) {
       currentSlipOrder = order;
       refreshSlipStyleFromServer();   // 最新のサーバー保存スタイルを取得(到着したら開いたまま再適用)
 
@@ -4357,7 +4457,6 @@
           "@page { size: " + w + "mm auto; margin: 0; }\n" +
           "@media print { .slip { width: " + w + "mm !important; } }";
         window.SlipRenderer.renderToCanvas(slipCanvasEl, tpl, slipOrderData(order));
-        document.body.classList.add("slip-open");
         return;
       }
 
@@ -4387,9 +4486,17 @@
         if (st && st.itemGap != null) li.style.paddingTop = li.style.paddingBottom = (st.itemGap / 2) + "px";
         slipItemsEl.appendChild(li);
       });
-      document.body.classList.add("slip-open");
     }
-    function closeSlip() { document.body.classList.remove("slip-open"); }
+
+    /* 長押し印刷 (#224)。実機印刷は job をテキスト/canvas から組むので .slip の描画を
+       必要とせず、画面には何も出さずに終わる。実機に送れずブラウザ印刷へ落ちるときだけ
+       fallbackToBrowserPrint が body.slip-printing で .slip を描画させる
+       (.slip-backdrop の display:none 配下のままだと描画されず白紙になるため)。 */
+    function printSlipNow(order) {
+      if (printBusy) return;
+      populateSlip(order);
+      printSlip();
+    }
 
     /* 画像印字のコマンド体系。機種と合っていないと文字化け+行送りだけが延々出る。
        本番機の Star mC-Print3 は StarPRNT 専用。フォーマッターの「印字方式」で切り替える */
@@ -4469,19 +4576,24 @@
       }, PRINT_TOAST_MS);
     }
 
-    /* 送信中は印刷ボタンを押せなくする。二重送信=重複印字の直接の防止線 (#176) */
+    /* 送信中は次の印刷を受け付けない。二重送信=重複印字の直接の防止線 (#176)。
+       プレビューを廃止して印刷ボタンが無くなったため、フラグだけで抑える (#224)。
+       長押し側は printSlipNow の先頭で printBusy を見ている。 */
     function setPrintBusy(busy) {
       printBusy = busy;
-      if (!slipPrintBtn) return;
-      slipPrintBtn.disabled = busy;
-      slipPrintBtn.textContent = busy ? "送信中…" : "印刷";
     }
 
     /* 実機に送れなかったときのブラウザ印刷。なぜダイアログが出たのかを先に伝えてから開く。
        (印刷ダイアログは同期的に画面を止めるので、トーストを描画させる猶予を挟む) */
     function fallbackToBrowserPrint(message) {
       showPrintToast(message);
-      setTimeout(function () { window.print(); }, 600);
+      /* 印刷対象の .slip を描画させるだけで、画面には見せない (#224)。
+         印刷ダイアログは同期的に画面を止めるので、解除はその後に行う。 */
+      document.body.classList.add("slip-printing");
+      setTimeout(function () {
+        window.print();
+        document.body.classList.remove("slip-printing");
+      }, 600);
     }
 
     /** 印刷ボタン押下時の実処理。この端末がIPを知らなくてもサーバー保存IPで印字を試み、
@@ -4530,10 +4642,11 @@
         });
       }).then(function () {
         setPrintBusy(false);
-        closeSlip();                       // 印字できたらプレビューは役目を終える
+        markSlipPrinted(order.id);         // 伝 -> 再伝 (#224)
         showPrintToast("卓 " + (effectiveTable(order) || "--") + " の伝票を印刷しました");
       }).catch(function (err) {
         setPrintBusy(false);
+        markSlipPrinted(order.id);         // ブラウザ印刷まで到達したぶんも記録する (#224)
         console.error("[チビ伝] 実機印刷に失敗。ブラウザ印刷にフォールバック:", err);
         // 400 = IP未設定/不正(まだ実機を登録していない通常の状態)。それ以外は届かない・プリンター側の異常
         fallbackToBrowserPrint(err && err.status === 400
@@ -4583,6 +4696,66 @@
       seatDialRid = null;
       seatDialBuf = "";
       seatDialContext = "reservation";
+    }
+
+    /* 伝ボタンの中身を組み立てて長押しを配線する。キッチンのカードとホールのカードで共用する。
+       表示されるのはホールだけだが (#226)、DOMは両方に持たせて印刷済み表示を揃える。 */
+    function decorateSlipButton(btn, order) {
+      var printed = isSlipPrinted(order.id);
+      btn.textContent = printed ? "再伝" : "伝";
+      btn.classList.toggle("printed", printed);
+      btn.setAttribute("aria-label", (printed ? "伝票を再印刷 (1.2秒長押し)" : "伝票を印刷 (1.2秒長押し)"));
+      var progress = document.createElement("span");
+      progress.className = "slip-btn-progress";
+      btn.appendChild(progress);
+      attachSlipPrintHandlers(btn, progress, order);
+      return btn;
+    }
+
+    /* 伝票を 1.2秒の長押しで刷る (#224)。
+       従来はタップでプレビューを開き、その中の「印刷」を押す2手だった。厨房では手が塞がって
+       いる場面が多く、確認ダイアログを挟むぶん遅い。一方でプレビュー無しの通常タップだと
+       誤タップがそのまま紙になるため、長押しを印刷そのものの操作にしている。
+       短タップは従来どおりプレビュー (紙は出ない) を開く。
+       12px動かしたら取消。スクロール意図とみなす点は attachItemHandlers と揃える。 */
+    function attachSlipPrintHandlers(btn, progress, order) {
+      var timer = null, raf = null, startX = 0, startY = 0, pressing = false, printedByHold = false;
+      function stop() {
+        pressing = false;
+        if (timer) { clearTimeout(timer); timer = null; }
+        if (raf) { cancelAnimationFrame(raf); raf = null; }
+        btn.classList.remove("printing");
+        progress.style.width = "0%";
+      }
+      btn.addEventListener("pointerdown", function (ev) {
+        if (ev.button != null && ev.button !== 0) return;
+        if (mode !== "hall") return;   // 印刷はホール専用 (#226)
+        startX = ev.clientX; startY = ev.clientY;
+        pressing = true; printedByHold = false;
+        var startedAt = Date.now();
+        btn.classList.add("printing");
+        function tick() {
+          if (!pressing) return;
+          var p = Math.min(1, (Date.now() - startedAt) / SLIP_PRINT_MS);
+          progress.style.width = (p * 100) + "%";
+          if (p < 1) raf = requestAnimationFrame(tick);
+        }
+        if (!prefersReducedMotion()) raf = requestAnimationFrame(tick);
+        timer = setTimeout(function () {
+          stop();
+          printedByHold = true;
+          printSlipNow(order);
+        }, SLIP_PRINT_MS);
+      });
+      btn.addEventListener("pointermove", function (ev) {
+        if (!pressing) return;
+        if (Math.abs(ev.clientX - startX) > 12 || Math.abs(ev.clientY - startY) > 12) stop();
+      });
+      btn.addEventListener("pointerup", stop);
+      btn.addEventListener("pointercancel", stop);
+      btn.addEventListener("pointerleave", stop);
+      // 伝票はプレビューを持たない。短いタップでは何も起きず、長押しだけが印刷になる (#224)
+      btn.addEventListener("click", function (ev) { printedByHold = false; ev.preventDefault(); });
     }
 
     /* 卓番ボタンの表示をダイヤルの下書きへ同期 (カードが再描画されず残っている場合のみ) */
@@ -4982,6 +5155,7 @@
       loadRiceCues();
       loadTableOverrides();
       loadHallReady();
+      loadSlipPrinted();
       loadPrefs();
       loadPrinterIp();
       refreshSlipStyleFromServer();   // 印刷スタイルをサーバーから取得しておく (#144追補)
@@ -5021,10 +5195,9 @@
       if (modalBackdrop) modalBackdrop.addEventListener("click", function (e) { if (e.target === modalBackdrop) closeModal(); });
 
       // チビ伝
-      if (slipPrintBtn) slipPrintBtn.addEventListener("click", printSlip);
+
       if (printerSettingsBtn) printerSettingsBtn.addEventListener("click", configurePrinterIp);
-      if (slipCloseBtn) slipCloseBtn.addEventListener("click", closeSlip);
-      if (slipBackdrop) slipBackdrop.addEventListener("click", function (e) { if (e.target === slipBackdrop) closeSlip(); });
+
 
       // 卓番ダイヤル (#118)
       seatDialZoneBtns.forEach(function (b) {
@@ -5049,8 +5222,7 @@
       // ESC でモーダル/伝票/卓番ダイヤルを閉じる / 並べ替え取消
       document.addEventListener("keydown", function (e) {
         if (e.key !== "Escape") return;
-        if (document.body.classList.contains("slip-open")) closeSlip();
-        else if (document.body.classList.contains("seat-dial-open")) closeSeatDial();
+        if (document.body.classList.contains("seat-dial-open")) closeSeatDial();
         else if (document.body.classList.contains("table-override-confirm-open")) closeTableOverrideConfirm();
         else if (document.body.classList.contains("modal-open")) closeModal();
         else if (isReordering) cancelReorder();
