@@ -352,8 +352,10 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    height: 52px;
-    padding: 0 var(--pad-shell);
+    /* コンロ/タイマー列が折り返したぶんだけ縦に伸びる。
+       横一列に収まる幅では従来どおり 52px のまま。 */
+    min-height: 52px;
+    padding: 6px var(--pad-shell);
     background: var(--bg-raise);
     border-bottom: 1px solid var(--border);
     overflow-x: auto;
@@ -464,8 +466,18 @@
     .sync-status-routes { width: 100%; overflow-x: auto; padding-bottom: 2px; }
   }
 
-  /* コンロ列とタイマー列を横に並べる (#145)。HUD は overflow-x:auto なので溢れても横に流れる */
-  .konro-hud { display: flex; align-items: center; gap: 14px; flex: 0 0 auto; }
+  /* コンロ列とタイマー列は横並びを基本とし、幅が足りない端末でだけ2段に折り返す (#145)。
+     従来は flex:0 0 auto の一列固定で、944px幅のタブレットではタイマー列が
+     226px はみ出して 5〜10 番が画面外に出ていた。13.3"パネル(1920px)や1280px幅では
+     従来どおり横一列に収まるため、盤面の高さは変わらない。 */
+  .konro-hud {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 14px;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
   .kh-row { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
   .konro-hud .kh-label {
     font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
