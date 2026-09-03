@@ -1640,6 +1640,17 @@
   .serve-cue.reverting button { border-color: var(--cta); color: var(--cta); }
   .serve-cue button.armed { border-color: var(--cta); background: var(--cta-soft); color: var(--cta); }
   .hall-ready-card .serve-cue, .hall-order-card .serve-cue, .hall-stock-card .serve-cue { margin-left: 0; margin-right: 0; }
+  /* 前菜・デザートを出すのはホール (#228)。キッチンの盤面には出さない。
+     ホール表示案A/B/Cを使わない構成では、ホールもこのグリッドを読取専用で見るため、
+     カードのDOMに置いたままCSSで出し分ける (チビ伝の伝ボタンと同じ方式)。 */
+  body:not(.mode-hall) .serve-cue { display: none; }
+  /* デザートは膳を出し終えてから。全品完了するまでは出さない */
+  .card:not(.all-done) .serve-cue[data-serve-kind="dessert"] { display: none; }
+  /* 全品完了したら前菜の行は役目を終えるので畳む */
+  .card.all-done .serve-cue[data-serve-kind="starter"] { display: none; }
+  /* キッチンでは全品完了した時点でカードが消える従来どおりの見え方を保つ。
+     ホールはデザートを出すまでカードを残す必要があるのでDOMからは消さない (#228)。 */
+  body:not(.mode-hall) .card.all-done { display: none; }
   .hall-cue button { margin-left: auto; min-height: 44px; min-width: 44px; padding: 0 10px; border: 1px solid var(--cta); background: var(--cta); color: #fff; font-weight: 900; cursor: pointer; }
   .hall-ready-card { border-left-color: var(--cta); background: var(--cta-soft); }
   .hall-ready-inline { display: flex; flex-direction: column; gap: 8px; margin-bottom: 2px; }
@@ -2055,6 +2066,19 @@
        click が新しい「出した」ボタンに当たり、戻したはずが即座に提供済みへ戻ってしまう。
        次の click を1回だけ捨てる。新しい操作が始まったら (pointerdown) 取り下げる。 */
     var serveCueSuppressClick = false;
+
+    /* 長押し中はホールのカードを作り直さない (#229)。
+       ホールビューはポーリングのたびに丸ごと組み直されるため、長押しの最中にボタンのDOMが
+       差し替わる。差し替わると進捗バーが0に戻って「反応していない」ように見えるうえ、
+       外れた古いノードには pointerup が届かないので、指を離しても長押しが成立してしまう。
+       押している間だけ再描画を保留し、離してからまとめて描き直す。 */
+    var holdGuard = 0;
+    var hallRenderPending = false;
+    function beginHold() { holdGuard++; }
+    function endHold() {
+      if (holdGuard > 0) holdGuard--;
+      if (holdGuard === 0 && hallRenderPending) { hallRenderPending = false; renderHallViews(); }
+    }
     var hallLayout = "A";          // ホール比較prototypeの表示案
     var tableOverridePending = null; // { id, candidate }。重複警告の2段階確認
     var hallReadyUndoId = null;
@@ -2613,6 +2637,7 @@
       serveCueMap[id] = st;
       saveServeCues();
       if (shouldBroadcast !== false) broadcastServeCue(id, st);
+      applyServeCueToCard(id);
       renderHallViews();
     }
 
@@ -2799,6 +2824,7 @@
             var serveId = String(msg.id);
             if (msg.state && typeof msg.state === "object") serveCueMap[serveId] = msg.state;
             saveServeCues();
+            applyServeCueToCard(serveId);
             renderHallViews();
           } else if (msg.type === "tableOverride" && msg.id != null) {
             var overrideId = String(msg.id);
@@ -3168,7 +3194,10 @@
       card.appendChild(head);
       card.appendChild(typeUnderline);
       card.appendChild(timeRow);
+      // 前菜は膳より先、デザートは膳の後。提供順を並び順で示す (#228)
+      card.appendChild(buildServeCue(order.id, "starter", order.people));
       card.appendChild(ul);
+      card.appendChild(buildServeCue(order.id, "dessert", order.people));
       card.appendChild(konro);
 
       // 並べ替え: ヘッダ(卓番周辺)を長押しで掴む (品目/コンロのタップと衝突しない)
@@ -3539,13 +3568,18 @@
         updateItemButtonDone(btns[i], count, qty);
       }
       if (!isAllDone(entry)) {
+        entry.el.classList.remove("all-done");   // 戻したら通常表示へ (#228)
         if (reconcileHallReadySnapshot(order, broadcastHallReady !== false)) renderHallViews();
         return;
       }
+      /* 全品完了してもカードは消さない。ホールがデザートを出すまで残す必要があるため
+         (#228)。キッチンからは CSS (body:not(.mode-hall) .card.all-done) で隠れるので、
+         厨房から見た「完了したら消える」挙動は変わらない。実際に消えるのは
+         デザートを出した時点 (buildServeCue の長押し)。 */
+      entry.el.classList.add("all-done");
       if (animateRemoval) {
         ensureHallReadySnapshot(order);
         recordServe(entry);
-        removeCard(order.id, /*fade*/ true);
       }
     }
 
@@ -3588,7 +3622,9 @@
       if (isAllDone(entry)) {
         ensureHallReadySnapshot(entry.order);
         recordServe(entry);              // #29 提供時間ログ
-        removeCard(id, /*fade*/ true);
+        // カードは消さない。ホールがデザートを出すまで残す (#228)。
+        // キッチンからは CSS で隠れるので、厨房から見た挙動は従来どおり。
+        entry.el.classList.add("all-done");
         showUndoToast(entry.order, index);
       }
       if (view === "lane") renderLanes();   // #13 レーンから完了品目を除く
@@ -3952,19 +3988,29 @@
       var label = document.createElement("span");
       label.className = "serve-cue-label";
       label.textContent = served ? (name + " 提供済み") : (name + (n > 0 ? " ×" + n + t("people") : ""));
+      /* デザートを出すと、その卓は提供完了なのでカードごと消える。取り消せないので
+         前菜の「出した」(通常タップ) と違い、2秒の長押しでのみ成立させる (#229)。
+         消した直後は既存の「戻す」トーストで戻せる。 */
+      var dessertServe = (kind === "dessert" && !served);
       var button = document.createElement("button");
       button.type = "button";
-      button.textContent = served ? "長押しで戻す" : "出した";
+      button.textContent = served ? "長押しで戻す" : (dessertServe ? "長押しで出した" : "出した");
       button.setAttribute("aria-label",
-        (served ? name + "の提供済みを取り消す（2秒長押し）" : name + "を出したことを記録する"));
+        (served ? name + "の提供済みを取り消す（2秒長押し）"
+                : (dessertServe ? name + "を出して卓を完了する（2秒長押し）" : name + "を出したことを記録する")));
       cue.appendChild(label);
       cue.appendChild(button);
-      if (served) {
-        // 取消は誤タップで成立させない。2秒の長押しでのみ戻す
+      if (served || dessertServe) {
         var progress = document.createElement("div");
         progress.className = "serve-cue-progress";
         cue.appendChild(progress);
-        attachServeRevertHandlers(cue, button, progress, orderId, kind);
+        attachServeHoldHandlers(cue, button, progress, SERVE_REVERT_MS, served
+          ? function () { setServeCue(orderId, kind, false); }
+          : function () {
+              setServeCue(orderId, "dessert", true);
+              dismissHallReady(orderId);   // 提供準備完了パネル側のcueも閉じる
+              removeCard(orderId, /*fade*/ true);   // 卓の提供が終わったのでカードを消す
+            });
       } else {
         button.addEventListener("click", function () {
           if (serveCueSuppressClick) { serveCueSuppressClick = false; return; }
@@ -3977,10 +4023,15 @@
     /* 提供済みの取消を SERVE_REVERT_MS の長押しでのみ成立させる (#222)。
        閾値12pxで動かしたら取消 = スクロール意図とみなす点は attachItemHandlers と揃える。
        キーボード操作では長押しできないため、Enter/Space は confirm で代替する。 */
-    function attachServeRevertHandlers(cue, button, progress, orderId, kind) {
+    /* cue の長押し。ms 経過で onHold を呼ぶ。取消とデザートの提供で共用する (#229)。 */
+    function attachServeHoldHandlers(cue, button, progress, ms, onHold) {
       var timer = null, raf = null, startX = 0, startY = 0, pressing = false;
       function stop() {
+        if (!pressing) return;   // 二重解除で guard を余分に戻さない
         pressing = false;
+        endHold();
+        document.removeEventListener("pointerup", stop, true);
+        document.removeEventListener("pointercancel", stop, true);
         if (timer) { clearTimeout(timer); timer = null; }
         if (raf) { cancelAnimationFrame(raf); raf = null; }
         cue.classList.remove("reverting");
@@ -3990,11 +4041,15 @@
         if (ev.button != null && ev.button !== 0) return;
         startX = ev.clientX; startY = ev.clientY;
         pressing = true;
+        beginHold();
+        // ボタンの外で離しても確実に止める
+        document.addEventListener("pointerup", stop, true);
+        document.addEventListener("pointercancel", stop, true);
         var startedAt = Date.now();
         cue.classList.add("reverting");
         function tick() {
           if (!pressing) return;
-          var p = Math.min(1, (Date.now() - startedAt) / SERVE_REVERT_MS);
+          var p = Math.min(1, (Date.now() - startedAt) / ms);
           progress.style.width = (p * 100) + "%";
           if (p < 1) raf = requestAnimationFrame(tick);
         }
@@ -4002,8 +4057,8 @@
         timer = setTimeout(function () {
           stop();
           serveCueSuppressClick = true;   // 指を離したときの click を捨てる
-          setServeCue(orderId, kind, false);
-        }, SERVE_REVERT_MS);
+          onHold();
+        }, ms);
       });
       button.addEventListener("pointermove", function (ev) {
         if (!pressing) return;
@@ -4018,17 +4073,18 @@
          同じ2段階確認にする。ネイティブ confirm() はメインスレッドを塞いでポーリングと
          経過時間更新まで止めるので使わない。 */
       var armTimer = null;
+      var restLabel = button.textContent;
       function disarm() {
         if (armTimer) { clearTimeout(armTimer); armTimer = null; }
         button.classList.remove("armed");
-        button.textContent = "長押しで戻す";
+        button.textContent = restLabel;
       }
       button.addEventListener("keydown", function (ev) {
         if (ev.key !== "Enter" && ev.key !== " ") return;
         ev.preventDefault();
-        if (button.classList.contains("armed")) { disarm(); setServeCue(orderId, kind, false); return; }
+        if (button.classList.contains("armed")) { disarm(); onHold(); return; }
         button.classList.add("armed");
-        button.textContent = "もう一度で戻す";
+        button.textContent = "もう一度で確定";
         if (armTimer) clearTimeout(armTimer);
         armTimer = setTimeout(disarm, DELETE_ARM_MS);
       });
@@ -4366,6 +4422,8 @@
     }
     function renderHallViews() {
       if (!hallProtoViewEl) return;
+      // 長押し中は作り直さない。離した時点で endHold がここを呼び直す (#229)
+      if (holdGuard > 0) { hallRenderPending = true; return; }
       applyHallLayout();
       renderHallOrderPanel(document.getElementById("hallAOrders"), document.getElementById("hallACount"), false);
       renderHallStockPanel(document.getElementById("hallAStock"), document.getElementById("hallAStockCount"));
@@ -4891,6 +4949,18 @@
       return btn;
     }
 
+    /* カード上のcueを、他タブからの同期でも作り直さずその場で差し替える。 */
+    function applyServeCueToCard(orderId) {
+      var entry = cards[String(orderId)];
+      if (!entry || !entry.el) return;
+      ["starter", "dessert"].forEach(function (kind) {
+        var old = entry.el.querySelector('.serve-cue[data-serve-kind="' + kind + '"]');
+        if (!old) return;
+        var people = entry.order ? entry.order.people : 0;
+        old.parentNode.replaceChild(buildServeCue(orderId, kind, people), old);
+      });
+    }
+
     /* 伝票を 1.2秒の長押しで刷る (#224)。
        従来はタップでプレビューを開き、その中の「印刷」を押す2手だった。厨房では手が塞がって
        いる場面が多く、確認ダイアログを挟むぶん遅い。一方でプレビュー無しの通常タップだと
@@ -4900,7 +4970,11 @@
     function attachSlipPrintHandlers(btn, progress, order) {
       var timer = null, raf = null, startX = 0, startY = 0, pressing = false, printedByHold = false;
       function stop() {
+        if (!pressing) return;   // 二重解除で guard を余分に戻さない
         pressing = false;
+        endHold();
+        document.removeEventListener("pointerup", stop, true);
+        document.removeEventListener("pointercancel", stop, true);
         if (timer) { clearTimeout(timer); timer = null; }
         if (raf) { cancelAnimationFrame(raf); raf = null; }
         btn.classList.remove("printing");
@@ -4911,6 +4985,9 @@
         if (mode !== "hall") return;   // 印刷はホール専用 (#226)
         startX = ev.clientX; startY = ev.clientY;
         pressing = true; printedByHold = false;
+        beginHold();
+        document.addEventListener("pointerup", stop, true);
+        document.addEventListener("pointercancel", stop, true);
         var startedAt = Date.now();
         btn.classList.add("printing");
         function tick() {
@@ -5132,7 +5209,8 @@
 
     /* ===================== HUD (状況サマリー / コンロ全体ビュー) ===================== */
     function updateHud() {
-      var ids = Object.keys(cards);
+      // 全品完了したカードはDOMに残るが「進行中」ではない (#228)
+      var ids = Object.keys(cards).filter(function (id) { return !isAllDone(cards[id]); });
       var alertN = 0;
       ids.forEach(function (id) {
         var e = cards[id];
