@@ -1522,7 +1522,7 @@
     overflow: hidden;
     background: var(--chrome-2);
   }
-  body.mode-hall .hall-proto-switch { display: flex; }
+  body.mode-hall.hall-proto-on .hall-proto-switch { display: flex; }
   .hall-proto-btn {
     min-width: 44px; min-height: 44px;
     padding: 0 10px;
@@ -1538,9 +1538,11 @@
     min-width: 0;
     min-height: 0;
   }
-  body.mode-hall .hall-proto-view { display: flex; }
-  body.mode-hall .shell > main,
-  body.mode-hall .shell > aside { display: none; }
+  body.mode-hall.hall-proto-on .hall-proto-view { display: flex; }
+  /* 試作を有効にしたときだけ、通常のグリッドと予約ストックを試作ビューへ差し替える。
+     無効時（既定）はマージ前と同じく、グリッドを出したまま操作だけ止めた読取専用になる。 */
+  body.mode-hall.hall-proto-on .shell > main,
+  body.mode-hall.hall-proto-on .shell > aside { display: none; }
   .hall-view {
     display: none;
     flex: 1 1 auto;
@@ -1548,9 +1550,9 @@
     gap: var(--gap-card);
     padding: var(--pad-shell);
   }
-  body.mode-hall.hall-proto-a .hall-view-a,
-  body.mode-hall.hall-proto-b .hall-view-b,
-  body.mode-hall.hall-proto-c .hall-view-c { display: grid; }
+  body.mode-hall.hall-proto-on.hall-proto-a .hall-view-a,
+  body.mode-hall.hall-proto-on.hall-proto-b .hall-view-b,
+  body.mode-hall.hall-proto-on.hall-proto-c .hall-view-c { display: grid; }
   .hall-view-a { grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); }
   .hall-view-b { grid-template-columns: minmax(280px, 1fr) minmax(0, 1.1fr); }
   .hall-view-c { grid-template-columns: minmax(300px, 1.3fr) minmax(220px, .7fr) minmax(220px, .8fr); }
@@ -2043,6 +2045,11 @@
     var riceCueMap = {};           // { rid: { status:"active"|"acknowledged", day } }
     var tableOverrideMap = {};      // { orderId: "卓番" }。公開orderは決して変更しない
     var hallReadyMap = {};         // { orderId: { orderId, table, people, completedAt, items, status, day } }
+    /* ホール比較prototype (#155 phase1) の有効フラグ。
+       false の間はA/B/Cスイッチも試作ビューも出さず、ホールは a818051 マージ前と同じ
+       「グリッドを表示したまま操作だけ止めた読取専用」に戻る。試作を再開するときは
+       true にするだけでよい（HTML・CSS・JSの構造はそのまま残してある）。 */
+    var HALL_PROTO_ENABLED = false;
     /* 伝票を印刷済みの注文 (#224)。プレビューを挟まず長押しで刷るようになったぶん、
        「もう刷ったか」を画面で分かるようにするための記録。 */
     var slipPrintedMap = {};
@@ -4217,6 +4224,9 @@
       applyHallLayout();
     }
     function applyHallLayout() {
+      /* 無効時は hall-proto-on を外すだけでよい。A/B/Cのクラス付与も含め以降の処理は
+         そのまま走らせておく（フラグを true に戻せば即座に元の挙動へ戻せるようにする）。 */
+      document.body.classList.toggle("hall-proto-on", HALL_PROTO_ENABLED);
       HALL_LAYOUTS.forEach(function (layout) {
         document.body.classList.toggle("hall-proto-" + layout.toLowerCase(), hallLayout === layout);
       });
@@ -4378,6 +4388,9 @@
     function renderHallViews() {
       if (!hallProtoViewEl) return;
       applyHallLayout();
+      /* 試作が無効な間は非表示DOMを組み直すだけ無駄になるため描画を打ち切る。
+         呼び出し側は変更していないので、フラグを true に戻せばそのまま再開する。 */
+      if (!HALL_PROTO_ENABLED) return;
       renderHallOrderPanel(document.getElementById("hallAOrders"), document.getElementById("hallACount"), false);
       renderHallStockPanel(document.getElementById("hallAStock"), document.getElementById("hallAStockCount"));
       renderHallStockPanel(document.getElementById("hallBStock"), document.getElementById("hallBStockCount"));
