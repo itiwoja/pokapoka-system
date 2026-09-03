@@ -1626,6 +1626,19 @@
     border-color: var(--border-strong); background: var(--bg-raise); color: var(--text-secondary);
   }
   .serve-cue.served button { border-color: var(--border-strong); background: transparent; color: var(--text-secondary); }
+  /* 取消(提供済み→未提供)は長押しでのみ成立させるため、進捗を帯で見せる。
+     押している間だけ幅が伸び、離すと0に戻る。 */
+  .serve-cue { position: relative; overflow: hidden; }
+  .serve-cue .serve-cue-progress {
+    position: absolute;
+    left: 0; bottom: 0; height: 4px; width: 0%;
+    background: var(--cta);
+    pointer-events: none;
+    opacity: 0;
+  }
+  .serve-cue.reverting .serve-cue-progress { opacity: 1; }
+  .serve-cue.reverting button { border-color: var(--cta); color: var(--cta); }
+  .serve-cue button.armed { border-color: var(--cta); background: var(--cta-soft); color: var(--cta); }
   .hall-ready-card .serve-cue, .hall-order-card .serve-cue, .hall-stock-card .serve-cue { margin-left: 0; margin-right: 0; }
   .hall-cue button { margin-left: auto; min-height: 44px; min-width: 44px; padding: 0 10px; border: 1px solid var(--cta); background: var(--cta); color: #fff; font-weight: 900; cursor: pointer; }
   .hall-ready-card { border-left-color: var(--cta); background: var(--cta-soft); }
@@ -1970,6 +1983,9 @@
     /* 伝票印刷の長押し。プレビューを挟まず直接紙が出るため、通常タップでは成立させない。
        並べ替え(0.8s)より長く、提供cueの取消より短い中間の重さ (#224) */
     var SLIP_PRINT_MS = 1200;
+    /* 提供cueの取消だけは 2秒。提供実績を誤タップで消すと「出したのに出していない」
+       ことになり、出し直しでロスが出るため、他の長押しより明確に長くする (#222) */
+    var SERVE_REVERT_MS = 2000;
     var UNDO_TOAST_MS = 6000;      // 全完了カードの取り消し猶予
     var PRINT_TOAST_MS = 4000;     // チビ伝の印刷結果通知を出しておく時間 (#176)
     var DELETE_ARM_MS = 3000;      // 削除ボタン2段階確認の猶予 (#68)
@@ -2035,6 +2051,10 @@
        一部なので、注文品目としては持たず「その卓に出したか」だけをここで持つ。
        { orderId: { starter: bool, dessert: bool, day } } */
     var serveCueMap = {};
+    /* 長押しで戻した直後、指を離した時点で click が発火する。その間に cue が作り直されると
+       click が新しい「出した」ボタンに当たり、戻したはずが即座に提供済みへ戻ってしまう。
+       次の click を1回だけ捨てる。新しい操作が始まったら (pointerdown) 取り下げる。 */
+    var serveCueSuppressClick = false;
     var hallLayout = "A";          // ホール比較prototypeの表示案
     var tableOverridePending = null; // { id, candidate }。重複警告の2段階確認
     var hallReadyUndoId = null;
@@ -3936,13 +3956,85 @@
       label.textContent = served ? (name + " 提供済み") : (name + (n > 0 ? " ×" + n + t("people") : ""));
       var button = document.createElement("button");
       button.type = "button";
-      button.textContent = served ? "戻す" : "出した";
+      button.textContent = served ? "長押しで戻す" : "出した";
       button.setAttribute("aria-label",
-        (served ? name + "の提供済みを取り消す" : name + "を出したことを記録する"));
-      button.addEventListener("click", function () { setServeCue(orderId, kind, !served); });
+        (served ? name + "の提供済みを取り消す（2秒長押し）" : name + "を出したことを記録する"));
       cue.appendChild(label);
       cue.appendChild(button);
+      if (served) {
+        // 取消は誤タップで成立させない。2秒の長押しでのみ戻す
+        var progress = document.createElement("div");
+        progress.className = "serve-cue-progress";
+        cue.appendChild(progress);
+        attachServeRevertHandlers(cue, button, progress, orderId, kind);
+      } else {
+        button.addEventListener("click", function () {
+          if (serveCueSuppressClick) { serveCueSuppressClick = false; return; }
+          setServeCue(orderId, kind, true);
+        });
+      }
       return cue;
+    }
+
+    /* 提供済みの取消を SERVE_REVERT_MS の長押しでのみ成立させる (#222)。
+       閾値12pxで動かしたら取消 = スクロール意図とみなす点は attachItemHandlers と揃える。
+       キーボード操作では長押しできないため、Enter/Space は confirm で代替する。 */
+    function attachServeRevertHandlers(cue, button, progress, orderId, kind) {
+      var timer = null, raf = null, startX = 0, startY = 0, pressing = false;
+      function stop() {
+        pressing = false;
+        if (timer) { clearTimeout(timer); timer = null; }
+        if (raf) { cancelAnimationFrame(raf); raf = null; }
+        cue.classList.remove("reverting");
+        progress.style.width = "0%";
+      }
+      button.addEventListener("pointerdown", function (ev) {
+        if (ev.button != null && ev.button !== 0) return;
+        startX = ev.clientX; startY = ev.clientY;
+        pressing = true;
+        var startedAt = Date.now();
+        cue.classList.add("reverting");
+        function tick() {
+          if (!pressing) return;
+          var p = Math.min(1, (Date.now() - startedAt) / SERVE_REVERT_MS);
+          progress.style.width = (p * 100) + "%";
+          if (p < 1) raf = requestAnimationFrame(tick);
+        }
+        if (!prefersReducedMotion()) raf = requestAnimationFrame(tick);
+        timer = setTimeout(function () {
+          stop();
+          serveCueSuppressClick = true;   // 指を離したときの click を捨てる
+          setServeCue(orderId, kind, false);
+        }, SERVE_REVERT_MS);
+      });
+      button.addEventListener("pointermove", function (ev) {
+        if (!pressing) return;
+        if (Math.abs(ev.clientX - startX) > 12 || Math.abs(ev.clientY - startY) > 12) stop();
+      });
+      button.addEventListener("pointerup", stop);
+      button.addEventListener("pointercancel", stop);
+      button.addEventListener("pointerleave", stop);
+      // 短いタップでは成立させない。click は長押し成立時にも発火するので常に潰す
+      button.addEventListener("click", function (ev) { ev.preventDefault(); });
+      /* キーボードでは長押しを判定できない (キーリピートに依存する) ため、削除ボタン (#68) と
+         同じ2段階確認にする。ネイティブ confirm() はメインスレッドを塞いでポーリングと
+         経過時間更新まで止めるので使わない。 */
+      var armTimer = null;
+      function disarm() {
+        if (armTimer) { clearTimeout(armTimer); armTimer = null; }
+        button.classList.remove("armed");
+        button.textContent = "長押しで戻す";
+      }
+      button.addEventListener("keydown", function (ev) {
+        if (ev.key !== "Enter" && ev.key !== " ") return;
+        ev.preventDefault();
+        if (button.classList.contains("armed")) { disarm(); setServeCue(orderId, kind, false); return; }
+        button.classList.add("armed");
+        button.textContent = "もう一度で戻す";
+        if (armTimer) clearTimeout(armTimer);
+        armTimer = setTimeout(disarm, DELETE_ARM_MS);
+      });
+      button.addEventListener("blur", disarm);
     }
 
     /* 進行中カード上の前菜cueを、他タブからの同期でも作り直さずその場で更新する。 */
@@ -5255,6 +5347,8 @@
       loadHallReady();
       loadSlipPrinted();
       loadServeCues();
+      // 抑止フラグが取り残されて次の正当なタップを食べないよう、新しい操作の開始で必ず落とす
+      document.addEventListener("pointerdown", function () { serveCueSuppressClick = false; }, true);
       loadPrefs();
       loadPrinterIp();
       refreshSlipStyleFromServer();   // 印刷スタイルをサーバーから取得しておく (#144追補)
