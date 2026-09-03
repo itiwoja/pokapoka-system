@@ -1318,7 +1318,6 @@
     align-items: center; justify-content: center;
     padding: 20px;
   }
-  body.slip-open .slip-backdrop { display: flex; }
   /* ブラウザ印刷へフォールバックするときは、プレビューを見せずに .slip だけ描画させる (#224)。
      .slip は .slip-backdrop (display:none) の中にあり、開かないまま window.print() すると
      白紙が出る。display は必要だが画面には出したくないので visibility で隠す。
@@ -1347,8 +1346,7 @@
   body.slip-tpl .slip-canvas { display: block; }
   body.slip-tpl #slipDom { display: none; }
   body.slip-tpl .slip { padding: 10px; }
-  .slip-actions { display: flex; gap: 10px; margin-top: 14px; }
-  .slip-actions button { flex: 1 1 0; min-height: 48px; border-radius: 0; font-size: 15px; font-weight: 900; cursor: pointer; }
+
   .slip-print { border: 2px solid #1A1612; background: #1A1612; color: #fff; }
   .slip-close { border: 2px solid #1A1612; background: #fff; color: #1A1612; }
 
@@ -1366,7 +1364,6 @@
     .slip .slip-store, .slip ul { border-color: #000; }
     .slip .slip-meta { color: #000; }
     .slip li .o { color: #000; }
-    .slip-actions { display: none !important; }
     .slip-backdrop { background: #fff; }
     /* レイアウト設定がある場合は印字イメージだけを紙いっぱいに出す */
     body.slip-tpl .slip { padding: 0; }
@@ -1802,7 +1799,9 @@
 
   <!-- チビ伝印刷プレビュー -->
   <div class="slip-backdrop" id="slipBackdrop">
-    <div class="slip" id="slip" role="dialog" aria-modal="true" aria-label="伝票プレビュー">
+    <!-- 印字専用。画面には出さない (長押し印刷のみ)。ブラウザ印刷のとき body.slip-printing で
+         描画だけさせるため DOM は必要 (#224) -->
+    <div class="slip" id="slip" aria-hidden="true">
       <!-- レイアウト設定(自由配置)があれば、このcanvasが実際の印字画像そのものになる。
            設定が無い場合は従来のDOMプレビュー(#slipDom)を表示する -->
       <canvas class="slip-canvas" id="slipCanvas" aria-label="伝票の印字イメージ"></canvas>
@@ -1812,10 +1811,7 @@
         <div class="slip-meta" id="slipMeta"></div>
         <ul id="slipItems"></ul>
       </div>
-      <div class="slip-actions">
-        <button type="button" class="slip-print" id="slipPrint">印刷</button>
-        <button type="button" class="slip-close" id="slipClose">閉じる</button>
-      </div>
+
     </div>
   </div>
 
@@ -2030,8 +2026,6 @@
     var slipCanvasEl = document.getElementById("slipCanvas");   // 自由配置レイアウトの印字イメージ
     var slipPageStyleEl = document.createElement("style");   // 用紙幅に応じた @page 上書き (スタイル設定 #144追補)
     document.head.appendChild(slipPageStyleEl);
-    var slipPrintBtn = document.getElementById("slipPrint");
-    var slipCloseBtn = document.getElementById("slipClose");
     var seatBackdrop = document.getElementById("seatBackdrop");
     var seatDialDisplayEl = document.getElementById("seatDialDisplay");
     var seatDialDigitBtns = Array.prototype.slice.call(document.querySelectorAll(".seat-dial-btn[data-digit]"));
@@ -4262,8 +4256,7 @@
        Tab/Shift+Tab をダイアログ内で循環させる。予約追加モーダル・チビ伝プレビュー・卓番ダイヤルに適用 */
     function trapModalFocus(e) {
       if (e.key !== "Tab") return;
-      var container = document.body.classList.contains("slip-open") ? slipBackdrop
-                    : document.body.classList.contains("seat-dial-open") ? seatBackdrop
+      var container = document.body.classList.contains("seat-dial-open") ? seatBackdrop
                     : document.body.classList.contains("table-override-confirm-open") ? tableOverrideConfirmBackdrop
                     : document.body.classList.contains("modal-open") ? modalBackdrop
                     : null;
@@ -4332,9 +4325,8 @@
         var next = JSON.stringify(st);
         var prev = null;
         try { prev = localStorage.getItem(LS_SLIP_STYLE); } catch (e) {}
-        if (next === prev) return;   // 変化なし (openSlip→refresh の再帰もここで止まる)
+        if (next === prev) return;   // 変化なし
         lsSet(LS_SLIP_STYLE, next);
-        if (document.body.classList.contains("slip-open") && currentSlipOrder) openSlip(currentSlipOrder);
       }).catch(function () { /* サーバー未経由(file://等)ではlocalStorageのまま動く */ });
     }
 
@@ -4402,8 +4394,8 @@
       };
     }
 
-    /* プレビューDOMの組み立てだけを行う。表示 (slip-open) はしない。
-       長押し印刷はプレビューを開かずにここだけを使う (#224)。 */
+    /* 印字用の .slip DOM を組み立てる。画面には出さない。
+       伝票はプレビューを持たず長押し印刷だけなので、常にここだけを使う (#224)。 */
     function populateSlip(order) {
       currentSlipOrder = order;
       refreshSlipStyleFromServer();   // 最新のサーバー保存スタイルを取得(到着したら開いたまま再適用)
@@ -4448,22 +4440,16 @@
         slipItemsEl.appendChild(li);
       });
     }
-    /* 短タップ用のプレビュー表示 (従来の挙動)。 */
-    function openSlip(order) {
-      populateSlip(order);
-      document.body.classList.add("slip-open");
-    }
-    /* 長押し印刷: プレビューを一切出さずに実機へ送る (#224)。
-       実機印刷は slip-open を必要としない (job はテキスト/canvasから組む) ため、
-       画面には何も出さずに終わる。実機に送れずブラウザ印刷へ落ちるときだけ
-       fallbackToBrowserPrint がプレビューを開く (印刷対象の .slip が
-       .slip-backdrop の display:none 配下だと描画されず白紙になるため)。 */
+
+    /* 長押し印刷 (#224)。実機印刷は job をテキスト/canvas から組むので .slip の描画を
+       必要とせず、画面には何も出さずに終わる。実機に送れずブラウザ印刷へ落ちるときだけ
+       fallbackToBrowserPrint が body.slip-printing で .slip を描画させる
+       (.slip-backdrop の display:none 配下のままだと描画されず白紙になるため)。 */
     function printSlipNow(order) {
       if (printBusy) return;
       populateSlip(order);
       printSlip();
     }
-    function closeSlip() { document.body.classList.remove("slip-open"); }
 
     /* 画像印字のコマンド体系。機種と合っていないと文字化け+行送りだけが延々出る。
        本番機の Star mC-Print3 は StarPRNT 専用。フォーマッターの「印字方式」で切り替える */
@@ -4543,21 +4529,19 @@
       }, PRINT_TOAST_MS);
     }
 
-    /* 送信中は印刷ボタンを押せなくする。二重送信=重複印字の直接の防止線 (#176) */
+    /* 送信中は次の印刷を受け付けない。二重送信=重複印字の直接の防止線 (#176)。
+       プレビューを廃止して印刷ボタンが無くなったため、フラグだけで抑える (#224)。
+       長押し側は printSlipNow の先頭で printBusy を見ている。 */
     function setPrintBusy(busy) {
       printBusy = busy;
-      if (!slipPrintBtn) return;
-      slipPrintBtn.disabled = busy;
-      slipPrintBtn.textContent = busy ? "送信中…" : "印刷";
     }
 
     /* 実機に送れなかったときのブラウザ印刷。なぜダイアログが出たのかを先に伝えてから開く。
        (印刷ダイアログは同期的に画面を止めるので、トーストを描画させる猶予を挟む) */
     function fallbackToBrowserPrint(message) {
       showPrintToast(message);
-      /* 印刷対象の .slip を描画させるだけで、プレビューは見せない (#224)。
-         slip-open を付けるとプレビューが1〜2秒表示されてしまい、長押しで即印刷にした
-         意味が無くなる。印刷ダイアログは同期的に画面を止めるので、解除はその後に行う。 */
+      /* 印刷対象の .slip を描画させるだけで、画面には見せない (#224)。
+         印刷ダイアログは同期的に画面を止めるので、解除はその後に行う。 */
       document.body.classList.add("slip-printing");
       setTimeout(function () {
         window.print();
@@ -4611,7 +4595,6 @@
         });
       }).then(function () {
         setPrintBusy(false);
-        closeSlip();                       // 印字できたらプレビューは役目を終える
         markSlipPrinted(order.id);         // 伝 -> 再伝 (#224)
         showPrintToast("卓 " + (effectiveTable(order) || "--") + " の伝票を印刷しました");
       }).catch(function (err) {
@@ -4710,11 +4693,8 @@
       btn.addEventListener("pointerup", stop);
       btn.addEventListener("pointercancel", stop);
       btn.addEventListener("pointerleave", stop);
-      btn.addEventListener("click", function (ev) {
-        // 長押しで刷った直後の click は捨てる。プレビューが開いてしまうため
-        if (printedByHold) { printedByHold = false; ev.preventDefault(); return; }
-        openSlip(order);
-      });
+      // 伝票はプレビューを持たない。短いタップでは何も起きず、長押しだけが印刷になる (#224)
+      btn.addEventListener("click", function (ev) { printedByHold = false; ev.preventDefault(); });
     }
 
     /* 卓番ボタンの表示をダイヤルの下書きへ同期 (カードが再描画されず残っている場合のみ) */
@@ -5154,10 +5134,9 @@
       if (modalBackdrop) modalBackdrop.addEventListener("click", function (e) { if (e.target === modalBackdrop) closeModal(); });
 
       // チビ伝
-      if (slipPrintBtn) slipPrintBtn.addEventListener("click", printSlip);
+
       if (printerSettingsBtn) printerSettingsBtn.addEventListener("click", configurePrinterIp);
-      if (slipCloseBtn) slipCloseBtn.addEventListener("click", closeSlip);
-      if (slipBackdrop) slipBackdrop.addEventListener("click", function (e) { if (e.target === slipBackdrop) closeSlip(); });
+
 
       // 卓番ダイヤル (#118)
       seatDialZoneBtns.forEach(function (b) {
@@ -5182,8 +5161,7 @@
       // ESC でモーダル/伝票/卓番ダイヤルを閉じる / 並べ替え取消
       document.addEventListener("keydown", function (e) {
         if (e.key !== "Escape") return;
-        if (document.body.classList.contains("slip-open")) closeSlip();
-        else if (document.body.classList.contains("seat-dial-open")) closeSeatDial();
+        if (document.body.classList.contains("seat-dial-open")) closeSeatDial();
         else if (document.body.classList.contains("table-override-confirm-open")) closeTableOverrideConfirm();
         else if (document.body.classList.contains("modal-open")) closeModal();
         else if (isReordering) cancelReorder();
