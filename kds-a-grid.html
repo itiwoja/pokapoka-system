@@ -1603,6 +1603,30 @@
     color: var(--text-primary); font-size: 13px; font-weight: 900;
   }
   .hall-cue.acknowledged { border-color: var(--border-strong); background: var(--bg-raise); color: var(--text-secondary); }
+
+  /* 前菜/デザートの提供cue (#222)。注文品目ではない提供フローの一部なので、
+     炊飯cueと同じ「カードに貼る帯」として表現する。粒度は出した/出してないの2値。 */
+  .serve-cue {
+    display: flex; align-items: center; gap: 8px;
+    margin: 6px var(--pad-card) 0;
+    padding: 6px 8px;
+    border: 2px solid var(--cta); border-radius: var(--r-chip);
+    background: var(--cta-soft); color: var(--text-primary);
+    font-size: 13px; font-weight: 900;
+  }
+  .serve-cue .serve-cue-label { min-width: 0; }
+  .serve-cue button {
+    margin-left: auto; flex: 0 0 auto;
+    min-height: 44px; min-width: 44px; padding: 0 10px;
+    border: 1px solid var(--cta); border-radius: var(--r-chip);
+    background: var(--cta); color: #fff; font-weight: 900; cursor: pointer;
+  }
+  /* 提供済みは「消さずに減光して残す」。出し忘れではなく出し終えたことを示すため。 */
+  .serve-cue.served {
+    border-color: var(--border-strong); background: var(--bg-raise); color: var(--text-secondary);
+  }
+  .serve-cue.served button { border-color: var(--border-strong); background: transparent; color: var(--text-secondary); }
+  .hall-ready-card .serve-cue, .hall-order-card .serve-cue, .hall-stock-card .serve-cue { margin-left: 0; margin-right: 0; }
   .hall-cue button { margin-left: auto; min-height: 44px; min-width: 44px; padding: 0 10px; border: 1px solid var(--cta); background: var(--cta); color: #fff; font-weight: 900; cursor: pointer; }
   .hall-ready-card { border-left-color: var(--cta); background: var(--cta-soft); }
   .hall-ready-inline { display: flex; flex-direction: column; gap: 8px; margin-bottom: 2px; }
@@ -1926,6 +1950,7 @@
     var LS_TABLE_OVERRIDE = "kds_table_override_v1"; // 厨房限定卓番上書き (order id -> table)
     var LS_HALL_READY = "kds_hall_ready_v1"; // 全品完了ホールcue (order id -> snapshot)
     var LS_SLIP_PRINTED = "kds_slip_printed_v1"; // 伝票を印刷した注文 (order id -> {day, at}) #224
+    var LS_SERVE_CUE = "kds_serve_cue_v1"; // 前菜/デザートの提供cue (order id -> state, 当日分) #222
     // relay-server/kds-bridge.js が所有する取込済みrid記録。書くのは向こうだが、
     // 日次パージの対象に入れる必要があるためキー名だけここでも持つ (#172)
     var LS_BRIDGE_SEEN = "kds_bridge_seen_v1";
@@ -2001,11 +2026,15 @@
     var deletedIds = {};           // 削除済み注文ID { orderId: true } (LS正本 #67)
     var riceCueMap = {};           // { rid: { status:"active"|"acknowledged", day } }
     var tableOverrideMap = {};      // { orderId: "卓番" }。公開orderは決して変更しない
-    var hallReadyMap = {};         // { orderId: { orderId, table, completedAt, items, status, day } }
+    var hallReadyMap = {};         // { orderId: { orderId, table, people, completedAt, items, status, day } }
     /* 伝票を印刷済みの注文 (#224)。プレビューを挟まず長押しで刷るようになったぶん、
        「もう刷ったか」を画面で分かるようにするための記録。 */
     var slipPrintedMap = {};
     var slipPrintTargetId = null;  // いま印刷を投げている注文 (成否の確定後に印刷済みにする)
+    /* 前菜/デザートの提供cue (#222)。前菜・デザートは注文データに存在しない提供フローの
+       一部なので、注文品目としては持たず「その卓に出したか」だけをここで持つ。
+       { orderId: { starter: bool, dessert: bool, day } } */
+    var serveCueMap = {};
     var hallLayout = "A";          // ホール比較prototypeの表示案
     var tableOverridePending = null; // { id, candidate }。重複警告の2段階確認
     var hallReadyUndoId = null;
@@ -2353,7 +2382,7 @@
           // TableCheck 側で日程変更された予約 (予約IDは不変) が「取込済み」と判定されて
           // 変更後の日に二度と取り込まれない (#172)
           [LS_STOCK, LS_DONE, LS_DONE_V1, LS_ORDER, LS_KONRO, LS_LOCKED, LS_DELETED,
-           LS_BRIDGE_SEEN, LS_RICE_CUE, LS_TABLE_OVERRIDE, LS_HALL_READY, LS_SLIP_PRINTED].forEach(function (key) {
+           LS_BRIDGE_SEEN, LS_RICE_CUE, LS_TABLE_OVERRIDE, LS_HALL_READY, LS_SLIP_PRINTED, LS_SERVE_CUE].forEach(function (key) {
             localStorage.removeItem(key);
           });
         }
@@ -2536,6 +2565,36 @@
       btn.setAttribute("aria-label", (printed ? "伝票を再印刷 (1.2秒長押し)" : "伝票を印刷 (1.2秒長押し)"));
     }
 
+    /* ----- 前菜/デザートの提供cue (#222) ----- */
+    function loadServeCues() {
+      var v = safeParse(localStorage.getItem(LS_SERVE_CUE), {}) || {};
+      serveCueMap = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+    }
+    function saveServeCues() {
+      lsSet(LS_SERVE_CUE, JSON.stringify(serveCueMap));
+    }
+    function serveCueState(orderId) {
+      var st = serveCueMap[String(orderId)];
+      if (!st || typeof st !== "object") return { starter: false, dessert: false };
+      return { starter: !!st.starter, dessert: !!st.dessert };
+    }
+    /* kind は "starter"(前菜) / "dessert"(デザート)。提供は主にホールの動作なので、
+       炊飯cue (キッチン専用) と違い権限モードで弾かない。 */
+    function setServeCue(orderId, kind, served, shouldBroadcast) {
+      if (orderId == null || (kind !== "starter" && kind !== "dessert")) return;
+      var id = String(orderId);
+      var st = serveCueMap[id];
+      if (!st || typeof st !== "object") st = { starter: false, dessert: false };
+      st[kind] = !!served;
+      st[kind + "At"] = served ? Date.now() : null;
+      st.day = todayStr();
+      serveCueMap[id] = st;
+      saveServeCues();
+      if (shouldBroadcast !== false) broadcastServeCue(id, st);
+      applyServeCueToCard(id);
+      renderHallViews();
+    }
+
     /* ----- 権限モード ----- */
     function loadPrefs() {
       try {
@@ -2715,6 +2774,12 @@
             saveSlipPrinted();
             applySlipButton(String(msg.id));
             renderHallViews();
+          } else if (msg.type === "serveCue" && msg.id != null) {
+            var serveId = String(msg.id);
+            if (msg.state && typeof msg.state === "object") serveCueMap[serveId] = msg.state;
+            saveServeCues();
+            applyServeCueToCard(serveId);
+            renderHallViews();
           } else if (msg.type === "tableOverride" && msg.id != null) {
             var overrideId = String(msg.id);
             if (msg.removed || msg.table == null || String(msg.table).trim() === "") delete tableOverrideMap[overrideId];
@@ -2791,6 +2856,10 @@
     function broadcastSlipPrinted(id) {
       if (!bc) return;
       try { bc.postMessage({ type: "slipPrinted", id: String(id) }); } catch (e) {}
+    }
+    function broadcastServeCue(id, state) {
+      if (!bc) return;
+      try { bc.postMessage({ type: "serveCue", id: String(id), state: state }); } catch (e) {}
     }
 
     /* ===================== レンダリング ===================== */
@@ -3079,6 +3148,8 @@
       card.appendChild(head);
       card.appendChild(typeUnderline);
       card.appendChild(timeRow);
+      // 前菜は膳より先に出すため、品目リストの上に置く (#222)
+      card.appendChild(buildServeCue(order.id, "starter", order.people));
       card.appendChild(ul);
       card.appendChild(konro);
 
@@ -3386,6 +3457,7 @@
         orderId: id,
         id: id,
         table: effectiveTable(order),
+        people: Number(order.people) || 0,   // デザートを人数分出すため (#222)
         completedAt: Date.now(),
         day: todayStr(),
         status: "active",
@@ -3848,6 +3920,41 @@
       renderStock();
       renderHallViews();
     }
+    /* 前菜/デザートcueの帯を作る (#222)。
+       人数は order.people (= 大人+子供の合計。子供にも前菜を出す運用のため全員分)。 */
+    function buildServeCue(orderId, kind, people) {
+      var state = serveCueState(orderId);
+      var served = kind === "starter" ? state.starter : state.dessert;
+      var name = kind === "starter" ? "前菜" : "デザート";
+      var n = Number(people) || 0;
+      var cue = document.createElement("div");
+      cue.className = "serve-cue" + (served ? " served" : "");
+      cue.setAttribute("data-serve-kind", kind);
+      cue.setAttribute("data-serve-id", String(orderId));
+      var label = document.createElement("span");
+      label.className = "serve-cue-label";
+      label.textContent = served ? (name + " 提供済み") : (name + (n > 0 ? " ×" + n + t("people") : ""));
+      var button = document.createElement("button");
+      button.type = "button";
+      button.textContent = served ? "戻す" : "出した";
+      button.setAttribute("aria-label",
+        (served ? name + "の提供済みを取り消す" : name + "を出したことを記録する"));
+      button.addEventListener("click", function () { setServeCue(orderId, kind, !served); });
+      cue.appendChild(label);
+      cue.appendChild(button);
+      return cue;
+    }
+
+    /* 進行中カード上の前菜cueを、他タブからの同期でも作り直さずその場で更新する。 */
+    function applyServeCueToCard(orderId) {
+      var entry = cards[String(orderId)];
+      if (!entry || !entry.el) return;
+      var old = entry.el.querySelector('.serve-cue[data-serve-kind="starter"]');
+      if (!old) return;
+      var fresh = buildServeCue(orderId, "starter", entry.order ? entry.order.people : 0);
+      old.parentNode.replaceChild(fresh, old);
+    }
+
     function buildRiceCue(reservation) {
       var state = ensureRiceCue(reservation);
       if (!state) return null;
@@ -4076,6 +4183,8 @@
         if (!compact && item.done) li.textContent += "（完了）";
         list.appendChild(li);
       });
+      // 前菜はホールが出すので、ホールの進行中カードにも同じcueを出す (#222)
+      card.appendChild(buildServeCue(order.id, "starter", order.people));
       card.appendChild(list);
       return card;
     }
@@ -4123,6 +4232,8 @@
         list.appendChild(li);
       });
       card.appendChild(list);
+      // 膳を出し終えた直後がデザートのタイミング (#222)
+      card.appendChild(buildServeCue(snapshot.orderId || snapshot.id, "dessert", snapshot.people));
       var actions = document.createElement("div");
       actions.className = "hall-ready-actions";
       var dismiss = document.createElement("button");
@@ -5143,6 +5254,7 @@
       loadTableOverrides();
       loadHallReady();
       loadSlipPrinted();
+      loadServeCues();
       loadPrefs();
       loadPrinterIp();
       refreshSlipStyleFromServer();   // 印刷スタイルをサーバーから取得しておく (#144追補)
