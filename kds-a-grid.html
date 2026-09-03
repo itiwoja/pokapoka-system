@@ -765,13 +765,19 @@
   }
   /* 署名: 黒塗り四角 + 白数字 (Okage) */
   .item-qty  {
-    min-width: 34px; height: 34px; padding: 0 7px;
+    --qty-box-size: 34px;
+    min-width: var(--qty-box-size); height: var(--qty-box-size); padding: 0 7px;
     display: inline-flex; align-items: baseline; justify-content: center;
     background: var(--qty-box); color: var(--qty-num);
     border-radius: var(--r-box);
     font-family: var(--font-num);
     font-size: var(--fz-qty); font-weight: 900;
-    font-variant-numeric: tabular-nums; line-height: 1;
+    font-variant-numeric: tabular-nums;
+    /* 行の高さを箱の高さに一致させる。align-items:baseline は行を箱の上端に置くため、
+       line-height:1 (=20px) だと 34px の箱の中で数字が 14px 上へずれ、上辺からはみ出す
+       寸前まで寄っていた。箱と同じ値にすることで、大小の数字のベースライン揃えを保ったまま
+       上下中央に来る。 */
+    line-height: var(--qty-box-size);
     white-space: nowrap;
   }
   /* #153: 複数個品目は「完了個数 /全数」を 0/n から併記 (例: 0/3→1/3→2/3)。完了(打消線)になったら非表示 */
