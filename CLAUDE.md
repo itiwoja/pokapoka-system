@@ -17,23 +17,25 @@
 
 コードまたはドキュメントを編集する前に、1テーマにつき1専用ワークツリーを確保する。既存の同テーマ専用ワークツリーで作業を続ける場合は再利用してよいが、編集前に現在のパス、ブランチ、状態を確認する。パスが想定した補助ワークツリーであり、ブランチがそのテーマ専用で、`git status --short` が空または同じテーマの予期した変更だけであることを確認する。いずれかを確認できない場合は再利用しない。別テーマの作業を同じワークツリーで進めない。
 
-メインワークツリーは `C:\Projects\01_dev\school\pokapoka-system` にあり、`main` の確認用に使う。メインワークツリーで直接編集、コミット、プッシュはしない。
+メインワークツリー（このリポジトリを最初にクローンした場所。`git worktree list` の先頭に出る）は `main` の確認用に使う。メインワークツリーで直接編集、コミット、プッシュはしない。
+
+**このファイルに各自のPCの絶対パスを書かない。** リポジトリに入るファイルなので、書くと他の開発者の環境と必ずずれる。パスはメインワークツリーからの相対で表す。
 
 ```powershell
 Get-Location
-git -C C:\Projects\01_dev\school\pokapoka-system worktree list
+git worktree list
 git branch --show-current
 git status --short
 ```
 
 ### 作業ワークツリーを作る
 
-適切な同テーマ専用ワークツリーがない場合、または別テーマの作業を始める場合は、必ず `main` から新しいブランチと専用ワークツリーを作る。小さな変更でも省略しない。ブランチ名は `feature/<内容>`、`fix/<内容>`、`docs/<内容>`、`chore/<内容>` のいずれかとする。ワークツリーのディレクトリ名は、ブランチ名の `/` を `-` に置き換えた名前にする。
+適切な同テーマ専用ワークツリーがない場合、または別テーマの作業を始める場合は、必ず `main` から新しいブランチと専用ワークツリーを作る。小さな変更でも省略しない。ブランチ名は `feature/<内容>`、`fix/<内容>`、`docs/<内容>`、`chore/<内容>` のいずれかとする。ワークツリーのディレクトリ名は、ブランチ名の `/` を `-` に置き換えた名前にする。置き場所はメインワークツリーと同じ階層の `pokapoka-worktrees/` とし、リポジトリの中には作らない。
 
 ```powershell
-git -C C:\Projects\01_dev\school\pokapoka-system fetch origin
-git -C C:\Projects\01_dev\school\pokapoka-system worktree add -b feature/xxx C:\Projects\dev\pokapoka-worktrees\feature-xxx origin/main
-cd C:\Projects\dev\pokapoka-worktrees\feature-xxx
+git fetch origin
+git worktree add -b feature/xxx ..\pokapoka-worktrees\feature-xxx origin/main
+cd ..\pokapoka-worktrees\feature-xxx
 git branch --show-current
 ```
 
@@ -59,15 +61,15 @@ git diff
 作業開始時や片づけを検討するときは、まずマージ済み候補と各ワークツリーの状態を削除を伴わない確認で調べる。確認だけでは削除しない。
 
 ```powershell
-git -C C:\Projects\01_dev\school\pokapoka-system fetch origin
-git -C C:\Projects\01_dev\school\pokapoka-system branch --merged origin/main
-git -C C:\Projects\dev\pokapoka-worktrees\feature-xxx status --porcelain
-git -C C:\Projects\01_dev\school\pokapoka-system worktree list
+git fetch origin
+git branch --merged origin/main
+git -C ..\pokapoka-worktrees\feature-xxx status --porcelain
+git worktree list
 ```
 
 次のいずれかに該当するものは、削除候補から外してユーザーに報告する。
 
-- `git -C C:\Projects\dev\pokapoka-worktrees\feature-xxx status --porcelain` が空でなく、未コミットの変更がある
+- `git -C ..\pokapoka-worktrees\feature-xxx status --porcelain` が空でなく、未コミットの変更がある
 - 未プッシュのコミットや、他セッションが使用中である可能性がある
 - ブランチが `origin/main` にマージされていない
 - 対象のワークツリー、ローカルブランチ、リモートブランチを特定できない
@@ -79,8 +81,8 @@ git -C C:\Projects\01_dev\school\pokapoka-system worktree list
 許可を得た後も、対象のワークツリーから移動してから、変更がないことを再確認する。
 
 ```powershell
-cd C:\Projects\01_dev\school\pokapoka-system
-git worktree remove C:\Projects\dev\pokapoka-worktrees\feature-xxx
+# メインワークツリーで実行する
+git worktree remove ..\pokapoka-worktrees\feature-xxx
 git branch -d feature/xxx
 git push origin --delete feature/xxx
 ```
