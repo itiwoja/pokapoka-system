@@ -1943,7 +1943,11 @@
     var emptyEl = document.getElementById("empty");
     var clockEl = document.getElementById("clock");
     var demoBtn = document.getElementById("demoBtn");
-    var modeBtns = Array.prototype.slice.call(document.querySelectorAll(".mode-btn"));
+    /* グリッド/レーンのボタンも見た目のために .mode-btn を共有しているため、
+       クラスではなく data-mode の有無で権限モードのボタンだけを拾う (viewBtns の [data-view] と対称)。
+       クラスで拾うと表示切替ボタンにも setMode が配線され、押すたびに setMode(null) =
+       キッチンへ戻ってしまう。 */
+    var modeBtns = Array.prototype.slice.call(document.querySelectorAll("[data-mode]"));
     var printerSettingsBtn = document.getElementById("printerSettingsBtn");
     var viewBtns = Array.prototype.slice.call(document.querySelectorAll("[data-view]"));
     var laneBodies = {
