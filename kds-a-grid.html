@@ -1648,8 +1648,10 @@
   body:not(.mode-hall) .serve-cue { display: none; }
   /* デザートは膳を出し終えてから。全品完了するまでは出さない */
   .card:not(.all-done) .serve-cue[data-serve-kind="dessert"] { display: none; }
-  /* 全品完了したら前菜の行は役目を終えるので畳む */
-  .card.all-done .serve-cue[data-serve-kind="starter"] { display: none; }
+  /* 前菜は「提供済みになったら」畳む。全品完了を条件にしない (#230)。
+     キッチンで全品クリアすると未提供の前菜まで消え、まだ出していないのに
+     コースがデザートへ進んでしまっていた。出し忘れをホール側に残す。 */
+  .card .serve-cue[data-serve-kind="starter"].served { display: none; }
   /* キッチンでは全品完了した時点でカードが消える従来どおりの見え方を保つ。
      ホールはデザートを出すまでカードを残す必要があるのでDOMからは消さない (#228)。 */
   body:not(.mode-hall) .card.all-done { display: none; }
