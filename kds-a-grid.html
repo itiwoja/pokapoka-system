@@ -166,11 +166,17 @@
     overflow-x: auto;          /* 狭幅でツール群が溢れてもページ横スクロールを出さない */
   }
 
+  /* 店名がページ唯一の h1。従来 div だったため見出しが h2 から始まっており、
+     支援技術がページの主題を取れなかった。見た目は変えないので既定の余白と
+     文字サイズは打ち消す (実サイズは .brand .mark 側で指定している)。 */
   .brand {
     display: flex;
     align-items: baseline;
     gap: 10px;
     min-width: 0;
+    margin: 0;
+    font-size: inherit;
+    font-weight: inherit;
   }
   .brand .mark {
     font-family: var(--font-brand);
@@ -356,6 +362,26 @@
     color: var(--chrome);
     background: #fff;
   }
+  /* プリンター設定。CSSが無くブラウザ既定のボタン(高さ24px)のままで、
+     タップ下限44px (#58) を満たさず、黒いヘッダーの中で浮いていた。 */
+  .head-toggle {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--chrome-line);
+    border-radius: var(--r-chip);
+    background: transparent;
+    color: var(--on-chrome-dim);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    cursor: pointer;
+    transition: background-color .12s ease, color .12s ease;
+  }
+  .head-toggle:hover  { color: var(--on-chrome); }
+  .head-toggle:active { transform: translateY(1px); }
+
   :focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
 
   /* ============================================================ HUD (ヘッダー下サマリー帯)
@@ -388,7 +414,7 @@
     flex: 0 0 auto;
   }
   .hud-stat .k {
-    font-size: 11px;
+    font-size: 12px;
     letter-spacing: .1em;
     font-weight: 800;
     color: var(--text-secondary);
@@ -494,7 +520,7 @@
   }
   .kh-row { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
   .konro-hud .kh-label {
-    font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
     color: var(--text-secondary); font-weight: 800; margin-right: 4px;
     white-space: nowrap;
   }
@@ -638,8 +664,8 @@
     font-size: 13px; font-weight: 800; color: inherit; line-height: 1.05;
   }
   .people .n { font-family: var(--font-num); font-size: 17px; }
-  .people .unit { opacity: .85; font-size: 11px; margin-left: 1px; }
-  .people .kids-inline { opacity: .85; font-size: 11px; font-weight: 800; }
+  .people .unit { opacity: .85; font-size: 12px; margin-left: 1px; }
+  .people .kids-inline { opacity: .85; font-size: 12px; font-weight: 800; }
 
   /* 経過時間 = バナー内の特大数字 (砂時計付き) */
   .elapsed {
@@ -670,7 +696,7 @@
   .card.new      .badge-type { background: var(--type-new);      border-radius: var(--r-chip); }
   .card.reserved .badge-type { background: var(--type-reserved); border-radius: var(--r-pill); }
   .recv { font-size: 12px; color: var(--text-secondary); white-space: nowrap; margin-right: auto; }
-  .recv .label { letter-spacing: .08em; font-size: 10px; font-weight: 700; }
+  .recv .label { letter-spacing: .08em; font-size: 12px; font-weight: 700; }
   .recv .hhmm { font-family: var(--font-num); font-size: 14px; color: var(--text-primary); font-weight: 800; font-variant-numeric: tabular-nums; margin-left: 4px; }
 
   /* チビ伝プレビュー (ゴースト・ホール=読取専用では非表示) */
@@ -807,7 +833,7 @@
     white-space: nowrap;
   }
   /* #153: 複数個品目は「完了個数 /全数」を 0/n から併記 (例: 0/3→1/3→2/3)。完了(打消線)になったら非表示 */
-  .item-qty .qty-total { display: none; font-size: 11px; font-weight: 700; margin-left: 1px; }
+  .item-qty .qty-total { display: none; font-size: 12px; font-weight: 700; margin-left: 1px; }
   .item.multi:not(.done) .item-qty .qty-total { display: inline; }
 
   /* 完了状態: 打ち消し線 + 減光 (色だけに頼らず線で示す) */
@@ -847,7 +873,7 @@
     min-height: 44px;
   }
   .konro-label {
-    font-size: 10px;
+    font-size: 12px;
     letter-spacing: .14em;
     text-transform: uppercase;
     color: var(--text-secondary);
@@ -1528,7 +1554,7 @@
     font: 800 14px var(--font-num); text-align: center;
   }
   .hall-stock-add {
-    min-width: 36px; min-height: 36px; padding: 0 9px;
+    min-width: 44px; min-height: 44px; padding: 0 9px;
     border: 1px solid var(--chrome-line); border-radius: var(--r-chip);
     background: var(--chrome-2); color: var(--on-chrome);
     font-size: 18px; font-weight: 900; cursor: pointer;
@@ -1560,17 +1586,17 @@
     color: var(--text-primary); font-size: 13px; font-weight: 900;
   }
   .hall-cue.acknowledged { border-color: var(--border-strong); background: var(--bg-raise); color: var(--text-secondary); }
-  .hall-cue button { margin-left: auto; min-height: 36px; padding: 0 10px; border: 1px solid var(--cta); background: var(--cta); color: #fff; font-weight: 900; cursor: pointer; }
+  .hall-cue button { margin-left: auto; min-height: 44px; min-width: 44px; padding: 0 10px; border: 1px solid var(--cta); background: var(--cta); color: #fff; font-weight: 900; cursor: pointer; }
   .hall-ready-card { border-left-color: var(--cta); background: var(--cta-soft); }
   .hall-ready-inline { display: flex; flex-direction: column; gap: 8px; margin-bottom: 2px; }
   .hall-ready-inline::before { content: "提供準備完了"; color: var(--cta); font-size: 13px; font-weight: 900; }
   .hall-ready-card.dismissed { border-left-color: var(--border-strong); background: var(--bg-raise); opacity: .78; }
   .hall-ready-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 7px; }
-  .hall-ready-actions button { min-height: 40px; padding: 0 10px; border: 1px solid var(--border-strong); background: #fff; color: var(--text-primary); font-weight: 800; cursor: pointer; }
+  .hall-ready-actions button { min-height: 44px; min-width: 44px; padding: 0 10px; border: 1px solid var(--border-strong); background: #fff; color: var(--text-primary); font-weight: 800; cursor: pointer; }
   .hall-ready-card.dismissed .hall-ready-actions button { display: none; }
   .hall-summary-stat { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid var(--border-soft); font-weight: 800; }
   .hall-summary-stat .v { font: 900 24px var(--font-num); }
-  .table-override-btn { min-height: 36px; padding: 0 8px; border: 1px solid var(--border-strong); background: transparent; color: var(--text-secondary); font-size: 11px; font-weight: 800; cursor: pointer; }
+  .table-override-btn { min-height: 44px; min-width: 44px; padding: 0 8px; border: 1px solid var(--border-strong); background: transparent; color: var(--text-secondary); font-size: 12px; font-weight: 800; cursor: pointer; }
   .table-override-btn[data-overridden="true"] { border-color: var(--cta); color: var(--cta); background: var(--cta-soft); }
   body.mode-hall .table-override-btn { display: none; }
   .table-override-confirm-backdrop { display: none; position: fixed; inset: 0; z-index: 20; align-items: center; justify-content: center; padding: 20px; background: rgba(0,0,0,.52); }
@@ -1584,9 +1610,9 @@
 </head>
 <body class="is-empty">
   <header>
-    <div class="brand">
+    <h1 class="brand">
       <span class="mark">土鍋飯<span class="accent">ぽかぽか</span></span>
-    </div>
+    </h1>
     <time class="clock" id="clock" aria-label="現在時刻">--:--<span class="sec">:--</span></time>
 
     <div class="mode-switch" role="group" aria-label="権限モード切り替え">
