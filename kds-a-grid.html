@@ -1603,6 +1603,43 @@
     color: var(--text-primary); font-size: 13px; font-weight: 900;
   }
   .hall-cue.acknowledged { border-color: var(--border-strong); background: var(--bg-raise); color: var(--text-secondary); }
+
+  /* 前菜/デザートの提供cue (#222)。注文品目ではない提供フローの一部なので、
+     炊飯cueと同じ「カードに貼る帯」として表現する。粒度は出した/出してないの2値。 */
+  .serve-cue {
+    display: flex; align-items: center; gap: 8px;
+    margin: 6px var(--pad-card) 0;
+    padding: 6px 8px;
+    border: 2px solid var(--cta); border-radius: var(--r-chip);
+    background: var(--cta-soft); color: var(--text-primary);
+    font-size: 13px; font-weight: 900;
+  }
+  .serve-cue .serve-cue-label { min-width: 0; }
+  .serve-cue button {
+    margin-left: auto; flex: 0 0 auto;
+    min-height: 44px; min-width: 44px; padding: 0 10px;
+    border: 1px solid var(--cta); border-radius: var(--r-chip);
+    background: var(--cta); color: #fff; font-weight: 900; cursor: pointer;
+  }
+  /* 提供済みは「消さずに減光して残す」。出し忘れではなく出し終えたことを示すため。 */
+  .serve-cue.served {
+    border-color: var(--border-strong); background: var(--bg-raise); color: var(--text-secondary);
+  }
+  .serve-cue.served button { border-color: var(--border-strong); background: transparent; color: var(--text-secondary); }
+  /* 取消(提供済み→未提供)は長押しでのみ成立させるため、進捗を帯で見せる。
+     押している間だけ幅が伸び、離すと0に戻る。 */
+  .serve-cue { position: relative; overflow: hidden; }
+  .serve-cue .serve-cue-progress {
+    position: absolute;
+    left: 0; bottom: 0; height: 4px; width: 0%;
+    background: var(--cta);
+    pointer-events: none;
+    opacity: 0;
+  }
+  .serve-cue.reverting .serve-cue-progress { opacity: 1; }
+  .serve-cue.reverting button { border-color: var(--cta); color: var(--cta); }
+  .serve-cue button.armed { border-color: var(--cta); background: var(--cta-soft); color: var(--cta); }
+  .hall-ready-card .serve-cue, .hall-order-card .serve-cue, .hall-stock-card .serve-cue { margin-left: 0; margin-right: 0; }
   .hall-cue button { margin-left: auto; min-height: 44px; min-width: 44px; padding: 0 10px; border: 1px solid var(--cta); background: var(--cta); color: #fff; font-weight: 900; cursor: pointer; }
   .hall-ready-card { border-left-color: var(--cta); background: var(--cta-soft); }
   .hall-ready-inline { display: flex; flex-direction: column; gap: 8px; margin-bottom: 2px; }
@@ -1926,6 +1963,7 @@
     var LS_TABLE_OVERRIDE = "kds_table_override_v1"; // 厨房限定卓番上書き (order id -> table)
     var LS_HALL_READY = "kds_hall_ready_v1"; // 全品完了ホールcue (order id -> snapshot)
     var LS_SLIP_PRINTED = "kds_slip_printed_v1"; // 伝票を印刷した注文 (order id -> {day, at}) #224
+    var LS_SERVE_CUE = "kds_serve_cue_v1"; // 前菜/デザートの提供cue (order id -> state, 当日分) #222
     // relay-server/kds-bridge.js が所有する取込済みrid記録。書くのは向こうだが、
     // 日次パージの対象に入れる必要があるためキー名だけここでも持つ (#172)
     var LS_BRIDGE_SEEN = "kds_bridge_seen_v1";
@@ -1945,6 +1983,9 @@
     /* 伝票印刷の長押し。プレビューを挟まず直接紙が出るため、通常タップでは成立させない。
        並べ替え(0.8s)より長く、提供cueの取消より短い中間の重さ (#224) */
     var SLIP_PRINT_MS = 1200;
+    /* 提供cueの取消だけは 2秒。提供実績を誤タップで消すと「出したのに出していない」
+       ことになり、出し直しでロスが出るため、他の長押しより明確に長くする (#222) */
+    var SERVE_REVERT_MS = 2000;
     var UNDO_TOAST_MS = 6000;      // 全完了カードの取り消し猶予
     var PRINT_TOAST_MS = 4000;     // チビ伝の印刷結果通知を出しておく時間 (#176)
     var DELETE_ARM_MS = 3000;      // 削除ボタン2段階確認の猶予 (#68)
@@ -2001,11 +2042,19 @@
     var deletedIds = {};           // 削除済み注文ID { orderId: true } (LS正本 #67)
     var riceCueMap = {};           // { rid: { status:"active"|"acknowledged", day } }
     var tableOverrideMap = {};      // { orderId: "卓番" }。公開orderは決して変更しない
-    var hallReadyMap = {};         // { orderId: { orderId, table, completedAt, items, status, day } }
+    var hallReadyMap = {};         // { orderId: { orderId, table, people, completedAt, items, status, day } }
     /* 伝票を印刷済みの注文 (#224)。プレビューを挟まず長押しで刷るようになったぶん、
        「もう刷ったか」を画面で分かるようにするための記録。 */
     var slipPrintedMap = {};
     var slipPrintTargetId = null;  // いま印刷を投げている注文 (成否の確定後に印刷済みにする)
+    /* 前菜/デザートの提供cue (#222)。前菜・デザートは注文データに存在しない提供フローの
+       一部なので、注文品目としては持たず「その卓に出したか」だけをここで持つ。
+       { orderId: { starter: bool, dessert: bool, day } } */
+    var serveCueMap = {};
+    /* 長押しで戻した直後、指を離した時点で click が発火する。その間に cue が作り直されると
+       click が新しい「出した」ボタンに当たり、戻したはずが即座に提供済みへ戻ってしまう。
+       次の click を1回だけ捨てる。新しい操作が始まったら (pointerdown) 取り下げる。 */
+    var serveCueSuppressClick = false;
     var hallLayout = "A";          // ホール比較prototypeの表示案
     var tableOverridePending = null; // { id, candidate }。重複警告の2段階確認
     var hallReadyUndoId = null;
@@ -2353,7 +2402,7 @@
           // TableCheck 側で日程変更された予約 (予約IDは不変) が「取込済み」と判定されて
           // 変更後の日に二度と取り込まれない (#172)
           [LS_STOCK, LS_DONE, LS_DONE_V1, LS_ORDER, LS_KONRO, LS_LOCKED, LS_DELETED,
-           LS_BRIDGE_SEEN, LS_RICE_CUE, LS_TABLE_OVERRIDE, LS_HALL_READY, LS_SLIP_PRINTED].forEach(function (key) {
+           LS_BRIDGE_SEEN, LS_RICE_CUE, LS_TABLE_OVERRIDE, LS_HALL_READY, LS_SLIP_PRINTED, LS_SERVE_CUE].forEach(function (key) {
             localStorage.removeItem(key);
           });
         }
@@ -2536,6 +2585,36 @@
       btn.setAttribute("aria-label", (printed ? "伝票を再印刷 (1.2秒長押し)" : "伝票を印刷 (1.2秒長押し)"));
     }
 
+    /* ----- 前菜/デザートの提供cue (#222) ----- */
+    function loadServeCues() {
+      var v = safeParse(localStorage.getItem(LS_SERVE_CUE), {}) || {};
+      serveCueMap = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+    }
+    function saveServeCues() {
+      lsSet(LS_SERVE_CUE, JSON.stringify(serveCueMap));
+    }
+    function serveCueState(orderId) {
+      var st = serveCueMap[String(orderId)];
+      if (!st || typeof st !== "object") return { starter: false, dessert: false };
+      return { starter: !!st.starter, dessert: !!st.dessert };
+    }
+    /* kind は "starter"(前菜) / "dessert"(デザート)。提供は主にホールの動作なので、
+       炊飯cue (キッチン専用) と違い権限モードで弾かない。 */
+    function setServeCue(orderId, kind, served, shouldBroadcast) {
+      if (orderId == null || (kind !== "starter" && kind !== "dessert")) return;
+      var id = String(orderId);
+      var st = serveCueMap[id];
+      if (!st || typeof st !== "object") st = { starter: false, dessert: false };
+      st[kind] = !!served;
+      st[kind + "At"] = served ? Date.now() : null;
+      st.day = todayStr();
+      serveCueMap[id] = st;
+      saveServeCues();
+      if (shouldBroadcast !== false) broadcastServeCue(id, st);
+      applyServeCueToCard(id);
+      renderHallViews();
+    }
+
     /* ----- 権限モード ----- */
     function loadPrefs() {
       try {
@@ -2715,6 +2794,12 @@
             saveSlipPrinted();
             applySlipButton(String(msg.id));
             renderHallViews();
+          } else if (msg.type === "serveCue" && msg.id != null) {
+            var serveId = String(msg.id);
+            if (msg.state && typeof msg.state === "object") serveCueMap[serveId] = msg.state;
+            saveServeCues();
+            applyServeCueToCard(serveId);
+            renderHallViews();
           } else if (msg.type === "tableOverride" && msg.id != null) {
             var overrideId = String(msg.id);
             if (msg.removed || msg.table == null || String(msg.table).trim() === "") delete tableOverrideMap[overrideId];
@@ -2791,6 +2876,10 @@
     function broadcastSlipPrinted(id) {
       if (!bc) return;
       try { bc.postMessage({ type: "slipPrinted", id: String(id) }); } catch (e) {}
+    }
+    function broadcastServeCue(id, state) {
+      if (!bc) return;
+      try { bc.postMessage({ type: "serveCue", id: String(id), state: state }); } catch (e) {}
     }
 
     /* ===================== レンダリング ===================== */
@@ -3079,6 +3168,8 @@
       card.appendChild(head);
       card.appendChild(typeUnderline);
       card.appendChild(timeRow);
+      // 前菜は膳より先に出すため、品目リストの上に置く (#222)
+      card.appendChild(buildServeCue(order.id, "starter", order.people));
       card.appendChild(ul);
       card.appendChild(konro);
 
@@ -3386,6 +3477,7 @@
         orderId: id,
         id: id,
         table: effectiveTable(order),
+        people: Number(order.people) || 0,   // デザートを人数分出すため (#222)
         completedAt: Date.now(),
         day: todayStr(),
         status: "active",
@@ -3848,6 +3940,113 @@
       renderStock();
       renderHallViews();
     }
+    /* 前菜/デザートcueの帯を作る (#222)。
+       人数は order.people (= 大人+子供の合計。子供にも前菜を出す運用のため全員分)。 */
+    function buildServeCue(orderId, kind, people) {
+      var state = serveCueState(orderId);
+      var served = kind === "starter" ? state.starter : state.dessert;
+      var name = kind === "starter" ? "前菜" : "デザート";
+      var n = Number(people) || 0;
+      var cue = document.createElement("div");
+      cue.className = "serve-cue" + (served ? " served" : "");
+      cue.setAttribute("data-serve-kind", kind);
+      cue.setAttribute("data-serve-id", String(orderId));
+      var label = document.createElement("span");
+      label.className = "serve-cue-label";
+      label.textContent = served ? (name + " 提供済み") : (name + (n > 0 ? " ×" + n + t("people") : ""));
+      var button = document.createElement("button");
+      button.type = "button";
+      button.textContent = served ? "長押しで戻す" : "出した";
+      button.setAttribute("aria-label",
+        (served ? name + "の提供済みを取り消す（2秒長押し）" : name + "を出したことを記録する"));
+      cue.appendChild(label);
+      cue.appendChild(button);
+      if (served) {
+        // 取消は誤タップで成立させない。2秒の長押しでのみ戻す
+        var progress = document.createElement("div");
+        progress.className = "serve-cue-progress";
+        cue.appendChild(progress);
+        attachServeRevertHandlers(cue, button, progress, orderId, kind);
+      } else {
+        button.addEventListener("click", function () {
+          if (serveCueSuppressClick) { serveCueSuppressClick = false; return; }
+          setServeCue(orderId, kind, true);
+        });
+      }
+      return cue;
+    }
+
+    /* 提供済みの取消を SERVE_REVERT_MS の長押しでのみ成立させる (#222)。
+       閾値12pxで動かしたら取消 = スクロール意図とみなす点は attachItemHandlers と揃える。
+       キーボード操作では長押しできないため、Enter/Space は confirm で代替する。 */
+    function attachServeRevertHandlers(cue, button, progress, orderId, kind) {
+      var timer = null, raf = null, startX = 0, startY = 0, pressing = false;
+      function stop() {
+        pressing = false;
+        if (timer) { clearTimeout(timer); timer = null; }
+        if (raf) { cancelAnimationFrame(raf); raf = null; }
+        cue.classList.remove("reverting");
+        progress.style.width = "0%";
+      }
+      button.addEventListener("pointerdown", function (ev) {
+        if (ev.button != null && ev.button !== 0) return;
+        startX = ev.clientX; startY = ev.clientY;
+        pressing = true;
+        var startedAt = Date.now();
+        cue.classList.add("reverting");
+        function tick() {
+          if (!pressing) return;
+          var p = Math.min(1, (Date.now() - startedAt) / SERVE_REVERT_MS);
+          progress.style.width = (p * 100) + "%";
+          if (p < 1) raf = requestAnimationFrame(tick);
+        }
+        if (!prefersReducedMotion()) raf = requestAnimationFrame(tick);
+        timer = setTimeout(function () {
+          stop();
+          serveCueSuppressClick = true;   // 指を離したときの click を捨てる
+          setServeCue(orderId, kind, false);
+        }, SERVE_REVERT_MS);
+      });
+      button.addEventListener("pointermove", function (ev) {
+        if (!pressing) return;
+        if (Math.abs(ev.clientX - startX) > 12 || Math.abs(ev.clientY - startY) > 12) stop();
+      });
+      button.addEventListener("pointerup", stop);
+      button.addEventListener("pointercancel", stop);
+      button.addEventListener("pointerleave", stop);
+      // 短いタップでは成立させない。click は長押し成立時にも発火するので常に潰す
+      button.addEventListener("click", function (ev) { ev.preventDefault(); });
+      /* キーボードでは長押しを判定できない (キーリピートに依存する) ため、削除ボタン (#68) と
+         同じ2段階確認にする。ネイティブ confirm() はメインスレッドを塞いでポーリングと
+         経過時間更新まで止めるので使わない。 */
+      var armTimer = null;
+      function disarm() {
+        if (armTimer) { clearTimeout(armTimer); armTimer = null; }
+        button.classList.remove("armed");
+        button.textContent = "長押しで戻す";
+      }
+      button.addEventListener("keydown", function (ev) {
+        if (ev.key !== "Enter" && ev.key !== " ") return;
+        ev.preventDefault();
+        if (button.classList.contains("armed")) { disarm(); setServeCue(orderId, kind, false); return; }
+        button.classList.add("armed");
+        button.textContent = "もう一度で戻す";
+        if (armTimer) clearTimeout(armTimer);
+        armTimer = setTimeout(disarm, DELETE_ARM_MS);
+      });
+      button.addEventListener("blur", disarm);
+    }
+
+    /* 進行中カード上の前菜cueを、他タブからの同期でも作り直さずその場で更新する。 */
+    function applyServeCueToCard(orderId) {
+      var entry = cards[String(orderId)];
+      if (!entry || !entry.el) return;
+      var old = entry.el.querySelector('.serve-cue[data-serve-kind="starter"]');
+      if (!old) return;
+      var fresh = buildServeCue(orderId, "starter", entry.order ? entry.order.people : 0);
+      old.parentNode.replaceChild(fresh, old);
+    }
+
     function buildRiceCue(reservation) {
       var state = ensureRiceCue(reservation);
       if (!state) return null;
@@ -4076,6 +4275,8 @@
         if (!compact && item.done) li.textContent += "（完了）";
         list.appendChild(li);
       });
+      // 前菜はホールが出すので、ホールの進行中カードにも同じcueを出す (#222)
+      card.appendChild(buildServeCue(order.id, "starter", order.people));
       card.appendChild(list);
       return card;
     }
@@ -4123,6 +4324,8 @@
         list.appendChild(li);
       });
       card.appendChild(list);
+      // 膳を出し終えた直後がデザートのタイミング (#222)
+      card.appendChild(buildServeCue(snapshot.orderId || snapshot.id, "dessert", snapshot.people));
       var actions = document.createElement("div");
       actions.className = "hall-ready-actions";
       var dismiss = document.createElement("button");
@@ -5143,6 +5346,9 @@
       loadTableOverrides();
       loadHallReady();
       loadSlipPrinted();
+      loadServeCues();
+      // 抑止フラグが取り残されて次の正当なタップを食べないよう、新しい操作の開始で必ず落とす
+      document.addEventListener("pointerdown", function () { serveCueSuppressClick = false; }, true);
       loadPrefs();
       loadPrinterIp();
       refreshSlipStyleFromServer();   // 印刷スタイルをサーバーから取得しておく (#144追補)
