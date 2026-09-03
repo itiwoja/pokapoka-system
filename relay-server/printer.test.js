@@ -30,14 +30,16 @@ test("normalizeJob: 欠損値は既定値になる", function () {
   assert.deepEqual(job.items, []);
 });
 
-test("buildEscPos: 初期化コマンドで始まり、卓番・品名がShift_JISで含まれる", function () {
+test("buildEscPos: 属性リセットで始まり、卓番・品名がShift_JISで含まれる", function () {
   var job = printer.normalizeJob({
     table: "A3",
     meta: "18:30",
     items: [{ name: "究極の卵かけ御飯", qty: 2, note: "卵多め" }],
   });
   var buf = printer.buildEscPos(job);
-  assert.equal(buf.slice(0, 2).toString("latin1"), "\x1b@");
+  // ESC @ は実機で解釈されず "@" が印字されてしまうので送らない。代わりに寄せ・拡大・強調を既定へ戻す
+  assert.equal(buf.slice(0, 10).toString("latin1"), "\x1b\x1da\x00\x1bi\x00\x00\x1bF");
+  assert.equal(buf.indexOf(Buffer.from("\x1b@", "latin1")), -1, "ESC @ は送らない");
   assert.notEqual(buf.indexOf(iconv.encode("卓  A3", "Shift_JIS")), -1);
   assert.notEqual(buf.indexOf(iconv.encode("究極の卵かけ御飯", "Shift_JIS")), -1);
   assert.notEqual(buf.indexOf(iconv.encode("  x 2", "Shift_JIS")), -1);
@@ -212,6 +214,8 @@ test("buildRaster(starprnt): ESC GS S で画像を1コマンドで送り、Star�
   assert.ok(hex.indexOf("\x1b\x1dS\x01\x48\x00\x2c\x01\x00") !== -1, "ESC GS S のヘッダ");
   assert.equal(hex.split("\x1b\x1dS").length - 1, 1, "画像は1コマンドで送る");
   assert.ok(hex.indexOf("\x1d\x76\x30") === -1, "ESC/POS の GS v 0 は混ぜない");
+  assert.ok(hex.indexOf("\x1b@") === -1, "ESC @ は送らない (実機で @ が印字される)");
+  assert.ok(hex.startsWith("\x1b\x1da\x00\x1bi\x00\x00\x1bF"), "属性リセットで始まる");
   assert.ok(hex.endsWith("\n\n\x1b\x64\x33"), "紙送り2行 + ESC d 3 (ASCIIの'3') で終わる");
 });
 
@@ -225,6 +229,7 @@ test("buildRaster(starline): ラスターモードで囲み、b コマンドを�
   assert.equal(hex.split("\x62\x30\x00").length - 1, 5);
   assert.ok(hex.indexOf("\x1b\x0c\x00") !== -1, "ESC FF NUL で印字");
   assert.ok(hex.indexOf("\x1b\x2a\x72\x42") !== -1, "ESC * r B で終了");
+  assert.ok(hex.indexOf("\x1b@") === -1, "ESC @ は送らない (実機で @ が印字される)");
   assert.ok(hex.endsWith("\x1b\x64\x33"), "Star のカットで終わる");
 });
 
