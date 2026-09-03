@@ -691,7 +691,13 @@
   .slip-btn.printing .slip-btn-progress { opacity: 1; }
   /* 印刷済みは「再伝」。二重印字を避けるため、刷ったことが一目で分かるようにする */
   .slip-btn.printed { border-color: var(--cta); color: var(--cta); }
-  body.mode-hall .slip-btn { display: none; }
+  /* チビ伝はホール専用 (#226)。配膳のお膳にテーブル番号と一緒にチビ伝を乗せて運ぶため、
+     伝票を持って動くのはホールであり、プリンターもホール寄りに置かれる。
+     以前はキッチン専用だったが運用実態と逆だった。
+     調理そのものの操作 (品目完了・コンロ・並べ替え) の主権がキッチンにある点は変えない。 */
+  /* キッチンのカード上の伝ボタンは出さない。ホール専用ビューのものだけを見せる (#226) */
+  body:not(.mode-hall) .slip-btn { display: none; }
+  .hall-order-top .slip-btn { margin-left: auto; }
 
   /* 削除 (バナー内・ゴースト / キッチンモード専用) */
   .delete-btn {
@@ -2487,6 +2493,7 @@
       saveSlipPrinted();
       if (shouldBroadcast !== false) broadcastSlipPrinted(id);
       applySlipButton(id);
+      renderHallViews();   // ホールのカードにも「再伝」を反映する (#226)
     }
     /* 伝ボタンの文言を印刷済みかどうかで切り替える。カードを作り直さずその場で更新する。 */
     function applySlipButton(orderId) {
@@ -2681,6 +2688,7 @@
             slipPrintedMap[String(msg.id)] = { day: todayStr(), at: Date.now() };
             saveSlipPrinted();
             applySlipButton(String(msg.id));
+            renderHallViews();
           } else if (msg.type === "tableOverride" && msg.id != null) {
             var overrideId = String(msg.id);
             if (msg.removed || msg.table == null || String(msg.table).trim() === "") delete tableOverrideMap[overrideId];
@@ -2959,14 +2967,7 @@
       var slipBtn = document.createElement("button");
       slipBtn.type = "button";
       slipBtn.className = "slip-btn js-slip-btn";
-      slipBtn.textContent = isSlipPrinted(order.id) ? "再伝" : "伝";
-      slipBtn.classList.toggle("printed", isSlipPrinted(order.id));
-      slipBtn.setAttribute("aria-label",
-        (isSlipPrinted(order.id) ? "伝票を再印刷 (1.2秒長押し)" : "伝票を印刷 (1.2秒長押し)"));
-      var slipProgress = document.createElement("span");
-      slipProgress.className = "slip-btn-progress";
-      slipBtn.appendChild(slipProgress);
-      attachSlipPrintHandlers(slipBtn, slipProgress, order);
+      decorateSlipButton(slipBtn, order);
       // 卓番overrideは厨房だけの表示上書き。元order.tableや上流APIは変更しない (#160)
       var tableOverrideBtn = document.createElement("button");
       tableOverrideBtn.type = "button";
@@ -4031,7 +4032,14 @@
       var elapsed = document.createElement("span");
       elapsed.className = "hall-order-elapsed";
       elapsed.textContent = elapsedMin(order.start) + t("min");
+      // チビ伝はホールが出す (#226)。ホールモードでは進行中カードごと
+      // ホール専用ビューへ差し替わるため、伝ボタンもこちらに持たせる
+      var hallSlipBtn = document.createElement("button");
+      hallSlipBtn.type = "button";
+      hallSlipBtn.className = "slip-btn js-slip-btn";
+      decorateSlipButton(hallSlipBtn, order);
       top.appendChild(table); top.appendChild(kind); top.appendChild(elapsed);
+      top.appendChild(hallSlipBtn);
       card.appendChild(top);
       var list = document.createElement("ul");
       list.className = "hall-order-items";
@@ -4651,6 +4659,20 @@
       seatDialContext = "reservation";
     }
 
+    /* 伝ボタンの中身を組み立てて長押しを配線する。キッチンのカードとホールのカードで共用する。
+       表示されるのはホールだけだが (#226)、DOMは両方に持たせて印刷済み表示を揃える。 */
+    function decorateSlipButton(btn, order) {
+      var printed = isSlipPrinted(order.id);
+      btn.textContent = printed ? "再伝" : "伝";
+      btn.classList.toggle("printed", printed);
+      btn.setAttribute("aria-label", (printed ? "伝票を再印刷 (1.2秒長押し)" : "伝票を印刷 (1.2秒長押し)"));
+      var progress = document.createElement("span");
+      progress.className = "slip-btn-progress";
+      btn.appendChild(progress);
+      attachSlipPrintHandlers(btn, progress, order);
+      return btn;
+    }
+
     /* 伝票を 1.2秒の長押しで刷る (#224)。
        従来はタップでプレビューを開き、その中の「印刷」を押す2手だった。厨房では手が塞がって
        いる場面が多く、確認ダイアログを挟むぶん遅い。一方でプレビュー無しの通常タップだと
@@ -4668,7 +4690,7 @@
       }
       btn.addEventListener("pointerdown", function (ev) {
         if (ev.button != null && ev.button !== 0) return;
-        if (mode !== "kitchen") return;   // 印刷はキッチン専用
+        if (mode !== "hall") return;   // 印刷はホール専用 (#226)
         startX = ev.clientX; startY = ev.clientY;
         pressing = true; printedByHold = false;
         var startedAt = Date.now();
