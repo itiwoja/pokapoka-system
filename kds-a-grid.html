@@ -129,6 +129,20 @@
     font-family: var(--font-ui);
     -webkit-text-size-adjust: 100%;
     overscroll-behavior: none;
+    /* タブレット/産業用パネルでの既定タッチ挙動を無効化する。
+       - タップハイライト: ブラウザ既定の青 rgba(51,181,229,.4) は「色は意味にのみ使う」
+         という盤面設計に反するため消す。押下feedbackは各コンポーネント側で表現する
+       - 選択/拡大鏡: 長押し0.8秒(品目の-1戻し・カードの掴み)の最中に発動して操作と衝突する */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* 操作要素はダブルタップズームを無効化し、タップ反応の遅延をなくす。
+     manipulation はパン/ピンチを残すので一覧のスクロールは従来どおり効く。 */
+  button, .item, .konro-btn, .slip-btn, [role="button"] {
+    touch-action: manipulation;
   }
 
   body {
@@ -3619,6 +3633,7 @@
         else boardEl.insertBefore(card, tcard.nextSibling);
       }
       function onUp() {
+        document.removeEventListener("touchmove", blockScrollWhileGrabbing, { passive: false });
         document.removeEventListener("pointermove", onMove);
         document.removeEventListener("pointerup", onUp);
         // 文言通り「離して確定」(#62)。誤操作防止として確定後数秒間「戻す」を提示する
@@ -3626,8 +3641,19 @@
         commitReorder();
         if (snapshot) offerReorderUndo(snapshot);
       }
+      // 掴み中はブラウザのスクロールを抑止する。これが無いと指を十数px動かした時点で
+      // ブラウザがスクロールを引き取り pointercancel が飛び、掴んだカードが即座に外れる
+      // (タッチ端末でのみ発生し、マウス操作では再現しない)。
+      // .card への touch-action:none ではなく touchmove の打ち消しで行うのは、
+      // カードが盤面のほぼ全面を占めるため、前者だと一覧の縦スクロール自体ができなくなるため。
+      document.addEventListener("touchmove", blockScrollWhileGrabbing, { passive: false });
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);
+    }
+
+    /* 掴み中(grab が立っている間)のみタッチスクロールを打ち消す */
+    function blockScrollWhileGrabbing(ev) {
+      if (grab && ev.cancelable) ev.preventDefault();
     }
 
     function commitReorder() {
