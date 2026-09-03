@@ -2598,9 +2598,11 @@
       if (!st || typeof st !== "object") return { starter: false, dessert: false };
       return { starter: !!st.starter, dessert: !!st.dessert };
     }
-    /* kind は "starter"(前菜) / "dessert"(デザート)。提供は主にホールの動作なので、
-       炊飯cue (キッチン専用) と違い権限モードで弾かない。 */
+    /* kind は "starter"(前菜) / "dessert"(デザート)。
+       前菜・デザートの提供はホールの担当なので、チビ伝と同じくホール専用にする (#228)。
+       キッチンの盤面には出さない。厨房が見るのは調理する品目であって提供の進行ではない。 */
     function setServeCue(orderId, kind, served, shouldBroadcast) {
+      if (mode !== "hall") return;
       if (orderId == null || (kind !== "starter" && kind !== "dessert")) return;
       var id = String(orderId);
       var st = serveCueMap[id];
@@ -2611,7 +2613,6 @@
       serveCueMap[id] = st;
       saveServeCues();
       if (shouldBroadcast !== false) broadcastServeCue(id, st);
-      applyServeCueToCard(id);
       renderHallViews();
     }
 
@@ -2798,7 +2799,6 @@
             var serveId = String(msg.id);
             if (msg.state && typeof msg.state === "object") serveCueMap[serveId] = msg.state;
             saveServeCues();
-            applyServeCueToCard(serveId);
             renderHallViews();
           } else if (msg.type === "tableOverride" && msg.id != null) {
             var overrideId = String(msg.id);
@@ -3168,8 +3168,6 @@
       card.appendChild(head);
       card.appendChild(typeUnderline);
       card.appendChild(timeRow);
-      // 前菜は膳より先に出すため、品目リストの上に置く (#222)
-      card.appendChild(buildServeCue(order.id, "starter", order.people));
       card.appendChild(ul);
       card.appendChild(konro);
 
@@ -4037,15 +4035,6 @@
       button.addEventListener("blur", disarm);
     }
 
-    /* 進行中カード上の前菜cueを、他タブからの同期でも作り直さずその場で更新する。 */
-    function applyServeCueToCard(orderId) {
-      var entry = cards[String(orderId)];
-      if (!entry || !entry.el) return;
-      var old = entry.el.querySelector('.serve-cue[data-serve-kind="starter"]');
-      if (!old) return;
-      var fresh = buildServeCue(orderId, "starter", entry.order ? entry.order.people : 0);
-      old.parentNode.replaceChild(fresh, old);
-    }
 
     function buildRiceCue(reservation) {
       var state = ensureRiceCue(reservation);
