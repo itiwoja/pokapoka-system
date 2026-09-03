@@ -682,6 +682,15 @@
     cursor: pointer; transition: color .1s ease, background .1s ease;
   }
   .slip-btn:hover { color: var(--text-primary); background: rgba(0,0,0,.06); }
+  /* 長押し印刷の進捗 (#224)。押している間だけ下辺が伸び、離すと0に戻る */
+  .slip-btn { position: relative; overflow: hidden; }
+  .slip-btn .slip-btn-progress {
+    position: absolute; left: 0; bottom: 0; height: 3px; width: 0%;
+    background: var(--cta); pointer-events: none; opacity: 0;
+  }
+  .slip-btn.printing .slip-btn-progress { opacity: 1; }
+  /* 印刷済みは「再伝」。二重印字を避けるため、刷ったことが一目で分かるようにする */
+  .slip-btn.printed { border-color: var(--cta); color: var(--cta); }
   body.mode-hall .slip-btn { display: none; }
 
   /* 削除 (バナー内・ゴースト / キッチンモード専用) */
@@ -1883,6 +1892,7 @@
     var LS_RICE_CUE = "kds_rice_cue_v1"; // 米料理予約cue (rid -> state, 当日分)
     var LS_TABLE_OVERRIDE = "kds_table_override_v1"; // 厨房限定卓番上書き (order id -> table)
     var LS_HALL_READY = "kds_hall_ready_v1"; // 全品完了ホールcue (order id -> snapshot)
+    var LS_SLIP_PRINTED = "kds_slip_printed_v1"; // 伝票を印刷した注文 (order id -> {day, at}) #224
     // relay-server/kds-bridge.js が所有する取込済みrid記録。書くのは向こうだが、
     // 日次パージの対象に入れる必要があるためキー名だけここでも持つ (#172)
     var LS_BRIDGE_SEEN = "kds_bridge_seen_v1";
@@ -1899,6 +1909,9 @@
     var HALL_READY_UNDO_MS = 6000;
 
     var LONGPRESS_MS = 800;        // 並べ替え長押し (0.8〜2秒の下限)
+    /* 伝票印刷の長押し。プレビューを挟まず直接紙が出るため、通常タップでは成立させない。
+       並べ替え(0.8s)より長く、提供cueの取消より短い中間の重さ (#224) */
+    var SLIP_PRINT_MS = 1200;
     var UNDO_TOAST_MS = 6000;      // 全完了カードの取り消し猶予
     var PRINT_TOAST_MS = 4000;     // チビ伝の印刷結果通知を出しておく時間 (#176)
     var DELETE_ARM_MS = 3000;      // 削除ボタン2段階確認の猶予 (#68)
@@ -1956,6 +1969,10 @@
     var riceCueMap = {};           // { rid: { status:"active"|"acknowledged", day } }
     var tableOverrideMap = {};      // { orderId: "卓番" }。公開orderは決して変更しない
     var hallReadyMap = {};         // { orderId: { orderId, table, completedAt, items, status, day } }
+    /* 伝票を印刷済みの注文 (#224)。プレビューを挟まず長押しで刷るようになったぶん、
+       「もう刷ったか」を画面で分かるようにするための記録。 */
+    var slipPrintedMap = {};
+    var slipPrintTargetId = null;  // いま印刷を投げている注文 (成否の確定後に印刷済みにする)
     var hallLayout = "A";          // ホール比較prototypeの表示案
     var tableOverridePending = null; // { id, candidate }。重複警告の2段階確認
     var hallReadyUndoId = null;
@@ -2305,7 +2322,7 @@
           // TableCheck 側で日程変更された予約 (予約IDは不変) が「取込済み」と判定されて
           // 変更後の日に二度と取り込まれない (#172)
           [LS_STOCK, LS_DONE, LS_DONE_V1, LS_ORDER, LS_KONRO, LS_LOCKED, LS_DELETED,
-           LS_BRIDGE_SEEN, LS_RICE_CUE, LS_TABLE_OVERRIDE, LS_HALL_READY].forEach(function (key) {
+           LS_BRIDGE_SEEN, LS_RICE_CUE, LS_TABLE_OVERRIDE, LS_HALL_READY, LS_SLIP_PRINTED].forEach(function (key) {
             localStorage.removeItem(key);
           });
         }
@@ -2449,6 +2466,42 @@
     }
     function saveHallReady() {
       lsSet(LS_HALL_READY, JSON.stringify(hallReadyMap));
+    }
+
+    /* ----- 伝票の印刷済み記録 (#224) ----- */
+    function loadSlipPrinted() {
+      var v = safeParse(localStorage.getItem(LS_SLIP_PRINTED), {}) || {};
+      slipPrintedMap = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+    }
+    function saveSlipPrinted() {
+      lsSet(LS_SLIP_PRINTED, JSON.stringify(slipPrintedMap));
+    }
+    function isSlipPrinted(orderId) {
+      return !!slipPrintedMap[String(orderId)];
+    }
+    /* 印刷を実行した時点で記録する。「紙が確実に出た」ではなく「もう刷りに行った」の意。
+       ブラウザ印刷にフォールバックした場合もダイアログまで到達しているので記録する。 */
+    function markSlipPrinted(orderId, shouldBroadcast) {
+      if (orderId == null) return;
+      var id = String(orderId);
+      slipPrintedMap[id] = { day: todayStr(), at: Date.now() };
+      saveSlipPrinted();
+      if (shouldBroadcast !== false) broadcastSlipPrinted(id);
+      applySlipButton(id);
+    }
+    /* 伝ボタンの文言を印刷済みかどうかで切り替える。カードを作り直さずその場で更新する。 */
+    function applySlipButton(orderId) {
+      var entry = cards[String(orderId)];
+      if (!entry || !entry.el) return;
+      var btn = entry.el.querySelector(".js-slip-btn");
+      if (!btn) return;
+      var printed = isSlipPrinted(orderId);
+      // textContent で置き換えると進捗バーの span まで消えるので、退避して戻す
+      var progress = btn.querySelector(".slip-btn-progress");
+      btn.textContent = printed ? "再伝" : "伝";
+      if (progress) btn.appendChild(progress);
+      btn.classList.toggle("printed", printed);
+      btn.setAttribute("aria-label", (printed ? "伝票を再印刷 (1.2秒長押し)" : "伝票を印刷 (1.2秒長押し)"));
     }
 
     /* ----- 権限モード ----- */
@@ -2624,6 +2677,11 @@
             saveRiceCues();
             renderStock();
             renderHallViews();
+          } else if (msg.type === "slipPrinted" && msg.id != null) {
+            // 別端末で刷ったぶんも「再伝」にする。二重印字を防ぐのが目的 (#224)
+            slipPrintedMap[String(msg.id)] = { day: todayStr(), at: Date.now() };
+            saveSlipPrinted();
+            applySlipButton(String(msg.id));
           } else if (msg.type === "tableOverride" && msg.id != null) {
             var overrideId = String(msg.id);
             if (msg.removed || msg.table == null || String(msg.table).trim() === "") delete tableOverrideMap[overrideId];
@@ -2696,6 +2754,10 @@
     function broadcastHallReady(id, snapshot) {
       if (!bc) return;
       try { bc.postMessage({ type: "hallReady", id: String(id), snapshot: snapshot }); } catch (e) {}
+    }
+    function broadcastSlipPrinted(id) {
+      if (!bc) return;
+      try { bc.postMessage({ type: "slipPrinted", id: String(id) }); } catch (e) {}
     }
 
     /* ===================== レンダリング ===================== */
@@ -2898,9 +2960,14 @@
       var slipBtn = document.createElement("button");
       slipBtn.type = "button";
       slipBtn.className = "slip-btn js-slip-btn";
-      slipBtn.setAttribute("aria-label", t("print"));
-      slipBtn.textContent = "伝";
-      slipBtn.addEventListener("click", function () { openSlip(order); });
+      slipBtn.textContent = isSlipPrinted(order.id) ? "再伝" : "伝";
+      slipBtn.classList.toggle("printed", isSlipPrinted(order.id));
+      slipBtn.setAttribute("aria-label",
+        (isSlipPrinted(order.id) ? "伝票を再印刷 (1.2秒長押し)" : "伝票を印刷 (1.2秒長押し)"));
+      var slipProgress = document.createElement("span");
+      slipProgress.className = "slip-btn-progress";
+      slipBtn.appendChild(slipProgress);
+      attachSlipPrintHandlers(slipBtn, slipProgress, order);
       // 卓番overrideは厨房だけの表示上書き。元order.tableや上流APIは変更しない (#160)
       var tableOverrideBtn = document.createElement("button");
       tableOverrideBtn.type = "button";
@@ -4330,7 +4397,9 @@
       };
     }
 
-    function openSlip(order) {
+    /* プレビューDOMの組み立てだけを行う。表示 (slip-open) はしない。
+       長押し印刷はプレビューを開かずにここだけを使う (#224)。 */
+    function populateSlip(order) {
       currentSlipOrder = order;
       refreshSlipStyleFromServer();   // 最新のサーバー保存スタイルを取得(到着したら開いたまま再適用)
 
@@ -4344,7 +4413,6 @@
           "@page { size: " + w + "mm auto; margin: 0; }\n" +
           "@media print { .slip { width: " + w + "mm !important; } }";
         window.SlipRenderer.renderToCanvas(slipCanvasEl, tpl, slipOrderData(order));
-        document.body.classList.add("slip-open");
         return;
       }
 
@@ -4374,7 +4442,21 @@
         if (st && st.itemGap != null) li.style.paddingTop = li.style.paddingBottom = (st.itemGap / 2) + "px";
         slipItemsEl.appendChild(li);
       });
+    }
+    /* 短タップ用のプレビュー表示 (従来の挙動)。 */
+    function openSlip(order) {
+      populateSlip(order);
       document.body.classList.add("slip-open");
+    }
+    /* 長押し印刷: プレビューを一切出さずに実機へ送る (#224)。
+       実機印刷は slip-open を必要としない (job はテキスト/canvasから組む) ため、
+       画面には何も出さずに終わる。実機に送れずブラウザ印刷へ落ちるときだけ
+       fallbackToBrowserPrint がプレビューを開く (印刷対象の .slip が
+       .slip-backdrop の display:none 配下だと描画されず白紙になるため)。 */
+    function printSlipNow(order) {
+      if (printBusy) return;
+      populateSlip(order);
+      printSlip();
     }
     function closeSlip() { document.body.classList.remove("slip-open"); }
 
@@ -4468,6 +4550,9 @@
        (印刷ダイアログは同期的に画面を止めるので、トーストを描画させる猶予を挟む) */
     function fallbackToBrowserPrint(message) {
       showPrintToast(message);
+      // .slip は .slip-backdrop (display:none) の中にある。開いていないと描画されず
+      // 白紙が出るため、ブラウザ印刷のときだけプレビューを開く (#224)
+      document.body.classList.add("slip-open");
       setTimeout(function () { window.print(); }, 600);
     }
 
@@ -4518,9 +4603,11 @@
       }).then(function () {
         setPrintBusy(false);
         closeSlip();                       // 印字できたらプレビューは役目を終える
+        markSlipPrinted(order.id);         // 伝 -> 再伝 (#224)
         showPrintToast("卓 " + (effectiveTable(order) || "--") + " の伝票を印刷しました");
       }).catch(function (err) {
         setPrintBusy(false);
+        markSlipPrinted(order.id);         // ブラウザ印刷まで到達したぶんも記録する (#224)
         console.error("[チビ伝] 実機印刷に失敗。ブラウザ印刷にフォールバック:", err);
         // 400 = IP未設定/不正(まだ実機を登録していない通常の状態)。それ以外は届かない・プリンター側の異常
         fallbackToBrowserPrint(err && err.status === 400
@@ -4570,6 +4657,55 @@
       seatDialRid = null;
       seatDialBuf = "";
       seatDialContext = "reservation";
+    }
+
+    /* 伝票を 1.2秒の長押しで刷る (#224)。
+       従来はタップでプレビューを開き、その中の「印刷」を押す2手だった。厨房では手が塞がって
+       いる場面が多く、確認ダイアログを挟むぶん遅い。一方でプレビュー無しの通常タップだと
+       誤タップがそのまま紙になるため、長押しを印刷そのものの操作にしている。
+       短タップは従来どおりプレビュー (紙は出ない) を開く。
+       12px動かしたら取消。スクロール意図とみなす点は attachItemHandlers と揃える。 */
+    function attachSlipPrintHandlers(btn, progress, order) {
+      var timer = null, raf = null, startX = 0, startY = 0, pressing = false, printedByHold = false;
+      function stop() {
+        pressing = false;
+        if (timer) { clearTimeout(timer); timer = null; }
+        if (raf) { cancelAnimationFrame(raf); raf = null; }
+        btn.classList.remove("printing");
+        progress.style.width = "0%";
+      }
+      btn.addEventListener("pointerdown", function (ev) {
+        if (ev.button != null && ev.button !== 0) return;
+        if (mode !== "kitchen") return;   // 印刷はキッチン専用
+        startX = ev.clientX; startY = ev.clientY;
+        pressing = true; printedByHold = false;
+        var startedAt = Date.now();
+        btn.classList.add("printing");
+        function tick() {
+          if (!pressing) return;
+          var p = Math.min(1, (Date.now() - startedAt) / SLIP_PRINT_MS);
+          progress.style.width = (p * 100) + "%";
+          if (p < 1) raf = requestAnimationFrame(tick);
+        }
+        if (!prefersReducedMotion()) raf = requestAnimationFrame(tick);
+        timer = setTimeout(function () {
+          stop();
+          printedByHold = true;
+          printSlipNow(order);
+        }, SLIP_PRINT_MS);
+      });
+      btn.addEventListener("pointermove", function (ev) {
+        if (!pressing) return;
+        if (Math.abs(ev.clientX - startX) > 12 || Math.abs(ev.clientY - startY) > 12) stop();
+      });
+      btn.addEventListener("pointerup", stop);
+      btn.addEventListener("pointercancel", stop);
+      btn.addEventListener("pointerleave", stop);
+      btn.addEventListener("click", function (ev) {
+        // 長押しで刷った直後の click は捨てる。プレビューが開いてしまうため
+        if (printedByHold) { printedByHold = false; ev.preventDefault(); return; }
+        openSlip(order);
+      });
     }
 
     /* 卓番ボタンの表示をダイヤルの下書きへ同期 (カードが再描画されず残っている場合のみ) */
@@ -4969,6 +5105,7 @@
       loadRiceCues();
       loadTableOverrides();
       loadHallReady();
+      loadSlipPrinted();
       loadPrefs();
       loadPrinterIp();
       refreshSlipStyleFromServer();   // 印刷スタイルをサーバーから取得しておく (#144追補)
