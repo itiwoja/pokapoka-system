@@ -4552,9 +4552,11 @@
 
     /* スタイルはサーバー保存(/api/slip-style)が正。どの端末で設定してもKDS全端末に反映される。
        取得できたら localStorage キャッシュを更新し、伝票を開いていれば即座に再適用する */
+    /* 呼び出し側が完了を待てるよう Promise を返す。印刷は最新の書式で行いたいが、
+       投げっぱなしにすると localStorage の古い書式のまま組んでしまう (#230)。 */
     function refreshSlipStyleFromServer() {
-      if (typeof fetch !== "function") return;
-      fetch("/api/slip-style").then(function (res) {
+      if (typeof fetch !== "function") return Promise.resolve();
+      return fetch("/api/slip-style").then(function (res) {
         if (!res.ok) throw new Error("HTTP " + res.status);
         return res.json();
       }).then(function (st) {
@@ -4684,8 +4686,16 @@
        (.slip-backdrop の display:none 配下のままだと描画されず白紙になるため)。 */
     function printSlipNow(order) {
       if (printBusy) return;
-      populateSlip(order);
-      printSlip();
+      /* フォーマッターで直した書式を「次の1枚」から反映させるため、サーバー保存の
+         スタイル取得を待ってから組む (#230)。待たないと localStorage の古い値で
+         組んでしまい、変更が1枚遅れる (初回はスタイル無しで出る)。
+         取得中に押し直されないよう printBusy を先に立てる。 */
+      printBusy = true;
+      refreshSlipStyleFromServer().then(function () {
+        printBusy = false;
+        populateSlip(order);
+        printSlip();
+      });
     }
 
     /* 画像印字のコマンド体系。機種と合っていないと文字化け+行送りだけが延々出る。
