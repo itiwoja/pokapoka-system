@@ -119,6 +119,7 @@ cp config/config.example.json config/config.json
 | `order.ttlMin` | `ORDER_TTL_MIN` | 720 | 注文(`/api/orders`)の保持時間(1〜1440分)。日跨ぎで前日分が残らないための上限 |
 | `auth.token` | `RELAY_TOKEN` | — | **共有トークン**(8文字以上)。設定すると他端末はトークン必須になる。未設定なら認証なし(従来どおり) #174 |
 | `auth.trustLoopback` | `RELAY_TRUST_LOOPBACK` | 1 | ミニPC自身(127.0.0.1)をトークン無しで通すか。`0` で無効 |
+| `auth.cookieSecure` | `RELAY_COOKIE_SECURE` | `auto` | 認証Cookieの`Secure`属性。`auto` / `true` / `false` (環境変数は`auto` / `1` / `0`) |
 | **(不可)** | `TABLECHECK_API_KEY` | — | secret_key。**環境変数のみ**。未設定ならモック |
 | **(不可)** | `MOCK` | — | `1` でモック強制 |
 
@@ -188,7 +189,15 @@ cd relay-server && npm run preflight
 - **未設定なら従来どおり認証なし**。開発・検証の手順は何も変わらない
 - 設定すると、**ページもAPIもトークンが必要**になる(ページだけ素通しにすると、
   そのページからトークンを読み出されて意味がない)
-- 端末は次のいずれかで通る: `Authorization: Bearer <token>` / `?token=<token>` / Cookie `relay_token`
+- 端末は次のいずれかで通る: `Authorization: Bearer <token>` / GET・HEADのQR導線`?token=<token>` / Cookie `relay_token`
+- `?token=`を受け取ったGET/HEADは、`HttpOnly; Path=/; Max-Age=...; SameSite=Lax`のCookieを発行し、
+  `token`パラメータだけを除いた同じパスへ`303`リダイレクトする。他のクエリは保持し、token付きの
+  リクエストではページ本文を配信しないため、表示URL・履歴・Refererへ残りにくい
+- Cookieの`Secure`は`auth.cookieSecure`で制御する。既定の`auto`は、relayが**実際にTLSソケットで
+  受信した場合だけ**付与するため、通常の店内HTTPではログイン不能にならない。HTTPSリバースプロキシで
+  TLS終端する構成は`true`を明示する。この場合`/qr`も`https://`の接続先を生成する。偽装可能な
+  `X-Forwarded-Proto`等の転送ヘッダは自動判定に使わない
+- APIのPOST/DELETEではtoken付きURLを受理しない。Cookieまたは`Authorization: Bearer`を使う
 - **ミニPC自身(127.0.0.1)はトークン無しで通る**。QRでトークンを配る導線がミニPC上の
   `/qr` から始まるため。ミニPCを他人が触る運用なら `auth.trustLoopback` を `false` にする
 - **`/api/health` だけは認証なしで読める**。疎通確認を詰まらせないため(読み取り専用)
@@ -359,11 +368,11 @@ curl -X POST http://<ミニPCのIP>:8000/api/orders \
 
 | フィールド | 必須 | 内容 |
 |---|---|---|
-| `orderId` | ✅ | 注文端末が振る一意ID(64文字以内)。**冪等キー**: 同じIDの再送は二重注文にならない |
+| `orderId` | ✅ | 注文端末が振る一意ID(64文字以内)。**冪等キー**: 同じID・同じ内容の再送は二重注文にならず、内容差分は同じ注文の更新になる |
 | `table` | ✅ | 卓番(6文字以内)。**ペイロードで受け取る**(送信元IPからは引かない) |
 | `items[].name` | ✅ | 品名(80文字以内)。KDS の表示名がそのまま |
 | `items[].qty` | | 個数(1〜99。既定1) |
-| `items[].note` | | 品目の注記(200文字以内)。KDS の注記欄に出る |
+| `items[].note` / `items[].options` | | 品目の注記・オプション(200文字以内)。`note` を優先し、KDS の注記欄に出る |
 | `items[].allergies` | | アレルギー注記(200文字以内)。KDS では注記と並べて表示 |
 | `people` | | 人数(0〜99)。カードの人数表示に使う |
 | `orderedAt` | | ISO 8601。省略時はサーバー受信時刻。**未来時刻はサーバー時刻に丸める**(端末の時計ズレで経過時間が止まって見えるのを防ぐ) |
@@ -372,8 +381,9 @@ curl -X POST http://<ミニPCのIP>:8000/api/orders \
 
 | 状況 | ステータス | body |
 |---|---|---|
-| 新規受付 | `201` | `{ok:true, duplicate:false, order:{...}}` |
-| 再送(同一 `orderId`) | `200` | `{ok:true, duplicate:true, order:{...}}` — 既存を正とし、内容が違っても上書きしない |
+| 新規受付 | `201` | `{ok:true, duplicate:false, updated:false, order:{...}}` |
+| 同一内容の再送 | `200` | `{ok:true, duplicate:true, updated:false, order:{...}}` — 無変更 |
+| 内容が異なる更新 | `200` | `{ok:true, duplicate:false, updated:true, order:{...}}` — 同じ `orderId` の既存注文を置換 |
 | 検証エラー | `400` | `{ok:false, error:"table must be ..."}` — どこを直せばよいか分かる文言 |
 | 取消 | `204` / `404` | `DELETE /api/orders/{orderId}` |
 
@@ -384,10 +394,18 @@ curl -X POST http://<ミニPCのIP>:8000/api/orders \
 保持は**当日メモリのみ**(#115)。`order.ttlMin`(既定720分)を過ぎた注文は配信から落ちる。
 再起動すると受付済みの注文は消えるので、注文端末側は未反映を検知したら再送してよい(冪等)。
 
+更新対象は `table`、`people` と、`items[]` の配列全体（並び順、`name`、`qty`、
+`note` / `options`、`allergies`）。`orderId` は識別子、初回の受付時刻 `start` は KDS の
+タイマー・受付順の基準なので更新しない。`orderedAt` を変えて再送しても初回の `start` を維持する。
+
+更新後の内容をもう一度送った場合は同一内容の再送として `duplicate:true` になる。取消との競合は
+**relay に最後に到着した操作を正**とする。`DELETE` 後に同じ `orderId` の有効な `POST` が届けば
+新規受付 (`201`) として再作成し、反対に更新後に `DELETE` が届けば配信から取り除く。
+
 **まだ決めていないこと**(別チームと詰める):
 
 - 商品の識別を名前の文字列で通すか、商品IDにしてマスタを持つか(現状は**名前が正**)
-- 同一卓への継ぎ足し注文は**別 `orderId` = KDS 上は別カード**として扱う(暫定)
+- 同じ注文の追加・訂正は同じ `orderId` で全内容を再送する。別会計・別注文としてカードを分ける場合のみ別 `orderId` を使う
 - KDS 側で完了・削除した注文は relay からは消えない(TTL 満了まで配信される)。
   KDS は完了状態(`kds_done_v2`)と削除済みID(`kds_deleted_v1`)を持っており再表示はされないが、
   完了を relay へ返す経路は未実装(#132 の厨房状態同期と合わせて設計するのが自然)
@@ -416,6 +434,8 @@ KDS 本体は無改修。**このサーバー経由で `/` を開くと、配信
 こちらのマージ規則:
 
 - **サーバー由来の注文は毎回サーバーの内容で置き換える**
+- 同じ `orderId` の更新でも、受付時刻を基準にする**タイマー**、`orderId` に紐づく**コンロ割当・タイマーロック・カード並び順・手動削除状態**は維持する
+- 品目完了数は `name` + `options` + `allergies` が同じ行へ追従する。数量減では新数量を上限とし、数量増では既に完了した個数だけを維持する。新規行または品名・注記・アレルギーが訂正された行は未完了にする。同内容の行が複数ある場合は出現順で対応づける
 - **KDS 内で生まれた注文(予約→着手の `res-*` カード)は残す** — 上書きするとホールが着手した
   予約カードが次のポーリングで消えるため
 - 通信断時は `window.KDS_ORDERS` に触らない(直前の表示を保持)
@@ -423,12 +443,14 @@ KDS 本体は無改修。**このサーバー経由で `/` を開くと、配信
 ## テスト
 
 ```sh
-node relay-server/tablecheck-sync.test.js
-node --test relay-server/booking-resync.test.js relay-server/server.test.js \
-  relay-server/seat-occupancy.test.js relay-server/load-config.test.js \
-  relay-server/printer.test.js relay-server/auth.test.js \
-  relay-server/order-intake.test.js
+cd relay-server
+npm ci
+npm test
 ```
+
+Node.js 22 を使用する GitHub Actions と同じく、`npm ci` は lockfile に固定された依存関係を
+導入し、`npm test` はこのディレクトリの全 `*.test.js` を実行する。テストは店舗の設定ファイル、
+認証情報、TableCheck などの実 API を必要とせず、失敗時は非ゼロ終了する。
 
 正規化(スキーマ候補キー・pax→adults フォールバック)、memo パーサ、
 upsert/404削除/当日パージ/KDS形式変換に加え、全件ページング、原子的なstore差替え、

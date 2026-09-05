@@ -5,6 +5,7 @@
  *   1. GET /api/stock を定期取得 → localStorage "kds_stock_v1" へマージ →
  *      BroadcastChannel "kds_sync" に {type:"stock"} を流して全タブへ反映。
  *   2. GET /api/orders を定期取得 → window.KDS_ORDERS へ反映 (注文端末由来の注文 #139)。
+ *   3. GET /api/health と各データAPIの結果を集計 → KDSへ同期状態を通知 (#207)。
  *
  * 使い方 (どちらか):
  *   A. kds-a-grid.html の </body> 直前に <script src="/relay-server/kds-bridge.js"></script>
@@ -19,6 +20,9 @@
  *
  * マージ規則 (注文フィード):
  *   - サーバー由来の注文は毎回サーバーの内容で置き換える
+ *   - 同じ id の更新では、コンロ・タイマーロック・並び順は id に紐づくためそのまま維持する
+ *   - 品目完了数は「品名・オプション・アレルギー」が同じ行へ追従し、数量減では新数量を上限にする
+ *     (新規行または内容が訂正された行は未完了から開始する)
  *   - KDS 内で発生した注文 (予約→着手の "res-*" カード) は残す。消してしまうと
  *     ホールが着手した予約カードが次のポーリングで消える
  *   - 取得に失敗したときは window.KDS_ORDERS に触らない (直前の表示を保持)
@@ -29,6 +33,7 @@
   var API_SEATS = "/api/seats";
   var API_ORDERS = "/api/orders";
   var API_KITCHEN = "/api/kitchen-state";
+  var API_HEALTH = "/api/health";
   var LS_STOCK = "kds_stock_v1";
   var LS_BRIDGE_SEEN = "kds_bridge_seen_v1"; // 一度取り込んだ rid (サーバー由来の印 + 着手/削除後の復活防止)
   var LS_KONRO = "kds_konro_v1";
@@ -36,14 +41,182 @@
   var LS_LOCKED = "kds_locked_v1";
   var LS_ORDER = "kds_order_v1";
   var LS_DELETED = "kds_deleted_v1";
+  var LS_SERVER_ORDERS = "kds_server_orders_v1"; // 前回フィード。再読込・通信断をまたぐ品目状態移行に使う
   var BC_NAME = "kds_sync";
   var POLL_MS = 5000;                        // 店内 LAN なので短くてよい (対 TableCheck の30秒とは別物)
   var ORDER_POLL_MS = 2000;                  // 注文は厨房の着手速度に効くので予約より短く
   var KITCHEN_POLL_MS = 1500;                // コンロの取り合いに効くので短め
   var KITCHEN_FLUSH_MS = 200;                // 連打はまとめて送る
+  var KITCHEN_RETRY_MS = 1000;               // 通信断中の高速ループを避けつつ、復旧後は速やかに追いつく
+  var HEALTH_POLL_MS = 5000;
+  var STATUS_TICK_MS = 1000;
+  var SYNC_DELAYED_MS = 10000;               // 一時的な失敗では警告せず、10秒継続で遅延
+  var SYNC_OFFLINE_MS = 30000;               // 30秒成功が無ければオフライン
+  var SYNC_CHANNELS = ["reservations", "orders", "kitchen"];
   var KITCHEN_EVENTS = { konro: 1, toggle: 1, timerLock: 1, order: 1, deleteOrder: 1 };
 
   var bc = null; // ブラウザで動く時だけ末尾で生成 (Node にも BroadcastChannel があり、生成するとテストプロセスが終了しなくなる)
+
+  /* ===================== 同期状態 (#207) =====================
+     失敗を1回見ただけで赤くすると、店内Wi-Fiの瞬断が過剰な警告になる。
+     最終成功からの経過時間で「正常 / 同期遅延 / オフライン」を決め、
+     取得に失敗しても各データのメモリ・localStorageは変更しない。 */
+  var SYNC_STATES = { pending: "pending", normal: "normal", delayed: "delayed", offline: "offline" };
+
+  function safeSyncError(status) {
+    var n = Number(status);
+    return Number.isInteger(n) && n >= 100 && n <= 599 ? "HTTP " + n : "通信エラー";
+  }
+
+  function createSyncStatusTracker(options) {
+    options = options || {};
+    var channels = Array.isArray(options.channels) && options.channels.length ? options.channels.slice() : SYNC_CHANNELS.slice();
+    var delayedMs = Number(options.delayedMs) > 0 ? Number(options.delayedMs) : SYNC_DELAYED_MS;
+    var requestedOfflineMs = Number(options.offlineMs);
+    var offlineMs = requestedOfflineMs > delayedMs ? requestedOfflineMs : Math.max(SYNC_OFFLINE_MS, delayedMs * 3);
+    var records = {};
+
+    function recordFor(name) {
+      var key = String(name);
+      if (!records[key]) {
+        records[key] = {
+          firstAttemptAt: null,
+          lastAttemptAt: null,
+          lastSuccessAt: null,
+          lastFailureAt: null,
+          retrying: false,
+          failureCount: 0,
+          error: null,
+        };
+      }
+      return records[key];
+    }
+
+    function timestamp(value) {
+      var n = Number(value);
+      return Number.isFinite(n) ? n : Date.now();
+    }
+
+    function attempt(name, at) {
+      var record = recordFor(name);
+      var time = timestamp(at);
+      if (record.firstAttemptAt === null) record.firstAttemptAt = time;
+      record.lastAttemptAt = time;
+      record.retrying = record.failureCount > 0;
+    }
+
+    function success(name, at) {
+      var record = recordFor(name);
+      var time = timestamp(at);
+      if (record.firstAttemptAt === null) record.firstAttemptAt = time;
+      record.lastAttemptAt = time;
+      record.lastSuccessAt = time;
+      record.retrying = false;
+      record.failureCount = 0;
+      record.error = null;
+    }
+
+    function failure(name, at, status) {
+      var record = recordFor(name);
+      var time = timestamp(at);
+      if (record.firstAttemptAt === null) record.firstAttemptAt = time;
+      record.lastAttemptAt = time;
+      record.lastFailureAt = time;
+      record.retrying = true;
+      record.failureCount++;
+      // statusだけを保存し、fetch例外の内容(URLや認証情報を含み得る)は画面へ出さない。
+      record.error = safeSyncError(status);
+    }
+
+    function classify(record, at) {
+      if (record.firstAttemptAt === null) return SYNC_STATES.pending;
+      var reference = record.lastSuccessAt === null ? record.firstAttemptAt : record.lastSuccessAt;
+      var age = Math.max(0, timestamp(at) - reference);
+      if (age >= offlineMs) return SYNC_STATES.offline;
+      if (age >= delayedMs) return SYNC_STATES.delayed;
+      return record.lastSuccessAt === null ? SYNC_STATES.pending : SYNC_STATES.normal;
+    }
+
+    function publicRecord(name, at) {
+      var record = recordFor(name);
+      return {
+        state: classify(record, at),
+        lastAttemptAt: record.lastAttemptAt,
+        lastSuccessAt: record.lastSuccessAt,
+        lastFailureAt: record.lastFailureAt,
+        retrying: !!record.retrying,
+        failureCount: record.failureCount,
+        error: record.error,
+      };
+    }
+
+    function snapshot(at) {
+      var time = timestamp(at);
+      var channelSnapshot = {};
+      var hasNormal = false;
+      var hasDelayed = false;
+      var hasOffline = false;
+      var hasPending = false;
+      channels.forEach(function (name) {
+        var item = publicRecord(name, time);
+        channelSnapshot[name] = item;
+        if (item.state === SYNC_STATES.normal) hasNormal = true;
+        else if (item.state === SYNC_STATES.delayed) hasDelayed = true;
+        else if (item.state === SYNC_STATES.offline) hasOffline = true;
+        else hasPending = true;
+      });
+
+      var relay = publicRecord("relay", time);
+      var state;
+      if (relay.state === SYNC_STATES.offline || (hasOffline && !hasNormal && !hasDelayed)) state = SYNC_STATES.offline;
+      else if (hasOffline || hasDelayed) state = SYNC_STATES.delayed;
+      else if (hasPending && !hasNormal) state = SYNC_STATES.pending;
+      else state = SYNC_STATES.normal;
+
+      return {
+        state: state,
+        at: time,
+        relay: relay,
+        channels: channelSnapshot,
+      };
+    }
+
+    return {
+      attempt: attempt,
+      success: success,
+      failure: failure,
+      snapshot: snapshot,
+      classify: function (name, at) { return publicRecord(name, at).state; },
+    };
+  }
+
+  var syncStatus = createSyncStatusTracker();
+
+  function publishSyncStatus() {
+    if (typeof window === "undefined") return;
+    var status = syncStatus.snapshot(Date.now());
+    window.__KDS_SYNC_STATUS__ = status;
+    try {
+      window.dispatchEvent(new CustomEvent("kds-sync-status", { detail: status }));
+    } catch (e) {
+      // CustomEventが無い古いWebViewでは、次のpollでwindow.__KDS_SYNC_STATUS__を読む。
+    }
+  }
+
+  function markSyncAttempt(name) {
+    syncStatus.attempt(name, Date.now());
+    publishSyncStatus();
+  }
+
+  function markSyncSuccess(name) {
+    syncStatus.success(name, Date.now());
+    publishSyncStatus();
+  }
+
+  function markSyncFailure(name, status) {
+    syncStatus.failure(name, Date.now(), status);
+    publishSyncStatus();
+  }
 
   function load(key, fb) { try { var v = JSON.parse(localStorage.getItem(key)); return v == null ? fb : v; } catch (e) { return fb; } }
   function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {} }
@@ -98,12 +271,23 @@
 
   async function tickOnce() {
     var res, incoming;
+    markSyncAttempt("reservations");
     try {
       res = await fetch(API, { cache: "no-store" });
-      if (!res.ok) throw new Error(res.status);
+      if (!res.ok) {
+        markSyncFailure("reservations", res.status);
+        return;
+      }
       incoming = await res.json();
-      if (!Array.isArray(incoming)) return;
-    } catch (e) { return; }                  // 通信断: 直前の表示を保持 (6/18 方針)
+      if (!Array.isArray(incoming)) {
+        markSyncFailure("reservations");
+        return;
+      }
+    } catch (e) {
+      markSyncFailure("reservations");
+      return;                                // 通信断: 直前の表示を保持 (6/18 方針)
+    }
+    markSyncSuccess("reservations");
 
     // 着席時に「誰が座っているか」を座席占有へ載せるため、rid → 予約者名を控えておく。
     // 着席の合図(BroadcastChannel)にはストックから消えた後の配列しか乗らないので、ここで拾う (#123)
@@ -122,6 +306,25 @@
     // 同一タブへの反映: KDS は storage イベント/BC を購読しているが、自タブには BC が届かないため
     // ページ側の再描画フックが無い場合に備え、控えめにリロードは行わず storage 書換のみとする。
     // (kds-a-grid.html に <script src> で読み込ませた場合、別タブ・別端末には即時反映される)
+  }
+
+  async function tickHealth() {
+    markSyncAttempt("relay");
+    try {
+      var res = await fetch(API_HEALTH, { cache: "no-store" });
+      if (!res.ok) {
+        markSyncFailure("relay", res.status);
+        return;
+      }
+      var health = await res.json();
+      if (!health || typeof health !== "object" || Array.isArray(health)) {
+        markSyncFailure("relay");
+        return;
+      }
+      markSyncSuccess("relay");
+    } catch (e) {
+      markSyncFailure("relay");
+    }
   }
 
   /* ===================== 座席占有の登録 (#123) =====================
@@ -168,42 +371,101 @@
      取り込みは localStorage へ書くだけでよい: KDS 本体は 1秒ごとの poll() で
      loadKonro()/loadDone()/loadLocked()/loadOrderSeq()/loadDeleted() を実行しており、
      書き換えた内容がそのまま次の描画に乗る (KDS 本体は無改修のまま)。 */
-  var pending = [];          // 未送信のローカルイベント
-  var flushTimer = null;
-  var sending = false;
   var appliedRev = -1;       // 取り込み済みの relay rev
   var kitchenSession = null; // relay の起動識別子。再起動で rev が戻るのを検出する
   var seeded = false;        // 空の relay へ手元の状態を渡し済みか
 
-  function onLocalKitchenEvent(msg) {
-    if (!msg || !KITCHEN_EVENTS[msg.type]) return;
-    pending.push(msg);
-    if (flushTimer) return;
-    flushTimer = setTimeout(function () { flushTimer = null; flushKitchen(); }, KITCHEN_FLUSH_MS);
+  /**
+   * 厨房イベントを順序どおりに送るキュー。
+   * 失敗した batch は、その送信中に追加されたイベントより前へ戻して retryMs 後に再送する。
+   * イベントは絶対状態を表すため、応答喪失による同一 batch の再送も relay 側で安全に再適用できる。
+   */
+  function createKitchenQueue(sendBatch, options) {
+    options = options || {};
+    var flushMs = options.flushMs == null ? KITCHEN_FLUSH_MS : options.flushMs;
+    var retryMs = options.retryMs == null ? KITCHEN_RETRY_MS : options.retryMs;
+    var batchSize = options.batchSize || 200;
+    var queue = [];
+    var timer = null;
+    var inFlight = false;
+
+    function schedule(delay) {
+      if (timer || inFlight || !queue.length) return;
+      timer = setTimeout(function () {
+        timer = null;
+        flush();
+      }, delay);
+    }
+
+    async function flush() {
+      if (inFlight || !queue.length) return;
+      var batch = queue.splice(0, batchSize);
+      var succeeded = false;
+      inFlight = true;
+      try {
+        await sendBatch(batch);
+        succeeded = true;
+      } catch (e) {
+        // 後続イベントの前へ戻すことで、失敗前後の操作順を維持する。
+        queue = batch.concat(queue);
+      } finally {
+        inFlight = false;
+        if (queue.length) schedule(succeeded ? 0 : retryMs);
+      }
+    }
+
+    function enqueue(event) {
+      queue.push(event);
+      schedule(flushMs);
+    }
+
+    function enqueueAll(events) {
+      if (!events || !events.length) return;
+      queue = queue.concat(events);
+      schedule(flushMs);
+    }
+
+    function flushNow() {
+      if (timer) { clearTimeout(timer); timer = null; }
+      return flush();
+    }
+
+    return {
+      enqueue: enqueue,
+      enqueueAll: enqueueAll,
+      flushNow: flushNow,
+      isBusy: function () { return inFlight || queue.length > 0; },
+      pending: function () { return queue.slice(); },
+    };
   }
 
-  async function flushKitchen() {
-    if (sending || !pending.length) return;
-    var batch = pending.splice(0, 200);   // relay 側の受理上限に合わせて分割する
-    sending = true;
+  async function postKitchenBatch(fetchFn, batch) {
+    var res = await fetchFn(API_KITCHEN, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ events: batch }),
+    });
+    if (!res.ok) throw new Error(res.status);
+    return res.json();
+  }
+
+  var kitchenQueue = createKitchenQueue(async function (batch) {
+    markSyncAttempt("kitchen");
     try {
-      var res = await fetch(API_KITCHEN, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ events: batch }),
-      });
-      if (!res.ok) throw new Error(res.status);
-      var body = await res.json();
+      var body = await postKitchenBatch(fetch, batch);
+      markSyncSuccess("kitchen");
       // 自分の変更が relay に載った時点の rev。これより古いスナップショットは取り込まない
       // (取り込むと、送った直後の操作が一瞬巻き戻って見える)
       if (body && typeof body.rev === "number") appliedRev = Math.max(appliedRev, body.rev - 1);
     } catch (e) {
-      // 送信失敗: relay が落ちていても手元の KDS は動き続ける。イベントは捨てる
-      // (状態は絶対値なので、次の操作で最新値が送られて追いつく)
-    } finally {
-      sending = false;
-      if (pending.length) flushKitchen();
+      markSyncFailure("kitchen");
+      throw e;
     }
+  });
+
+  function onLocalKitchenEvent(msg) {
+    if (!msg || !KITCHEN_EVENTS[msg.type]) return;
+    kitchenQueue.enqueue(msg);
   }
 
   /* relay がまだ空のときに、この端末の手元の状態をイベント列にして送る。
@@ -237,8 +499,8 @@
     if (Array.isArray(seq) && seq.length) events.push({ type: "order", seq: seq.map(String) });
 
     if (!events.length) return false;
-    pending = pending.concat(events);
-    flushKitchen();
+    kitchenQueue.enqueueAll(events);
+    kitchenQueue.flushNow();
     return true;
   }
 
@@ -251,14 +513,25 @@
   }
 
   async function tickKitchen() {
-    if (sending || pending.length) return;      // 送信中は自分の変更が反映される前なので取り込まない
+    if (kitchenQueue.isBusy()) return;          // 未送信分がある間は古い relay 状態を取り込まない
     var snap;
+    markSyncAttempt("kitchen");
     try {
       var res = await fetch(API_KITCHEN, { cache: "no-store" });
-      if (!res.ok) throw new Error(res.status);
+      if (!res.ok) {
+        markSyncFailure("kitchen", res.status);
+        return;
+      }
       snap = await res.json();
-      if (!snap || typeof snap.rev !== "number") return;
-    } catch (e) { return; }                     // 通信断: 手元の状態を保持
+      if (!snap || typeof snap.rev !== "number") {
+        markSyncFailure("kitchen");
+        return;
+      }
+    } catch (e) {
+      markSyncFailure("kitchen");
+      return;                                   // 通信断: 手元の状態を保持
+    }
+    markSyncSuccess("kitchen");
 
     if (snap.sessionId !== kitchenSession) {    // relay 再起動 (rev が 0 に戻る) を検出
       kitchenSession = snap.sessionId;
@@ -309,8 +582,84 @@
     } catch (e) {}
   }
 
+  function itemStateKey(item) {
+    item = item || {};
+    return JSON.stringify([
+      String(item.name || ""),
+      item.options == null ? null : String(item.options),
+      item.allergies == null ? null : String(item.allergies),
+    ]);
+  }
+
+  function normalizedDoneCount(value, qty) {
+    var q = Math.max(0, Number(qty) || 0);
+    if (value === true) return q;
+    if (value === false || value == null) return 0;
+    var count = Number(value);
+    if (!Number.isFinite(count) || count < 0) return 0;
+    return Math.min(count, q);
+  }
+
+  /**
+   * 更新前の品目完了数を更新後の行へ移す。
+   * 行番号ではなく内容で対応づけるため、途中への品目追加や並べ替えで別品目の完了が移らない。
+   * 同じ内容の行が複数ある場合は出現順で対応づける。
+   */
+  function reconcileDoneCounts(previousOrder, nextOrder, savedCounts) {
+    var queues = {};
+    var previousItems = previousOrder && Array.isArray(previousOrder.items) ? previousOrder.items : [];
+    var counts = Array.isArray(savedCounts) ? savedCounts : [];
+    previousItems.forEach(function (item, index) {
+      var key = itemStateKey(item);
+      if (!queues[key]) queues[key] = [];
+      queues[key].push(normalizedDoneCount(counts[index], item && item.qty));
+    });
+
+    var nextItems = nextOrder && Array.isArray(nextOrder.items) ? nextOrder.items : [];
+    return nextItems.map(function (item) {
+      var queue = queues[itemStateKey(item)];
+      var carried = queue && queue.length ? queue.shift() : 0;
+      return normalizedDoneCount(carried, item && item.qty);
+    });
+  }
+
+  function itemsStateSignature(order) {
+    return JSON.stringify((order && order.items || []).map(function (item) {
+      return [itemStateKey(item), Number(item && item.qty) || 0];
+    }));
+  }
+
   function applyOrders(incoming) {
     var current = Array.isArray(window.KDS_ORDERS) ? window.KDS_ORDERS : [];
+    var previousFeed = load(LS_SERVER_ORDERS, []);
+    if (!Array.isArray(previousFeed)) previousFeed = [];
+    var previousById = {};
+    previousFeed.forEach(function (order) {
+      if (order && order.id != null) previousById[String(order.id)] = order;
+    });
+
+    var done = load(LS_DONE, {});
+    if (!done || typeof done !== "object" || Array.isArray(done)) done = {};
+    var reconciledEvents = [];
+    incoming.forEach(function (order) {
+      if (!order || order.id == null) return;
+      var id = String(order.id);
+      var previous = previousById[id];
+      if (!previous || itemsStateSignature(previous) === itemsStateSignature(order)) return;
+      var nextCounts = reconcileDoneCounts(previous, order, done[id]);
+      done[id] = nextCounts;
+      nextCounts.forEach(function (count, index) {
+        reconciledEvents.push({ type: "toggle", id: id, index: index, doneCount: count });
+      });
+    });
+    if (reconciledEvents.length) {
+      save(LS_DONE, done);
+      // relay の厨房状態にも絶対値を送り、次の同期で古い行番号へ巻き戻されないようにする。
+      // 通信断中も #205 の再送キューに残し、復旧後に順序どおり反映する。
+      kitchenQueue.enqueueAll(reconciledEvents);
+    }
+    if (JSON.stringify(previousFeed) !== JSON.stringify(incoming)) save(LS_SERVER_ORDERS, incoming);
+
     var nextIds = {};
     incoming.forEach(function (o) { if (o && o.id != null) nextIds[String(o.id)] = 1; });
     var newOrders = findNewOrders(serverOrderIds, incoming);
@@ -330,18 +679,43 @@
 
   async function tickOrders() {
     var res, incoming;
+    markSyncAttempt("orders");
     try {
       res = await fetch(API_ORDERS, { cache: "no-store" });
-      if (!res.ok) throw new Error(res.status);
+      if (!res.ok) {
+        markSyncFailure("orders", res.status);
+        return;
+      }
       incoming = await res.json();
-      if (!Array.isArray(incoming)) return;
-    } catch (e) { return; }        // 通信断: 直前の表示を保持 (window.KDS_ORDERS に触らない)
+      if (!Array.isArray(incoming)) {
+        markSyncFailure("orders");
+        return;
+      }
+    } catch (e) {
+      markSyncFailure("orders");
+      return;                          // 通信断: 直前の表示を保持 (window.KDS_ORDERS に触らない)
+    }
+    markSyncSuccess("orders");
     applyOrders(incoming);
   }
 
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { mergeStock: mergeStock, findNewOrders: findNewOrders }; // Node (テスト) から require された場合はポーリングしない
+    // Node (テスト) から require された場合はポーリングしない
+    module.exports = {
+      mergeStock: mergeStock,
+      findNewOrders: findNewOrders,
+      itemStateKey: itemStateKey,
+      reconcileDoneCounts: reconcileDoneCounts,
+      createKitchenQueue: createKitchenQueue,
+      postKitchenBatch: postKitchenBatch,
+      createSyncStatusTracker: createSyncStatusTracker,
+      SYNC_STATES: SYNC_STATES,
+      SYNC_DELAYED_MS: SYNC_DELAYED_MS,
+      SYNC_OFFLINE_MS: SYNC_OFFLINE_MS,
+    };
   } else {
+    window.__KDS_RELAY_BRIDGE__ = true;
+    publishSyncStatus();
     try { bc = new BroadcastChannel(BC_NAME); } catch (e) {}
     if (bc) {
       // KDS 本体が同一コンテキストで postMessage したものも、別の BroadcastChannel オブジェクトである
@@ -354,13 +728,17 @@
     }
     tickOnce();
     setInterval(tickOnce, POLL_MS);
+    tickHealth();
+    setInterval(tickHealth, HEALTH_POLL_MS);
     tickOrders();
     setInterval(tickOrders, ORDER_POLL_MS);
     tickKitchen();
     setInterval(tickKitchen, KITCHEN_POLL_MS);
+    setInterval(publishSyncStatus, STATUS_TICK_MS);
     console.log("[kds-bridge] 予約ストック取込を開始 (" + API + " を " + POLL_MS / 1000 + "秒間隔) / " +
       "注文取込 (" + API_ORDERS + " を " + ORDER_POLL_MS / 1000 + "秒間隔) / " +
       "厨房状態の端末間同期 (" + API_KITCHEN + " を " + KITCHEN_POLL_MS / 1000 + "秒間隔) / " +
+      "同期状態 (" + API_HEALTH + " を " + HEALTH_POLL_MS / 1000 + "秒間隔) / " +
       "着席時に座席占有を登録 (" + API_SEATS + ")");
   }
 })();

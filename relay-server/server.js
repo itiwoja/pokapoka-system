@@ -23,10 +23,12 @@ var http = require("http");
 var fs = require("fs");
 var os = require("os");
 var path = require("path");
+var crypto = require("crypto");
 var seats = require("./seat-occupancy");
 var kitchen = require("./kitchen-state");
 var orderIntake = require("./order-intake");
 var auth = require("./auth");
+var audit = require("./audit-log");
 var booking = require("./booking-resync");
 var loadConfig = require("./load-config");
 var printer = require("./printer");
@@ -63,6 +65,17 @@ function createRelay(options) {
   var setIntervalFn = options.setInterval || setInterval;
   var clearIntervalFn = options.clearInterval || clearInterval;
   var root = path.resolve(__dirname, "..");
+  var auditLog = options.auditLog || audit.createAuditLog({
+    filePath: options.auditLogPath || path.join(root, "config", "audit-log.jsonl"),
+    retentionDays: options.auditRetentionDays,
+    maxRecords: options.auditMaxRecords,
+    now: options.auditNow,
+    logger: {
+      error: function (message, err) {
+        log("audit: " + message + (err && err.message ? " (" + err.message + ")" : ""));
+      },
+    },
+  });
   var allowedStaticFiles = [
     "kds-a-grid.html",
     "slip-style-designer.html",   // 印刷スタイル設定ツール。KDSと同一オリジンで配信しlocalStorageを共有する
@@ -110,11 +123,33 @@ function createRelay(options) {
     var allowed = auth.check(req, url, config.authToken,
       req.socket && req.socket.remoteAddress, config.authTrustLoopback);
     if (!allowed.ok) {
+      auditLog.record({
+        operation: "auth.denied",
+        target: "route:" + req.method + " " + auditRoute(url.pathname),
+        result: "denied",
+        actor: requestActor(req, "invalid"),
+      });
       res.writeHead(401, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
       return res.end(JSON.stringify({ ok: false, error: "unauthorized: " + allowed.reason }));
     }
-    // QR経由(?token=)で来た端末には Cookie を渡す。以後はURLにトークンが要らない
-    if (allowed.setCookie) res.setHeader("Set-Cookie", auth.cookieHeader(config.authToken));
+    var auditContext = { auditLog: auditLog, actor: requestActor(req, allowed.reason) };
+    // GET/HEADのQR導線はCookieへ移した直後にclean URLへリダイレクトし、保護対象の
+    // 本文をtoken付きURLでは返さない。Location・本文にもtoken値を残さない (#209)。
+    if (allowed.setCookie) {
+      var secureCookie = config.authCookieSecure === "1" ||
+        (config.authCookieSecure === "auto" && !!(req.socket && req.socket.encrypted));
+      res.setHeader("Set-Cookie", auth.cookieHeader(config.authToken, secureCookie));
+      if (req.method === "GET" || req.method === "HEAD") {
+        url.searchParams.delete("token");
+        var cleanLocation = url.pathname + (url.searchParams.toString() ? "?" + url.searchParams.toString() : "");
+        res.writeHead(303, {
+          "Location": cleanLocation,
+          "Cache-Control": "no-store",
+          "Content-Length": "0",
+        });
+        return res.end();
+      }
+    }
 
     if (url.pathname === "/api/stock") {
       var stock = reservationSync.stockResponse(Date.now());
@@ -128,6 +163,29 @@ function createRelay(options) {
       }, reservationSync.health()));
     }
 
+    if (url.pathname === "/api/audit") {
+      // 認証無効モードでは誰でも閲覧できてしまうためHTTP公開しない。必要ならOS上の
+      // config/audit-log.jsonlを確認し、閲覧APIを使う運用では共有トークンを必須にする。
+      if (!config.authToken) return json(res, { ok: false, error: "audit API requires auth.token" }, 403);
+      if (req.method !== "GET") return json(res, { ok: false, error: "method not allowed" }, 405);
+      var auditFilters = {
+        from: url.searchParams.get("from") || undefined,
+        to: url.searchParams.get("to") || undefined,
+        operation: url.searchParams.get("operation") || undefined,
+        target: url.searchParams.get("target") || undefined,
+        limit: url.searchParams.get("limit") || undefined,
+      };
+      if (url.searchParams.get("format") === "jsonl") {
+        res.writeHead(200, {
+          "Content-Type": "application/x-ndjson; charset=utf-8",
+          "Content-Disposition": "attachment; filename=relay-audit-log.jsonl",
+          "Cache-Control": "no-store",
+        });
+        return res.end(auditLog.exportJSONL(auditFilters));
+      }
+      return json(res, auditLog.query(auditFilters));
+    }
+
     if (url.pathname === "/api/seats" || url.pathname.indexOf("/api/seats/") === 0) {
       return handleSeats(req, res, url, {
         reservationSync: reservationSync,
@@ -135,19 +193,20 @@ function createRelay(options) {
         beforeMin: config.seatBeforeMin,
         afterMin: config.seatAfterMin,
         walkinTtlMs: config.seatWalkinTtlMs,
+        audit: auditContext,
       });
     }
 
     if (url.pathname === "/api/kitchen-state") {
-      return handleKitchenState(req, res, { state: kitchenState, ttlMs: config.kitchenTtlMs });
+      return handleKitchenState(req, res, { state: kitchenState, ttlMs: config.kitchenTtlMs, audit: auditContext });
     }
 
     if (url.pathname === "/api/orders" || url.pathname.indexOf("/api/orders/") === 0) {
-      return handleOrders(req, res, url, { orders: orders, ttlMs: config.orderTtlMs });
+      return handleOrders(req, res, url, { orders: orders, ttlMs: config.orderTtlMs, audit: auditContext });
     }
 
     if (url.pathname === "/api/print" && req.method === "POST") {
-      return handlePrint(req, res, printerModule, slipStyle, printerIp);
+      return handlePrint(req, res, printerModule, slipStyle, printerIp, auditContext);
     }
 
     /* プリンターIP (#144追補)。スタイル同様サーバー保存にして、どの端末のKDSからでも
@@ -158,9 +217,14 @@ function createRelay(options) {
         return readJson(req, res, function (body) {
           var ip = body && body.ip != null ? String(body.ip).trim() : "";
           if (ip && !printerModule.isPrivateIPv4(ip)) {
+            recordAudit(auditContext, "printer.update", "printer:main", "failure", null,
+              { configured: !!ip, reason: "invalid-ip" });
             return json(res, { ok: false, error: "printer ip must be a private LAN IPv4 address" }, 400);
           }
+          var wasConfigured = !!printerIp.get();
           printerIp.set(ip);   // 空文字は「未設定に戻す」
+          recordAudit(auditContext, "printer.update", "printer:main", "success",
+            { configured: wasConfigured }, { configured: !!ip });
           return json(res, { ok: true, ip: ip });
         });
       }
@@ -174,7 +238,11 @@ function createRelay(options) {
       if (req.method === "GET") return json(res, slipStyle.get());
       if (req.method === "POST") {
         return readJson(req, res, function (body) {
-          json(res, { ok: true, style: slipStyle.set(body) });
+          var beforeStyle = styleSummary(slipStyle.get());
+          var savedStyle = slipStyle.set(body);
+          recordAudit(auditContext, "slip-style.update", "slip-style:default", "success",
+            beforeStyle, styleSummary(savedStyle));
+          json(res, { ok: true, style: savedStyle });
         });
       }
       res.writeHead(405);
@@ -201,6 +269,9 @@ function createRelay(options) {
     var rel;
     try { rel = url.pathname === "/" ? "/kds-a-grid.html" : decodeURIComponent(url.pathname); }
     catch (err) { res.writeHead(400); return res.end("bad request"); }
+    // URL内のWindows/POSIX両方の区切りを同じものとして扱い、実行OSに関係なく
+    // エンコードされたパストラバーサルをallowlist判定より先に拒否する。
+    rel = rel.replace(/[\\/]/g, path.sep);
     var file = path.normalize(path.join(root, rel));
     var relativePath = path.relative(root, file);
     if (relativePath === ".." || relativePath.indexOf(".." + path.sep) === 0 || path.isAbsolute(relativePath)) {
@@ -347,7 +418,17 @@ function createConfig(env, options) {
     // ミニPC自身(ループバック)を信頼するか。既定は信頼する — QRでトークンを配る導線が
     // ミニPC上の /qr から始まるため。ミニPCを他人が触る運用なら 0 にする
     authTrustLoopback: src.RELAY_TRUST_LOOPBACK !== "0",
+    // autoは実際のTLSソケットだけを信頼する。X-Forwarded-Protoは任意クライアントが
+    // 偽装できるため参照しない。TLS終端プロキシ利用時は明示的に1へ設定する (#209)
+    authCookieSecure: normalizeCookieSecure(src.RELAY_COOKIE_SECURE),
   };
+}
+
+function normalizeCookieSecure(value) {
+  if (value === undefined || value === null || value === "") return "auto";
+  var normalized = String(value).toLowerCase();
+  if (normalized === "auto" || normalized === "1" || normalized === "0") return normalized;
+  throw new Error("auth.cookieSecure は auto / true / false (環境変数は auto / 1 / 0) のいずれかにする");
 }
 
 /**
@@ -504,14 +585,15 @@ function handleQrPage(res, config, hostHeader) {
 
   var base, reachable;
   if (usable) {
-    base = "http://" + fromHeader;                  // Hostヘッダはポートを含む
+    base = (config.authCookieSecure === "1" ? "https://" : "http://") + fromHeader;
     reachable = true;
   } else {
     var isLoopback = config.host === "127.0.0.1" || config.host === "localhost";
     var lanIp = isLoopback ? detectLanIp() : config.host;
     if (lanIp === "0.0.0.0" || lanIp === "::") lanIp = detectLanIp();
     reachable = !!lanIp && lanIp !== "127.0.0.1";   // 127.0.0.1待ち受けでは他端末から届かない
-    base = "http://" + (lanIp || "127.0.0.1") + ":" + config.port;
+    base = (config.authCookieSecure === "1" ? "https://" : "http://") +
+      (lanIp || "127.0.0.1") + ":" + config.port;
   }
   // 認証有効時は QR にトークンを載せる。iPad は1回読めば Cookie が入り、以後は不要 (#174)
   var tokenQuery = config.authToken ? "?token=" + encodeURIComponent(config.authToken) : "";
@@ -613,16 +695,22 @@ function createPrinterIpStore(filePath, printerModule, log) {
 }
 
 /** POST /api/print — チビ伝を実機プリンターへ送る (#144)。IPは店内LANのプライベートアドレスのみ許可 */
-function handlePrint(req, res, printerModule, slipStyle, printerIp) {
+function handlePrint(req, res, printerModule, slipStyle, printerIp, auditContext) {
   // 依存(iconv-lite)が入っていなければ、原因の分かる 503 で返す (#173)。
   // KDS 側は非200で window.print() にフォールバックするので、印刷操作自体は止まらない
   var deps = printerModule.checkDependencies ? printerModule.checkDependencies() : { ok: true };
-  if (!deps.ok) return json(res, { ok: false, error: deps.error }, 503);
+  if (!deps.ok) {
+    recordAudit(auditContext, "print.execute", "printer:main", "failure", null,
+      { reason: "dependency-unavailable" });
+    return json(res, { ok: false, error: deps.error }, 503);
+  }
 
   readJson(req, res, function (body) {
     // ip未指定はサーバー保存のプリンターIP(/api/printer)を使う。端末ごとの再登録を不要にする
     var ip = (body && body.ip) || (printerIp && printerIp.get());
     if (!printerModule.isPrivateIPv4(ip)) {
+      recordAudit(auditContext, "print.execute", "printer:main", "failure", null,
+        { reason: "invalid-ip" });
       return json(res, { ok: false, error: "printer ip must be a private LAN IPv4 address" }, 400);
     }
     var buffer;
@@ -636,12 +724,16 @@ function handlePrint(req, res, printerModule, slipStyle, printerIp) {
           emulation: body && body.emulation,
         });
       } catch (err) {
+        recordAudit(auditContext, "print.execute", "printer:main", "failure", null,
+          { reason: "build-raster" });
         return json(res, { ok: false, error: "failed to build raster job: " + err.message }, 500);
       }
     } else {
       if (body && body.raster) {
         // 寸法とデータ長が食い違うラスターは、黙ってテキスト印字に落ちると
         // 「何か出たが別物」になって原因が分かりにくい。ここで明示的に弾く
+        recordAudit(auditContext, "print.execute", "printer:main", "failure", null,
+          { reason: "invalid-raster" });
         return json(res, { ok: false, error: "invalid raster (width/height and data length do not match)" }, 400);
       }
       // style未指定はサーバー保存のスタイル(/api/slip-style)を使う。どの端末から印刷しても同じ見た目になる。
@@ -650,11 +742,19 @@ function handlePrint(req, res, printerModule, slipStyle, printerIp) {
       if (body && body.style == null && saved && !Array.isArray(saved.elements)) body.style = saved;
       var job = printerModule.normalizeJob(body);
       try { buffer = printerModule.buildEscPos(job); }
-      catch (err) { return json(res, { ok: false, error: "failed to build print job: " + err.message }, 500); }
+      catch (err) {
+        recordAudit(auditContext, "print.execute", "printer:main", "failure", null,
+          { reason: "build-job" });
+        return json(res, { ok: false, error: "failed to build print job: " + err.message }, 500);
+      }
     }
     printerModule.sendToPrinter(ip, buffer).then(function () {
+      recordAudit(auditContext, "print.execute", "printer:main", "success", null,
+        { configured: true });
       json(res, { ok: true });
     }).catch(function (err) {
+      recordAudit(auditContext, "print.execute", "printer:main", "failure", null,
+        { reason: "send-failed" });
       json(res, { ok: false, error: String(err && err.message || err) }, 502);
     });
   });
@@ -678,8 +778,17 @@ function handleSeats(req, res, url, context) {
     return readJson(req, res, function (body) {
       // rid があれば「予約の着席」。卓番はスタッフが KDS で割り当てるローカルデータで、
       // TableCheck 側には無い(あっても希望席種まで)ため、ここが唯一の正本になる
+      var requestedTable = body && body.table != null ? String(body.table).trim() : "unknown";
+      var previous = context.walkins.get(requestedTable);
       var occupancy = seats.registerWalkin(context.walkins, body && body.table, Date.now(), body);
-      if (!occupancy) return json(res, { ok: false, error: "table must be a non-empty string of at most 6 characters" }, 400);
+      if (!occupancy) {
+        recordAudit(context.audit, "seat.update", auditTarget("seat", requestedTable), "failure", null,
+          { reason: "invalid-table" });
+        return json(res, { ok: false, error: "table must be a non-empty string of at most 6 characters" }, 400);
+      }
+      recordAudit(context.audit, previous ? "seat.update" : "seat.create", auditTarget("seat", occupancy.table),
+        "success", previous ? { state: "occupied" } : null,
+        { state: "occupied", source: occupancy.rid ? "reservation" : "walkin" });
       json(res, occupancy, 201);
     });
   }
@@ -687,9 +796,20 @@ function handleSeats(req, res, url, context) {
     var rawTable = url.pathname.slice("/api/seats/".length);
     var table;
     try { table = decodeURIComponent(rawTable); }
-    catch (e) { return json(res, { ok: false, error: "invalid table" }, 400); }
-    if (!seats.validateTable(table)) return json(res, { ok: false, error: "invalid table" }, 400);
-    if (!seats.releaseWalkin(context.walkins, table)) return json(res, { ok: false, error: "seat not found" }, 404);
+    catch (e) {
+      recordAudit(context.audit, "seat.release", "seat:invalid", "failure", null, { reason: "invalid-table" });
+      return json(res, { ok: false, error: "invalid table" }, 400);
+    }
+    if (!seats.validateTable(table)) {
+      recordAudit(context.audit, "seat.release", auditTarget("seat", table), "failure", null, { reason: "invalid-table" });
+      return json(res, { ok: false, error: "invalid table" }, 400);
+    }
+    if (!seats.releaseWalkin(context.walkins, table)) {
+      recordAudit(context.audit, "seat.release", auditTarget("seat", table), "failure", null, { reason: "not-found" });
+      return json(res, { ok: false, error: "seat not found" }, 404);
+    }
+    recordAudit(context.audit, "seat.release", auditTarget("seat", table), "success",
+      { state: "occupied" }, { state: "released" });
     res.writeHead(204, { "Cache-Control": "no-store" });
     return res.end();
   }
@@ -709,7 +829,16 @@ function handleKitchenState(req, res, context) {
   if (req.method === "POST") {
     return readJson(req, res, function (body) {
       kitchen.purgeStale(context.state, Date.now(), context.ttlMs);
+      var beforeDeleted = Object.assign({}, context.state.deleted);
       var result = kitchen.applyEvents(context.state, body && body.events, Date.now());
+      var events = body && Array.isArray(body.events) ? body.events : [];
+      events.forEach(function (event) {
+        if (!event || event.type !== "deleteOrder") return;
+        var applied = !!context.state.deleted[event.id] && !beforeDeleted[event.id];
+        recordAudit(context.audit, "order.cancel.kds", auditTarget("order", event.id),
+          applied ? (result.error ? "partial" : "success") : (result.error ? "failure" : "success"),
+          null, { state: applied ? "deleted" : "unchanged" });
+      });
       if (result.error) return json(res, { ok: false, error: result.error }, 400);
       return json(res, { ok: true, rev: result.rev, sessionId: context.state.sessionId });
     });
@@ -720,7 +849,7 @@ function handleKitchenState(req, res, context) {
 /**
  * 注文端末 → relay → KDS の受け口 (#139)。
  * 卓番はペイロードで受け取る (送信元IPからは引かない)。
- * 継ぎ足し注文は別の orderId で送ってもらい、KDS では別カードとして出す。
+ * 同じ orderId の同一内容は冪等再送、内容差分は既存注文の更新として扱う。
  */
 function handleOrders(req, res, url, context) {
   if (url.pathname === "/api/orders" && req.method === "GET") {
@@ -729,23 +858,95 @@ function handleOrders(req, res, url, context) {
   if (url.pathname === "/api/orders" && req.method === "POST") {
     return readJson(req, res, function (body) {
       var result = orderIntake.normalizeOrder(body, Date.now());
-      if (result.error) return json(res, { ok: false, error: result.error }, 400);
+      var requestedOrderId = body && body.orderId != null ? String(body.orderId) : "unknown";
+      if (result.error) {
+        recordAudit(context.audit, "order.upsert", auditTarget("order", requestedOrderId), "failure", null,
+          { reason: "validation" });
+        return json(res, { ok: false, error: result.error }, 400);
+      }
       var put = orderIntake.putOrder(context.orders, result.order);
-      // 再送は成功として返す。エラーにすると注文端末側が延々リトライして二重注文を誘発する
-      return json(res, { ok: true, duplicate: !put.created, order: put.order }, put.created ? 201 : 200);
+      var operation = put.created ? "order.create" : (put.updated ? "order.update" : "order.duplicate");
+      recordAudit(context.audit, operation, auditTarget("order", result.order.id), "success", null, {
+        itemCount: Array.isArray(result.order.items) ? result.order.items.length : 0,
+      });
+      // 冪等再送も更新も成功として返す。注文端末は duplicate / updated で結果を識別できる。
+      return json(res, {
+        ok: true,
+        duplicate: put.duplicate,
+        updated: put.updated,
+        order: put.order,
+      }, put.created ? 201 : 200);
     });
   }
   if (url.pathname.indexOf("/api/orders/") === 0 && req.method === "DELETE") {
     var raw = url.pathname.slice("/api/orders/".length);
     var orderId;
     try { orderId = decodeURIComponent(raw); }
-    catch (e) { return json(res, { ok: false, error: "invalid orderId" }, 400); }
-    if (!orderIntake.validateOrderId(orderId)) return json(res, { ok: false, error: "invalid orderId" }, 400);
-    if (!orderIntake.removeOrder(context.orders, orderId)) return json(res, { ok: false, error: "order not found" }, 404);
+    catch (e) {
+      recordAudit(context.audit, "order.cancel", "order:invalid", "failure", null, { reason: "invalid-id" });
+      return json(res, { ok: false, error: "invalid orderId" }, 400);
+    }
+    if (!orderIntake.validateOrderId(orderId)) {
+      recordAudit(context.audit, "order.cancel", auditTarget("order", orderId), "failure", null, { reason: "invalid-id" });
+      return json(res, { ok: false, error: "invalid orderId" }, 400);
+    }
+    if (!orderIntake.removeOrder(context.orders, orderId)) {
+      recordAudit(context.audit, "order.cancel", auditTarget("order", orderId), "failure", null, { reason: "not-found" });
+      return json(res, { ok: false, error: "order not found" }, 404);
+    }
+    recordAudit(context.audit, "order.cancel", auditTarget("order", orderId), "success",
+      { state: "active" }, { state: "deleted" });
     res.writeHead(204, { "Cache-Control": "no-store" });
     return res.end();
   }
   return json(res, { ok: false, error: "method not allowed" }, 405);
+}
+
+/** 共有トークンは個人を識別しないため、認証方式・任意の端末名・接続元だけを主体とする。 */
+function requestActor(req, authMechanism) {
+  var headers = req.headers || {};
+  var address = req.socket && req.socket.remoteAddress;
+  if (typeof address === "string") address = address.replace(/^::ffff:/, "");
+  return {
+    authMechanism: authMechanism || "unknown",
+    device: authMechanism !== "invalid" && typeof headers["x-relay-device"] === "string" ?
+      auditTarget("device", headers["x-relay-device"]) : "unknown",
+    ip: address || "unknown",
+  };
+}
+
+function auditRoute(pathname) {
+  if (typeof pathname !== "string" || pathname.indexOf("/api/") !== 0) return "page";
+  var parts = pathname.split("/").filter(Boolean);
+  return "/" + parts.slice(0, 2).join("/");
+}
+
+/** 外部入力のIDや端末ラベルを平文保存せず、同じ値を後から照合できる不透明IDにする。 */
+function auditTarget(kind, value) {
+  if (value === undefined || value === null || value === "" || value === "unknown") return kind + ":unknown";
+  var digest = crypto.createHash("sha256").update(String(value), "utf8").digest("hex").slice(0, 16);
+  return kind + ":" + digest;
+}
+
+function recordAudit(context, operation, target, result, before, after) {
+  if (!context || !context.auditLog || typeof context.auditLog.record !== "function") return;
+  context.auditLog.record({
+    operation: operation,
+    target: target,
+    result: result,
+    actor: context.actor,
+    before: before,
+    after: after,
+  });
+}
+
+function styleSummary(style) {
+  style = style || {};
+  return {
+    configured: !!Object.keys(style).length,
+    layout: Array.isArray(style.elements) ? "free-layout" : "text",
+    count: Array.isArray(style.elements) ? style.elements.length : 0,
+  };
 }
 
 function json(res, obj, code) {

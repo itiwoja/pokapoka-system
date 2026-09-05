@@ -1,0 +1,40 @@
+name: Node.js tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Node.js 22
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: relay-server/package-lock.json
+
+      - name: Install relay-server dependencies
+        working-directory: relay-server
+        run: npm ci
+
+      - name: Run relay-server tests
+        working-directory: relay-server
+        run: npm test
+
+      - name: Run root KDS tests
+        run: node --test ./*.test.js
