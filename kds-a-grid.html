@@ -362,6 +362,24 @@
     color: var(--chrome);
     background: #fff;
   }
+  .order-sound-btn {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--chrome-line);
+    border-radius: var(--r-pill);
+    background: var(--chrome-2);
+    color: var(--on-chrome-dim);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    cursor: pointer;
+  }
+  .order-sound-btn:hover { color: var(--on-chrome); }
+  .order-sound-btn:active { transform: translateY(1px); }
+  .order-sound-btn[aria-pressed="true"] { color: var(--chrome); background: #fff; }
+  .order-sound-btn:disabled { opacity: .65; cursor: not-allowed; }
   /* プリンター設定。CSSが無くブラウザ既定のボタン(高さ24px)のままで、
      タップ下限44px (#58) を満たさず、黒いヘッダーの中で浮いていた。 */
   .head-toggle {
@@ -1704,6 +1722,12 @@
     <button type="button" class="head-toggle" id="printerSettingsBtn" aria-label="レシートプリンターのIPアドレス設定">
       <span>プリンター設定</span>
     </button>
+    <button type="button" class="order-sound-btn" id="orderSoundBtn" aria-pressed="false" aria-label="通知音を有効化">
+      <span>通知音OFF</span>
+    </button>
+    <audio id="orderSoundAudio" preload="auto" hidden aria-hidden="true">
+      <source src="/assets/sounds/shishiodoshi.ogg" type="audio/ogg">
+    </audio>
 
     <!-- 保存に失敗したら出しっぱなしにする。黙って壊れるのを避けるため (#179) -->
     <p class="storage-warn" id="storageWarn" role="alert" hidden>
@@ -2004,6 +2028,7 @@
     var UNDO_TOAST_MS = 6000;      // 全完了カードの取り消し猶予
     var PRINT_TOAST_MS = 4000;     // チビ伝の印刷結果通知を出しておく時間 (#176)
     var DELETE_ARM_MS = 3000;      // 削除ボタン2段階確認の猶予 (#68)
+    var ORDER_SOUND_EVENT = "kds:order-added";
     var KONRO_COUNT = 10;          // コンロ番号 1〜10
     /* コンロ状態サイクル: スケルトン(未使用) → 白(使用中) → 赤(タイマー管理中) → スケルトン */
     var KONRO_CYCLE = { "skeleton": "white", "white": "red", "red": "skeleton" };
@@ -2101,6 +2126,7 @@
     var currentSlipOrder = null;   // チビ伝プレビュー表示中の注文 (印刷ボタン押下時に参照)
     var printBusy = false;         // チビ伝を送信中か。連打による重複印字を防ぐ (#176)
     var printToastTimer = null;
+    var orderSoundUnlocked = false;
 
     /* ---- DOM ---- */
     var boardEl = document.getElementById("board");
@@ -2113,6 +2139,8 @@
        キッチンへ戻ってしまう。 */
     var modeBtns = Array.prototype.slice.call(document.querySelectorAll("[data-mode]"));
     var printerSettingsBtn = document.getElementById("printerSettingsBtn");
+    var orderSoundBtn = document.getElementById("orderSoundBtn");
+    var orderSoundAudio = document.getElementById("orderSoundAudio");
     var viewBtns = Array.prototype.slice.call(document.querySelectorAll("[data-view]"));
     var laneBodies = {
       rice:  document.getElementById("lane-rice"),
@@ -3288,6 +3316,65 @@
       updateKonroHud();
       if (view === "lane") renderLanes();   // #13 レーン表示も同期
       renderHallViews();
+    }
+
+    /* ===================== 新着オーダー通知音 =====================
+       Android Chromeの自動再生制限に合わせ、「通知音ON」押下をユーザー操作として使う。
+       通知音はrelay bridgeが発火する新規サーバー注文イベントだけで鳴らす。 */
+    function setOrderSoundButtonState(state) {
+      if (!orderSoundBtn) return;
+      var label = orderSoundBtn.querySelector("span");
+      var enabled = state === "on";
+      var unsupported = state === "unsupported";
+      if (label) label.textContent = unsupported ? "通知音非対応" : (enabled ? "通知音ON" : "通知音OFF");
+      orderSoundBtn.setAttribute("aria-pressed", enabled ? "true" : "false");
+      orderSoundBtn.setAttribute("aria-label", unsupported ? "このブラウザは通知音に対応していません" :
+        (enabled ? "通知音をテスト再生" : "通知音を有効化"));
+      orderSoundBtn.disabled = unsupported;
+    }
+
+    function unlockOrderSound() {
+      if (!orderSoundAudio || typeof orderSoundAudio.play !== "function") {
+        setOrderSoundButtonState("unsupported");
+        return false;
+      }
+      try {
+        orderSoundUnlocked = true;
+        setOrderSoundButtonState("on");
+        return true;
+      } catch (e) {
+        orderSoundUnlocked = false;
+        setOrderSoundButtonState("off");
+        return false;
+      }
+    }
+
+    function playOrderSoundNow() {
+      var audio = orderSoundAudio;
+      if (!audio || !orderSoundUnlocked) return;
+      try {
+        audio.currentTime = 0;
+        var playback = audio.play();
+        if (playback && typeof playback.catch === "function") {
+          playback.catch(function () {
+            orderSoundUnlocked = false;
+            setOrderSoundButtonState("off");
+          });
+        }
+      } catch (e) {
+        orderSoundUnlocked = false;
+        setOrderSoundButtonState("off");
+      }
+    }
+
+    function enableOrderSound() {
+      if (unlockOrderSound()) playOrderSoundNow();
+    }
+
+    function onOrderAdded(event) {
+      var detail = event && event.detail;
+      if (!detail || !Array.isArray(detail.orders) || !detail.orders.length) return;
+      playOrderSoundNow();
     }
 
     /* orderSeq を生存注文に同期。新着は末尾へ。並べ替え中は触らない */
@@ -5451,6 +5538,10 @@
       buildKonroHud();
       listenSyncStatus();
       initSync();
+      window.addEventListener(ORDER_SOUND_EVENT, onOrderAdded);
+      document.addEventListener("pointerdown", unlockOrderSound, { passive: true });
+      document.addEventListener("keydown", unlockOrderSound, { passive: true });
+      if (orderSoundBtn) orderSoundBtn.addEventListener("click", enableOrderSound);
 
       modeBtns.forEach(function (b) {
         b.addEventListener("click", function () { setMode(b.getAttribute("data-mode")); });

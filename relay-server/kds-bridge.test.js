@@ -10,6 +10,7 @@ var test = require("node:test");
 var assert = require("node:assert/strict");
 var bridge = require("./kds-bridge");
 var mergeStock = bridge.mergeStock;
+var findNewOrders = bridge.findNewOrders;
 var reconcileDoneCounts = bridge.reconcileDoneCounts;
 var createKitchenQueue = bridge.createKitchenQueue;
 var postKitchenBatch = bridge.postKitchenBatch;
@@ -32,6 +33,17 @@ function rec(rid, over) {
   Object.keys(over || {}).forEach(function (k) { r[k] = over[k]; });
   return r;
 }
+
+test("注文フィードから前回に無い注文IDだけを新着として抽出する", function () {
+  var incoming = [{ id: "mock-001" }, { id: "mock-002" }, { id: "mock-001" }];
+  var added = findNewOrders({ "mock-001": 1 }, incoming);
+  assert.deepEqual(added.map(function (order) { return order.id; }), ["mock-002"]);
+});
+
+test("空の前回フィードでは全ての有効な注文を新着として扱う", function () {
+  var added = findNewOrders({}, [{ id: "mock-001" }, { id: null }, null, { id: "mock-002" }, { id: "mock-001" }]);
+  assert.deepEqual(added.map(function (order) { return order.id; }), ["mock-001", "mock-002"]);
+});
 
 test("新規のサーバー予約を取り込み、seen に記録する", function () {
   var seen = {};
