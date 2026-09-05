@@ -1670,6 +1670,12 @@
      キッチンで全品クリアすると未提供の前菜まで消え、まだ出していないのに
      コースがデザートへ進んでしまっていた。出し忘れをホール側に残す。 */
   .card .serve-cue[data-serve-kind="starter"].served { display: none; }
+  /* 厨房でも前菜の未提供・提供済みを確認する。提供操作はホールに限定 (#232)。 */
+  body:not(.mode-hall) .card .serve-cue[data-serve-kind="starter"] { display: flex; }
+  body:not(.mode-hall) .serve-cue button { display: none; }
+  body:not(.mode-hall) .serve-cue[data-serve-kind="starter"]:not(.served) .serve-cue-label::after {
+    content: "　未提供";
+  }
   /* キッチンでは全品完了した時点でカードが消える従来どおりの見え方を保つ。
      ホールはデザートを出すまでカードを残す必要があるのでDOMからは消さない (#228)。 */
   body:not(.mode-hall) .card.all-done { display: none; }
@@ -2837,6 +2843,7 @@
               window.KDS_ORDERS = window.KDS_ORDERS.filter(function(o) { return String(o.id) !== String(msg.id); });
             }
             removeCard(String(msg.id), true);
+            clearDeletedOrderTimers(msg.id);
             orderSeq = orderSeq.filter(function(x) { return String(x) !== String(msg.id); });
             saveOrderSeq();
             reflectEmpty();
@@ -5211,6 +5218,17 @@
     function onSeatClear() { seatDialBuf = ""; renderSeatDialDisplay(); }
 
     /* ===================== 注文削除 ===================== */
+    /* カードの有無・次回のフィード掃除に依存せず、削除時点で資源を解放する (#234)。
+       removeCard は表示更新にも使うため、明示削除とその同期受信だけから呼ぶ。 */
+    function clearDeletedOrderTimers(id) {
+      var key = String(id);
+      delete konroMap[key];
+      delete lockedTimers[key];
+      saveKonro();
+      saveLocked();
+      refreshAllKonro();
+      updateKonroHud();
+    }
     /* 確認は削除ボタン側の2段階タップで済ませている (#68)。ここでは即実行する */
     function deleteOrder(id) {
       deletedIds[String(id)] = true;   // トゥームストーン: POSが再送しても復活させない (#67)
@@ -5220,6 +5238,7 @@
       }
       broadcastDeleteOrder(id);
       removeCard(String(id), true);
+      clearDeletedOrderTimers(id);
       orderSeq = orderSeq.filter(function (x) { return String(x) !== String(id); });
       saveOrderSeq();
       broadcastOrderSeq();
