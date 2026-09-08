@@ -48,13 +48,14 @@ if ($body -match '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]') {
 # リテラル \n は拒否する。
 $inFence = $false
 foreach ($line in [regex]::Split($body, "`n")) {
-  if ($line -match '^\s*```') {
-    $inFence = -not $inFence
-    continue
-  }
-  if (-not $inFence -and $line.Contains('\n')) {
-    throw "PR本文にリテラル \n が含まれています。実改行を使ってください。"
-  }
+ if ($line -match '^\s*```') {
+   $inFence = -not $inFence
+   continue
+ }
+  $lineWithoutCode = [regex]::Replace($line, '`+[^`]*`+', '')
+  if (-not $inFence -and $lineWithoutCode.Contains('\n')) {
+   throw "PR本文にリテラル \n が含まれています。実改行を使ってください。"
+ }
 }
 
 if ($ValidateOnly) {
