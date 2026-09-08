@@ -1,7 +1,7 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { create } = require("../order-client");
+const { create } = require("../../order-client");
 function memory() {
   const records = new Map();
   return {
@@ -59,7 +59,7 @@ test("保存失敗時は通信しない・期限切れは確認待ちにする",
 });
 
 test("実HTTPサーバーで受付後に応答を失っても注文は1件", async () => {
-  const relay = require("./server").createRelay({ port: 0, env: { MOCK: "1" }, mockSource: {}, log: () => {},
+  const relay = require("../server").createRelay({ port: 0, env: { MOCK: "1" }, mockSource: {}, log: () => {},
     source: { listReservations: async () => [], listSyncEvents: async () => [], getReservation: async () => null } });
   relay.start();
   await require("node:events").once(relay.server, "listening");

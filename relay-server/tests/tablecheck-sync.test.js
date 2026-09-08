@@ -1,8 +1,8 @@
 /**
- * tablecheck-sync.test.js — node relay-server/tablecheck-sync.test.js で実行
+ * tablecheck-sync.test.js — node relay-server/tests/tablecheck-sync.test.js で実行
  */
 "use strict";
-var s = require("./tablecheck-sync");
+var s = require("../tablecheck-sync");
 var pass = 0, fail = 0;
 function eq(name, got, want) {
   var g = JSON.stringify(got), w = JSON.stringify(want);

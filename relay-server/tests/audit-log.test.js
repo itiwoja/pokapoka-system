@@ -5,7 +5,7 @@ var assert = require("node:assert/strict");
 var fs = require("fs");
 var os = require("os");
 var path = require("path");
-var audit = require("./audit-log");
+var audit = require("../audit-log");
 
 function fixture(options) {
   var dir = fs.mkdtempSync(path.join(os.tmpdir(), "pokapoka-audit-"));

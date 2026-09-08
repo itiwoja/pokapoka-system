@@ -3,9 +3,9 @@
   "private": true,
   "description": "店内中継サーバー。wsで注文を即時配信。印刷にはiconv-liteとqrcodeを使用。依存未導入時はHTTP注文取得を継続。",
   "scripts": {
-    "check:tablecheck": "node --test tablecheck-connectivity.test.js",
+    "check:tablecheck": "node --test tests/tablecheck-connectivity.test.js",
     "preflight": "node preflight.js",
-    "test": "node --test *.test.js"
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "iconv-lite": "^0.6.3",

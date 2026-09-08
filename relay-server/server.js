@@ -32,6 +32,8 @@ var audit = require("./audit-log");
 var booking = require("./booking-resync");
 var loadConfig = require("./load-config");
 var printer = require("./printer");
+var createTableCheckSource = require("./tablecheck-source").createTableCheckSource;
+var printerSettings = require("./printer-settings");
 
 /* qrcode は /qr ページ専用なので、トップレベルでは読み込まない (#173)。
    npm install が済んでいない店内ミニPCで、QRページのためにサーバー全体
@@ -92,8 +94,8 @@ function createRelay(options) {
   var orders = new Map();      // 注文端末から受けた注文 (当日メモリのみ #115)
   var started = false;
   var initialSync = Promise.resolve();
-  var slipStyle = createSlipStyleStore(options.slipStylePath || path.join(root, "config", "slip-style.json"), printerModule, log);
-  var printerIp = createPrinterIpStore(options.printerIpPath || path.join(root, "config", "printer-ip.json"), printerModule, log);
+  var slipStyle = printerSettings.createSlipStyleStore(options.slipStylePath || path.join(root, "config", "slip-style.json"), printerModule, log);
+  var printerIp = printerSettings.createPrinterIpStore(options.printerIpPath || path.join(root, "config", "printer-ip.json"), printerModule, log);
 
   var tableCheckSource = options.source || createTableCheckSource({
     apiKey: config.apiKey,
@@ -482,63 +484,6 @@ function validateTableCheckBase(base, allowCustom) {
   }
 }
 
-function createTableCheckSource(config) {
-  if (config.isMock) {
-    return {
-      listReservations: async function () { return config.mock.listReservations(); },
-      listSyncEvents: async function () { return config.mock.listSyncEvents(); },
-      getReservation: async function (id) { return config.mock.getReservation(id); },
-    };
-  }
-  if (typeof config.fetch !== "function") throw new Error("fetch is required in LIVE mode");
-
-  async function tcFetchJson(pathname, allow404) {
-    var controller = new AbortController();
-    var timeout = setTimeout(function () { controller.abort(); }, config.requestTimeoutMs || 15000);
-    try {
-      var res = await config.fetch(config.base + pathname, {
-        headers: { "Authorization": "Bearer " + config.apiKey, "Accept": "application/json" },
-        signal: controller.signal,
-      });
-      if (!res.ok && !(allow404 && res.status === 404)) {
-        if (res.status === 429) throw new Error("429 レート制限。POLL_MS を見直す");
-        throw new Error("TableCheck " + res.status + " " + pathname);
-      }
-      if (allow404 && res.status === 404) return { status: 404, body: null };
-      return { status: res.status, body: await res.json() };
-    } catch (err) {
-      if (err && err.name === "AbortError") throw new Error("TableCheck request timed out");
-      throw err;
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-
-  return {
-    listReservations: function (current) {
-      return booking.listAllReservations(async function (query) {
-        var params = new URLSearchParams();
-        Object.keys(query).forEach(function (key) { params.set(key, query[key]); });
-        var result = await tcFetchJson("/api/booking/v1/reservations?" + params.toString());
-        return result.body;
-      }, { now: current, shopId: config.shopId, perPage: booking.DEFAULT_PER_PAGE });
-    },
-    listSyncEvents: async function () {
-      var pathname = "/api/sync/v1/sync_events?deliver=true" +
-        (config.shopId ? "&shop_id=" + encodeURIComponent(config.shopId) : "");
-      var result = await tcFetchJson(pathname);
-      var body = result.body;
-      return body && body.sync_events || [];
-    },
-    getReservation: async function (id) {
-      var result = await tcFetchJson("/api/booking/v1/reservations/" + encodeURIComponent(id), true);
-      if (result.status === 404) return null;
-      var body = result.body;
-      return body && (body.reservation || body);
-    },
-  };
-}
-
 function handleMock(req, res, url, mock, reservationSync) {
   var parts = url.pathname.replace(/^\/api\/mock\//, "").split("/");
   if (parts[0] !== "reservations") { res.writeHead(404); return res.end("not found"); }
@@ -640,62 +585,6 @@ function handleQrPage(res, config, hostHeader) {
     res.writeHead(500);
     res.end("QR生成に失敗しました: " + err.message);
   });
-}
-
-/**
- * 印刷スタイルの保存領域 (#144追補)。printer.normalizeStyle で許容値へ丸めてから
- * メモリ+ファイル(config/slip-style.json)に保持する。ファイルは再起動しても設定が
- * 残るようにするためで、環境ごとに値が違うので git 管理しない。
- */
-function createSlipStyleStore(filePath, printerModule, log) {
-  var MAX_TEMPLATE_BYTES = 50000;
-
-  /* 自由配置レイアウト(elements[])は描画がブラウザ側なので、サーバーは中身を解釈しない。
-     形(配列であること)とサイズだけ検査してそのまま預かる。旧テキスト型は従来どおり丸める */
-  function accept(raw) {
-    if (raw && typeof raw === "object" && Array.isArray(raw.elements)) {
-      var json = JSON.stringify(raw);
-      if (json.length > MAX_TEMPLATE_BYTES) {
-        log("slip-style: レイアウトが大きすぎるため保存しません (" + json.length + " bytes)");
-        return null;
-      }
-      return JSON.parse(json);
-    }
-    return printerModule.normalizeStyle(raw);
-  }
-
-  var current = null;
-  try {
-    current = accept(JSON.parse(fs.readFileSync(filePath, "utf8")));
-  } catch (e) { current = null; }  // 無い・壊れているときは未設定扱い
-  return {
-    get: function () { return current || {}; },
-    set: function (body) {
-      var next = accept(body);
-      if (!next) return current || {};   // 上限超過。既存の設定は壊さない
-      current = next;
-      try { fs.writeFileSync(filePath, JSON.stringify(current, null, 2) + "\n", "utf8"); }
-      catch (err) { log("slip-style の保存に失敗(メモリ上は反映済み): " + err.message); }
-      return current;
-    },
-  };
-}
-
-/** プリンターIPの保存領域 (#144追補)。空文字=未設定。ファイルはgit管理外 */
-function createPrinterIpStore(filePath, printerModule, log) {
-  var current = "";
-  try {
-    var loaded = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    if (loaded && printerModule.isPrivateIPv4(loaded.ip)) current = loaded.ip;
-  } catch (e) {}
-  return {
-    get: function () { return current; },
-    set: function (ip) {
-      current = ip || "";
-      try { fs.writeFileSync(filePath, JSON.stringify({ ip: current }, null, 2) + "\n", "utf8"); }
-      catch (err) { log("printer-ip の保存に失敗(メモリ上は反映済み): " + err.message); }
-    },
-  };
 }
 
 /** POST /api/print — チビ伝を実機プリンターへ送る (#144)。IPは店内LANのプライベートアドレスのみ許可 */
