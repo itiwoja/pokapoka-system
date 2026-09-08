@@ -1,7 +1,7 @@
 {
   "name": "pokapoka-relay-server",
   "private": true,
-  "description": "店内中継サーバー。依存は印刷まわりの2つだけ (iconv-lite: Shift_JIS変換 #144 / qrcode: /qrページ #144追補)。どちらも遅延読込なので、未インストールでも予約取込とKDS配信は動く (#173)。",
+  "description": "店内中継サーバー。wsで注文を即時配信。印刷にはiconv-liteとqrcodeを使用。依存未導入時はHTTP注文取得を継続。",
   "scripts": {
     "check:tablecheck": "node --test tablecheck-connectivity.test.js",
     "preflight": "node preflight.js",
@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "iconv-lite": "^0.6.3",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "ws": "^8.21.3"
   }
 }

@@ -65,7 +65,7 @@ node --test ./*.test.js
 
 ## TableCheck 予約連携（店内中継サーバー）
 
-`relay-server/` の店内中継サーバーが TableCheck から予約（メニュー・人数等）を **30秒間隔の差分 pull**＋**15分ごとの当日全件リシンク**で取得し、KDS の予約ストックへ流し込みます。**依存パッケージゼロ・Node 18+ のみ**で動作します。
+`relay-server/` の店内中継サーバーが TableCheck から予約（メニュー・人数等）を **30秒間隔の差分 pull**＋**15分ごとの当日全件リシンク**で取得し、KDS の予約ストックへ流し込みます。**Node 18+**で動作します。
 
 ```
 【クラウド】               【店内ミニPC = 中継サーバー】          【KDS端末】
@@ -132,3 +132,5 @@ window.KDS_clearServeLog()  // ログ全消去
 - 表示モードは LocalStorage に永続
 
 > 品名→カテゴリは POS データに無いため、KDS 内の分類関数（`itemCategory`）で自動判定します（実メニュー基準・未知はサイドへ）。POS のメニューが増えたら分類キーワードの追記を検討してください。
+
+注文は `/ws/orders` で即時配信し、切断中はHTTP取得で補完します。導入時は `relay-server` で `npm ci` を実行してください（[詳細](relay-server/README.md#注文のwebsocket配信)）。
