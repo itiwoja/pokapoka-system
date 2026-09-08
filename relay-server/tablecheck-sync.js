@@ -56,7 +56,7 @@ function normalizeReservation(r) {
   var adults = firstNum(r.adults, r.pax_adult, r.pax_adults, r.adult_pax);
   var kids = firstNum(r.kids, r.pax_child, r.pax_kids, r.child_pax, r.children);
   var pax = firstNum(r.pax, r.party_size);
-  if (adults == null && pax != null) { adults = pax - (kids || 0); }
+  if (adults == null && pax != null) { adults = Math.max(0, pax - (kids || 0)); }
 
   // 予約者名: 確定スキーマは first_name / last_name (姓+名)。旧単一フィールドもフォールバック。
   var fullName = [r.last_name, r.first_name]
