@@ -1660,10 +1660,19 @@
   .serve-cue.reverting button { border-color: var(--cta); color: var(--cta); }
   .serve-cue button.armed { border-color: var(--cta); background: var(--cta-soft); color: var(--cta); }
   .hall-ready-card .serve-cue, .hall-order-card .serve-cue, .hall-stock-card .serve-cue { margin-left: 0; margin-right: 0; }
-  /* 前菜・デザートを出すのはホール (#228)。キッチンの盤面には出さない。
-     ホール表示案A/B/Cを使わない構成では、ホールもこのグリッドを読取専用で見るため、
-     カードのDOMに置いたままCSSで出し分ける (チビ伝の伝ボタンと同じ方式)。 */
-  body:not(.mode-hall) .serve-cue { display: none; }
+  /* 前菜・デザートを出すのはホール (#228)。
+     ただし前菜は、まだ出ていない卓が厨房からも分かるようキッチンにも表示する。
+     キッチンでは操作させず状況を見せるだけ (ボタンは buildServeCue 側で作らない)。
+     デザートは従来どおりホール専用 — 厨房が見て動く場面がないため。
+     カードのDOMには常に置き、CSSで出し分ける (チビ伝の伝ボタンと同じ方式)。 */
+  body:not(.mode-hall) .serve-cue[data-serve-kind="dessert"] { display: none; }
+  /* キッチンの前菜cueは読取専用。操作できないことが見て分かるよう、
+     ホールの実線・塗りに対して破線・地なしに落とす。 */
+  .serve-cue.readonly {
+    border-style: dashed;
+    background: transparent;
+    color: var(--text-secondary);
+  }
   /* デザートは膳を出し終えてから。全品完了するまでは出さない */
   .card:not(.all-done) .serve-cue[data-serve-kind="dessert"] { display: none; }
   /* 前菜は「提供済みになったら」畳む。全品完了を条件にしない (#230)。
@@ -4094,6 +4103,13 @@
       /* デザートを出すと、その卓は提供完了なのでカードごと消える。取り消せないので
          前菜の「出した」(通常タップ) と違い、2秒の長押しでのみ成立させる (#229)。
          消した直後は既存の「戻す」トーストで戻せる。 */
+      /* キッチンは閲覧専用 (#228 の権限分けは維持)。押せないボタンを置くより、
+         帯だけ出して操作要素を作らないほうが誤解がない。 */
+      if (mode !== "hall") {
+        cue.classList.add("readonly");
+        cue.appendChild(label);
+        return cue;
+      }
       var dessertServe = (kind === "dessert" && !served);
       var button = document.createElement("button");
       button.type = "button";
@@ -5306,6 +5322,8 @@
         b.setAttribute("aria-pressed", b.getAttribute("data-mode") === mode ? "true" : "false");
       });
       if (mode === "hall") renderHallViews();
+      // 提供cueはモードで操作可否が変わるため、切り替えたら貼り直す
+      Object.keys(cards).forEach(function (id) { applyServeCueToCard(id); });
     }
     function setMode(next) {
       mode = (next === "hall") ? "hall" : "kitchen";
