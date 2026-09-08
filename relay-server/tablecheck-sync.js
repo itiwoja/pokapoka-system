@@ -98,7 +98,6 @@ function normalizeStatus(s) {
   if (Object.prototype.hasOwnProperty.call(STATUS_MAP, s)) return STATUS_MAP[s];
   if (/cancel|reject/.test(s)) return "canceled";
   if (/no[_ -]?show/.test(s)) return "no_show";
-  if (/seat|arriv/.test(s)) return "seated";
   if (/done|complete|finish/.test(s)) return "done";
   return "booked";
 }
