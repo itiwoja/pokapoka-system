@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { openDatabase } = require("./database");
+const { openDatabase } = require("../database");
 
 test("モック注文の商品ID・個数・人数を保存し、再接続で取得する", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pokapoka-mock-"));

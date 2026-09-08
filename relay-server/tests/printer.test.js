@@ -4,7 +4,7 @@ var test = require("node:test");
 var assert = require("node:assert/strict");
 var EventEmitter = require("node:events");
 var iconv = require("iconv-lite");
-var printer = require("./printer");
+var printer = require("../printer");
 
 test("normalizeJob: 既定値へ丸め、上限文字数で切り詰める", function () {
   var job = printer.normalizeJob({

@@ -2,7 +2,7 @@
 
 var test = require("node:test");
 var assert = require("node:assert/strict");
-var intake = require("./order-intake");
+var intake = require("../order-intake");
 
 var NOW = Date.parse("2026-08-02T18:05:00+09:00");
 

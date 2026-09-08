@@ -2,6 +2,9 @@
   "name": "pokapoka-system",
   "private": true,
   "scripts": {
-    "start": "node relay-server/server.js"
+    "start": "node relay-server/server.js",
+    "test": "npm run test:kds && npm run test:relay",
+    "test:kds": "node --test tests/*.test.js",
+    "test:relay": "npm --prefix relay-server test"
   }
 }

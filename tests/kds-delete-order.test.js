@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const html = fs.readFileSync(path.join(__dirname, "kds-a-grid.html"), "utf8");
+const html = fs.readFileSync(path.join(__dirname, "..", "kds-a-grid.html"), "utf8");
 // 単一HTML内の実装を実行し、別の参照実装とのずれを避ける。
 function source(name) {
   const start = html.indexOf("    function " + name + "(");

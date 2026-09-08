@@ -1,5 +1,5 @@
 "use strict";
-var seats = require("./seat-occupancy");
+var seats = require("../seat-occupancy");
 var pass = 0, fail = 0;
 function eq(name, got, want) {
   var g = JSON.stringify(got), w = JSON.stringify(want);

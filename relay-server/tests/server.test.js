@@ -6,11 +6,11 @@ var path = require("node:path");
 var childProcess = require("node:child_process");
 var http = require("node:http");
 var events = require("node:events");
-var serverModule = require("./server");
-var printerModule = require("./printer");
+var serverModule = require("../server");
+var printerModule = require("../printer");
 
 test("server.js はimportだけでlistenせずcreateRelayを公開する", function () {
-  var serverPath = path.join(__dirname, "server.js");
+  var serverPath = path.join(__dirname, "..", "server.js");
   var script = "var relay=require(" + JSON.stringify(serverPath) + ");" +
     "if(typeof relay.createRelay!=='function')process.exit(2);";
   var result = childProcess.spawnSync(process.execPath, ["-e", script], {
@@ -25,7 +25,7 @@ test("server.js はimportだけでlistenせずcreateRelayを公開する", funct
 test("印刷用の依存が無くてもサーバーは起動し、予約取込とKDS配信は生き残る", function () {
   // 現地で `npm install` が済んでいない状態を、モジュール解決を差し替えて再現する (#173)。
   // 以前はトップレベル require だったため、この状態でプロセスごと起動不能になっていた
-  var serverPath = path.join(__dirname, "server.js");
+  var serverPath = path.join(__dirname, "..", "server.js");
   var script = [
     "var Module = require('module');",
     "var orig = Module._resolveFilename;",

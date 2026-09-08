@@ -7,7 +7,7 @@ var os = require("node:os");
 var path = require("node:path");
 var http = require("node:http");
 var events = require("node:events");
-var serverModule = require("./server");
+var serverModule = require("../server");
 
 function request(server, pathname, options) {
   options = options || {};

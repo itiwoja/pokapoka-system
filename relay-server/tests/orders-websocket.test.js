@@ -3,8 +3,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { once } = require("node:events");
 const WS = require("ws");
-const { createRelay } = require("./server");
-const { createOrderStreamState, createSyncStatusTracker } = require("./kds-bridge");
+const { createRelay } = require("../server");
+const { createOrderStreamState, createSyncStatusTracker } = require("../kds-bridge");
 
 async function setup(t, env = {}) {
   const relay = createRelay({ port: 0, env: Object.assign({ MOCK: "1" }, env),

@@ -452,6 +452,13 @@ KDS 本体は無改修。**このサーバー経由で `/` を開くと、配信
   予約カードが次のポーリングで消えるため
 - 通信断時は `window.KDS_ORDERS` に触らない(直前の表示を保持)
 
+## 内部構成
+
+- `server.js`: HTTPルーティングとサーバーの起動・停止
+- `tablecheck-source.js`: TableCheck APIの取得とモック切替
+- `printer-settings.js`: 印刷スタイル・プリンターIPの読込と保存
+- `tests/`: 各モジュールとHTTP経由の回帰テスト
+
 ## テスト
 
 ```sh
@@ -461,7 +468,7 @@ npm test
 ```
 
 Node.js 22 を使用する GitHub Actions と同じく、`npm ci` は lockfile に固定された依存関係を
-導入し、`npm test` はこのディレクトリの全 `*.test.js` を実行する。テストは店舗の設定ファイル、
+導入し、`npm test` は`tests/` 内の全 `*.test.js` を実行する。テストは店舗の設定ファイル、
 認証情報、TableCheck などの実 API を必要とせず、失敗時は非ゼロ終了する。
 
 正規化(スキーマ候補キー・pax→adults フォールバック)、memo パーサ、

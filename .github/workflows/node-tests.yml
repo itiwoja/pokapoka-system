@@ -37,4 +37,4 @@ jobs:
         run: npm test
 
       - name: Run root KDS tests
-        run: node --test ./*.test.js
+        run: npm run test:kds
