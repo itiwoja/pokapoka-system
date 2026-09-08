@@ -1,0 +1,7 @@
+{
+  "name": "pokapoka-system",
+  "private": true,
+  "scripts": {
+    "start": "node relay-server/server.js"
+  }
+}

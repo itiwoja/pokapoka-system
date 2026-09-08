@@ -37,15 +37,20 @@
 ### 動作確認
 
 ```sh
-# ① KDS 単体で開く（file:// では動作しないブラウザがあるため）
-python -m http.server 8000
-# → http://127.0.0.1:8000/kds-a-grid.html
-
-# ② 中継サーバー経由で開く（TableCheck 予約取込のブリッジが自動注入される）
-node relay-server/server.js
-# → http://127.0.0.1:8000/       … KDS（デシャップ）
-# → http://127.0.0.1:8000/demo   … 予約デモコンソール
+# 初回のみ依存関係を導入する
+npm --prefix relay-server ci
+# 注文APIとKDSを同じサーバーで起動する
+npm start
+# 起動ログに表示されたURLを開く（既定値は http://127.0.0.1:8000）
+# /          … KDS（デシャップ）
+# /demo      … 予約デモコンソール
+# /api/health … 中継サーバーの稼働確認
 ```
+
+注文端末は同じ接続先の `/api/orders` に送信します。`config/config.json` の
+`server.host` が `auto` の場合は、起動ログに表示されたLAN IPを両端末で使用してください。
+`python -m http.server` は静的ファイル専用で、注文APIは動作しません。
+8000番を別サーバーが使用している場合は、そのサーバーを停止してから `npm start` を実行してください。
 
 ### 自動テスト
 

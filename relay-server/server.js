@@ -325,13 +325,14 @@ function createRelay(options) {
     server.listen(config.port, config.host, function () {
       var address = server.address();
       var listenPort = address && address.port || config.port;
-      log("起動: http://" + config.host + ":" + listenPort + "  (モード: " +
+      var baseUrl = "http://" + (config.host.includes(":") ? "[" + config.host + "]" : config.host) + ":" + listenPort;
+      log("起動: " + baseUrl + "  (モード: " +
         (config.isMock ? "MOCK — デモ予約を配信" : "LIVE — TableCheck へ " + config.pollMs / 1000 + "秒間隔で pull") + ")");
       if (config.isMock) {
         if (env.SEED === "1") { mock.seed(); log("SEED=1: デモ予約を1件シード"); }
-        log("デモ操作コンソール: http://127.0.0.1:" + listenPort + "/demo");
+        log("デモ操作コンソール: " + baseUrl + "/demo");
       }
-      log("KDS(デシャップ): http://127.0.0.1:" + listenPort + "/  / 予約: /api/stock / 注文: /api/orders / 状態: /api/health");
+      log("KDS(デシャップ): " + baseUrl + "/  / 予約: /api/stock / 注文: /api/orders / 状態: /api/health");
       if (config.authToken) {
         log("認証: 有効 (他端末は /qr のQR経由で開く。ミニPC自身は" +
           (config.authTrustLoopback ? "認証なしで開ける" : "トークンが必要") + ")");
