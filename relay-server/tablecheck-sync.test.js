@@ -42,6 +42,23 @@ eq("orders→menu(ja優先/en fallback)", recReal.menu,
   [{ name: "土鍋御膳", qty: 2, options: null, allergies: null },
    { name: "Agedashi", qty: 1, options: null, allergies: null }]);
 eq("special_request→memo", recReal.memo, "アレルギー: えび");
+eq("アレルギー設問/自由記述→安全情報", recReal.allergies, "えび");
+eq("アレルギーだけの自由記述は要望へ重複しない", recReal.request, undefined);
+var recNotes = s.normalizeReservation({
+  id: "tc-notes", status: "confirmed", start_at: "2026-07-15T18:30:00+0900",
+  questions: [
+    { id: "q-allergy", question: "アレルギーはありますか？", answer: "卵・乳" },
+    { id: "q-request", question: "その他の要望", answer: "子供用椅子" },
+  ],
+  special_request: "窓側希望",
+});
+eq("questionsと要望の振り分け", [recNotes.allergies, recNotes.request], ["卵・乳", "その他の要望: 子供用椅子 / 窓側希望"]);
+var recNoAllergy = s.normalizeReservation({
+  id: "tc-no-allergy", status: "confirmed", start_at: "2026-07-15T18:30:00+0900",
+  questions: [{ question: "アレルギーはありますか？", answer: "なし" }],
+  special_request: "アレルギーなし",
+});
+eq("アレルギーなしは安全情報に載せない", [recNoAllergy.allergies, recNoAllergy.request], [undefined, undefined]);
 eq("seat_types既定値", recReal.seatTypes, []);
 var recSeat = s.normalizeReservation({ id: "tc-seat", status: "confirmed", start_at: "2026-07-15T18:30:00+0900", table_number: " 5 ", seat_types: ["table", "counter"] });
 eq("確定卓番候補を保持", recSeat.table, "5");
@@ -99,6 +116,13 @@ eq("席だけ予約はKDSに出ない", stock.length, 0);
 store.set("d", { rid: "d", startAt: iso(18, 0), adults: 1, kids: 2, name: "D", status: "booked", menu: [{ name: "御膳", qty: 2, options: null, allergies: "乳" }] });
 stock = s.toKdsStock(store, 456);
 eq("KDS stock形式", stock[0], { rid: "d", time: "18:00", adults: 1, kids: 2, name: "D", menu: [{ name: "御膳", qty: 2, options: null, allergies: "乳" }], seenAt: 456 });
+
+store.set("notes", { rid: "notes", startAt: iso(18, 10), adults: 2, kids: 0, name: "注記あり",
+  status: "booked", allergies: "卵・乳", request: "子供用椅子", memo: "窓側希望",
+  menu: [{ name: "御膳", qty: 1, options: null, allergies: null }] });
+stock = s.toKdsStock(store, 789);
+var noteStock = stock.find(function (r) { return r.rid === "notes"; });
+eq("KDS stockへアレルギー/要望を配信", [noteStock.allergies, noteStock.request, noteStock.memo], ["卵・乳", "子供用椅子", "窓側希望"]);
 
 console.log("purge: 確定enum status で棚に載る/外す (Issue #117)");
 var store2 = new Map();

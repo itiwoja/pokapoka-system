@@ -49,6 +49,8 @@ function normalizeReservation(r) {
   var startAt = r.start_at || r.startAt || null;
   if (!startAt) return null;
 
+  var notes = normalizeReservationNotes(r);
+
   // 人数: 確定スキーマ(2026-07-16)は pax_adult / pax_child。旧推測キーもフォールバックで残す。
   // 無ければ pax 合計を adults に寄せる。シニア/乳児(pax_senior/pax_baby)は当面 KDS に出さない。
   var adults = firstNum(r.adults, r.pax_adult, r.pax_adults, r.adult_pax);
@@ -61,7 +63,7 @@ function normalizeReservation(r) {
     .filter(function (s) { return typeof s === "string" && s.trim(); })
     .join(" ").trim();
 
-  return {
+  var record = {
     rid: String(r.id),
     startAt: startAt,                                   // ISO8601 (TZ付き) のまま保持
     adults: adults != null ? adults : 0,
@@ -75,8 +77,15 @@ function normalizeReservation(r) {
     menu: normalizeMenu(r),
     // メニューが memo/自由記述経由の場合に備え保持。確定スキーマの special_request も含める
     memo: firstStr(r.memo, r.notes, r.special_request) || null,
+    // TableCheck のアレルギー設問と自由記述を、厨房表示用に予約レベルで分離する。
+    // orders[] には専用フィールドがないため、ここを予約由来の注記の正本にする。
     updatedAt: r.updated_at || r.updatedAt || null,
   };
+  // 注記が無い予約は従来の内部レコード形を保ち、必要なときだけ拡張フィールドを持たせる。
+  if (notes.allergies) record.allergies = notes.allergies;
+  if (notes.request) record.request = notes.request;
+  if (notes.questions.length) record.questions = notes.questions;
+  return record;
 }
 
 /**
@@ -122,6 +131,82 @@ function normalizeMenu(r) {
     });
   }
   return parseMenuFromMemo(firstStr(r.memo, r.notes) || "");
+}
+
+/**
+ * questions[] / special_request を厨房表示用の注記へ正規化する。
+ * アレルギーは安全情報なので要望と別欄にし、設問の質問文は一般要望側へ残す。
+ * 実際の店舗設定が確定するまでは日本語・英語の表記ゆれを広く受ける。
+ */
+function normalizeReservationNotes(r) {
+  var allergies = [];
+  var requests = [];
+  var questions = normalizeQuestions(r && r.questions);
+
+  questions.forEach(function (q) {
+    if (!q.answer) return;
+    if (isAllergyPrompt(q.question)) {
+      if (!isNegativeAllergy(q.answer)) allergies.push(q.answer);
+    } else {
+      requests.push(q.question ? q.question + ": " + q.answer : q.answer);
+    }
+  });
+
+  var special = firstStr(r && (r.special_request || r.specialRequest || r.memo || r.notes));
+  if (special) {
+    special.split(/\r?\n/).forEach(function (line) {
+      line = line.trim();
+      if (!line) return;
+      if (isAllergyPrompt(line)) {
+        var allergy = line.replace(/^\s*(?:アレルギー|allerg(?:y|ies)|食物アレルギー|dietary\s+restriction(?:s)?)\s*[:：]?\s*/i, "").trim();
+        if (!isNegativeAllergy(allergy)) allergies.push(allergy || line);
+      } else {
+        requests.push(line);
+      }
+    });
+  }
+
+  return {
+    allergies: uniqueNotes(allergies).join("、"),
+    request: uniqueNotes(requests).join(" / "),
+    questions: questions,
+  };
+}
+
+function normalizeQuestions(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map(function (q) {
+    q = q || {};
+    return {
+      id: q.id != null ? String(q.id) : null,
+      question: noteValue(q.question || q.label || q.title),
+      answer: noteValue(q.answer || q.value || q.response),
+    };
+  }).filter(function (q) { return q.question || q.answer; });
+}
+
+function noteValue(value) {
+  if (value == null || value === false) return "";
+  if (Array.isArray(value)) return value.map(noteValue).filter(Boolean).join("、");
+  if (typeof value === "object") return noteValue(value.text || value.label || value.value || value.name);
+  return String(value).trim();
+}
+
+function isAllergyPrompt(value) {
+  return /アレルギ|食物アレルギ|allerg|dietary\s+restriction|food\s+restriction|除去|苦手/i.test(String(value || ""));
+}
+
+function isNegativeAllergy(value) {
+  return /^(?:なし|無|ない|特になし|なしです|no|none|n\/a)$/i.test(String(value || "").trim());
+}
+
+function uniqueNotes(values) {
+  var seen = {};
+  return (values || []).map(function (v) { return String(v || "").trim(); }).filter(function (v) {
+    if (!v || seen[v]) return false;
+    seen[v] = true;
+    return true;
+  });
 }
 
 /** menu_item_name_translations({ja,en,...}) から表示名を選ぶ (日本語優先→英語→先頭の値) */
@@ -199,14 +284,20 @@ function toKdsStock(store, seenAt) {
   store.forEach(function (rec) {
     if (!rec.menu || !rec.menu.length) return;    // 席だけ予約は載せない
     var d = new Date(rec.startAt);
-    out.push({
+    var item = {
       rid: rec.rid,
       time: isNaN(d) ? String(rec.startAt) : pad2(d.getHours()) + ":" + pad2(d.getMinutes()),
       adults: rec.adults, kids: rec.kids,
       name: rec.name,
       menu: rec.menu,
       seenAt: seenAt,
-    });
+    };
+    // 既存の予約ストック契約を壊さず、注記がある予約だけ追加フィールドを配信する。
+    if (rec.allergies) item.allergies = rec.allergies;
+    if (rec.request) item.request = rec.request;
+    if (rec.memo) item.memo = rec.memo;
+    if (Array.isArray(rec.questions) && rec.questions.length) item.questions = rec.questions;
+    out.push(item);
   });
   out.sort(function (a, b) { return a.time < b.time ? -1 : a.time > b.time ? 1 : 0; });
   return out;
@@ -220,6 +311,7 @@ function localDateStr(d) { return d.getFullYear() + "-" + pad2(d.getMonth() + 1)
 
 module.exports = {
   normalizeReservation: normalizeReservation,
+  normalizeReservationNotes: normalizeReservationNotes,
   normalizeStatus: normalizeStatus,
   normalizeMenu: normalizeMenu,
   parseMenuFromMemo: parseMenuFromMemo,

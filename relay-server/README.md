@@ -224,7 +224,7 @@ cd relay-server && npm run preflight
 |---|---|
 | `/` , `/kds-a-grid.html` | KDS 本体(配信時にブリッジを1行注入) |
 | `/demo` | 予約デモコンソール(`tablecheck-demo.html`) |
-| `/api/stock` | KDS 予約ストック形式 `[{rid,time,adults,kids,name,menu[],seenAt}]`。メニュー無し(席だけ)予約は含まない。初回全件リシンク成功までは503 |
+| `/api/stock` | KDS 予約ストック形式 `[{rid,time,adults,kids,name,menu[],allergies?,request?,seenAt}]`。`allergies` はアレルギー設問/記述、`request` はその他の設問回答・要望を正規化した注記。メニュー無し(席だけ)予約は含まない。初回全件リシンク成功までは503 |
 | `/api/health` | モード・ready状態・最終差分ポール・最終全件リシンク・保持件数 |
 | `GET /api/kitchen-state` | 厨房状態の共有スナップショット `{sessionId,rev,updatedAt,konro,done,locked,seq,deleted}`。→「厨房状態の端末間同期」 |
 | `POST /api/kitchen-state` | 厨房状態の変更イベント投入 `{events:[...]}`。応答は `{ok,rev,sessionId}` |

@@ -114,7 +114,10 @@ test("TableCheck モックHTTP疎通（実APIの認証・権限・仕様は未�
   var sync = booking.createReservationSync(Object.assign({ now: function () { return now; } }, source));
   await t.test("Booking 全件取得から予約ストックへ反映", async function () {
     assert.equal((await sync.resyncOnce()).ok, true);
-    assert.deepEqual(sync.stockResponse().body.map(function (r) { return r.rid; }), [reservation.id]);
+    var stock = sync.stockResponse().body;
+    assert.deepEqual(stock.map(function (r) { return r.rid; }), [reservation.id]);
+    assert.equal(stock[0].allergies, "子供1名に卵アレルギー");
+    assert.equal(stock[0].request, "子供用の椅子を1脚希望");
   });
   await t.test("Sync v1: 新規イベント→詳細再取得→ストック追加", async function () {
     mock.createReservation({ id: "mock-new", start_at: now.toISOString(), pax_adult: 1, orders: [{ name: "追加御膳", qty: 1 }] });
@@ -133,6 +136,8 @@ test("TableCheck モックHTTP疎通（実APIの認証・権限・仕様は未�
     var stock = sync.stockResponse().body.find(function (r) { return r.rid === reservation.id; });
     assert.equal(stock.adults, 3);
     assert.equal(stock.menu[0].qty, 4);
+    assert.equal(stock.allergies, "卵・乳");
+    assert.equal(stock.request, "椅子2脚を希望");
     assert.equal((await source.getReservation(reservation.id)).questions[0].answer, "卵・乳");
   });
   await t.test("Sync v1: キャンセルの更新検知→ストック除去", async function () {

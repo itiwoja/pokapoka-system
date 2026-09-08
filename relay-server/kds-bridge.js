@@ -248,8 +248,10 @@
       if (!wasSeen) { seen[rid] = 1; seenChanged = true; }
       if (byRid[rid]) {                      // 既存 → 内容が変わっていれば上書き (updated 反映)
         var cur = byRid[rid];
-        if (JSON.stringify({ a: cur.time, b: cur.adults, c: cur.kids, d: cur.name, e: cur.menu }) !==
-            JSON.stringify({ a: r.time, b: r.adults, c: r.kids, d: r.name, e: r.menu })) {
+        if (JSON.stringify({ a: cur.time, b: cur.adults, c: cur.kids, d: cur.name, e: cur.menu,
+          f: cur.allergies, g: cur.request, h: cur.memo, i: cur.questions }) !==
+            JSON.stringify({ a: r.time, b: r.adults, c: r.kids, d: r.name, e: r.menu,
+              f: r.allergies, g: r.request, h: r.memo, i: r.questions })) {
           r.seenAt = cur.seenAt || r.seenAt; // 30分前通知の再発火を避けるため取込時刻は維持
           byRid[rid] = r; changed = true;
         }

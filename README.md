@@ -81,6 +81,7 @@ TableCheck ◀── 外向きpull ── server.js ── /api/stock(JSON) ─�
 ```
 
 - API 契約前でも**モックモード**で動作し、`/demo` の予約デモコンソールから予約の作成・人数変更・キャンセル → KDS 反映までを実機で確認できる
+- TableCheck の `questions[]` / `special_request` は、アレルギーとその他の要望に分けて予約ストック・厨房カードへ常時表示する
 - デシャップモニター・注文端末の接続先（host/port）は **`config/config.json` に集約**（雛形: `config/config.example.json`。優先順位は 既定値 < config.json < 環境変数。**API キーは環境変数のみ**）
 - 起動方法・エンドポイント・LAN 配信時の注意（固定IP・ファイアウォール）は [relay-server/README.md](relay-server/README.md) を参照
 

@@ -1231,6 +1231,24 @@
   .res-menu li { display: flex; align-items: baseline; gap: 4px; overflow-wrap: anywhere; padding: 2px 0; }
   .res-menu li::before { content: "\25A0"; font-size: 8px; color: var(--type-reserved-edge); flex: 0 0 auto; }
   .res-menu li .q { font-family: var(--font-num); color: var(--text-primary); font-weight: 800; margin-left: auto; }
+  /* 予約由来の安全情報は品目と分離し、予約カードの下部に常時表示する。 */
+  .reservation-notes, .order-notes {
+    display: flex; flex-direction: column; gap: 5px; margin-top: 8px;
+  }
+  .reservation-note, .order-note {
+    display: flex; align-items: flex-start; gap: 7px; padding: 7px 9px;
+    border-left: 4px solid var(--border-strong); background: var(--bg-raise);
+    color: var(--text-primary); font-size: 14px; font-weight: 700; line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+  .reservation-note .label, .order-note .label { flex: 0 0 auto; font-weight: 900; }
+  .reservation-note .value, .order-note .value { min-width: 0; white-space: pre-wrap; }
+  .reservation-note.allergy, .order-note.allergy {
+    border-left-color: #b42318; background: #fff1f0; color: #7a1c16;
+  }
+  .reservation-note.request, .order-note.request {
+    border-left-color: var(--u-warn); background: #fff8e5;
+  }
   /* 30分前通知バッジ (フロー先頭・被り皆無)。琥珀地は濃文字でAA */
   .res-soon-badge {
     align-self: flex-start;
@@ -2404,6 +2422,62 @@
       return notes.join(" / ");
     }
 
+    /* 予約の questions[] / special_request を中継サーバーが分離した形と、
+       旧形式の memo/specialRequest の両方を受け、厨房カードへ安全に表示する。 */
+    function reservationNotesSignature(record) {
+      if (!record) return "";
+      var allergyText = normalizeNoteValue(record.allergies || record.allergy || record.allergyInfo);
+      return [
+        allergyText,
+        normalizeNoteValue(reservationRequestValue(record, allergyText))
+      ].join("\u0001");
+    }
+
+    function reservationRequestValue(record, allergyText) {
+      if (record.request != null) return record.request;
+      if (record.specialRequest != null) return record.specialRequest;
+      // memo は旧形式の自由記述だけに残るため、既に分離済みのアレルギーがある場合は
+      // 同じ special_request を「要望」として二重表示しない。
+      return allergyText ? "" : record.memo;
+    }
+
+    function buildReservationNotes(record, className) {
+      if (!record) return null;
+      var allergyText = normalizeNoteValue(record.allergies || record.allergy || record.allergyInfo);
+      var requestText = normalizeNoteValue(reservationRequestValue(record, allergyText));
+
+      // relay-server v1 の memo だけが残る場合でも、アレルギーを要望扱いにしない。
+      if (!allergyText && requestText && /アレルギ|allerg|食物アレルギ|dietary\s+restriction/i.test(requestText)) {
+        var parsedAllergy = requestText.replace(/^\s*(?:アレルギー|allerg(?:y|ies)|食物アレルギー|dietary\s+restriction(?:s)?)\s*[:：]?\s*/i, "").trim() || requestText;
+        allergyText = /^(?:なし|無|ない|特になし|なしです|no|none|n\/a)$/i.test(parsedAllergy) ? "" : parsedAllergy;
+        requestText = "";
+      }
+      if (!allergyText && /^(?:アレルギー|allerg(?:y|ies))\s*[:：]?\s*(?:なし|無|ない|特になし|なしです|no|none|n\/a)$/i.test(requestText)) {
+        requestText = "";
+      }
+      if (!allergyText && !requestText) return null;
+
+      var wrap = document.createElement("div");
+      wrap.className = className || "order-notes";
+      function addNote(kind, label, value) {
+        if (!value) return;
+        var row = document.createElement("div");
+        row.className = (className === "reservation-notes" ? "reservation-note " : "order-note ") + kind;
+        var labelEl = document.createElement("span");
+        labelEl.className = "label";
+        labelEl.textContent = label;
+        var valueEl = document.createElement("span");
+        valueEl.className = "value";
+        valueEl.textContent = value;
+        row.appendChild(labelEl);
+        row.appendChild(valueEl);
+        wrap.appendChild(row);
+      }
+      addNote("allergy", "アレルギー", allergyText);
+      addNote("request", "要望", requestText);
+      return wrap;
+    }
+
     function buildLaneItem(r) {
       var order = r.order, it = r.item;
       var btn = document.createElement("button");
@@ -3250,6 +3324,8 @@
       // 前菜は膳より先、デザートは膳の後。提供順を並び順で示す (#228)
       card.appendChild(buildServeCue(order.id, "starter", order.people));
       card.appendChild(ul);
+      var orderNotes = buildReservationNotes(order, "order-notes");
+      if (orderNotes) card.appendChild(orderNotes);
       card.appendChild(buildServeCue(order.id, "dessert", order.people));
       card.appendChild(konro);
 
@@ -3274,7 +3350,7 @@
           var el = buildCard(order);
           boardEl.appendChild(el);
           entry = cards[order.id] = { el: el, order: order, level: null, items: order.items,
-            itemsSig: itemsSignature(order.items) };
+          itemsSig: itemsSignature(order.items), notesSig: reservationNotesSignature(order) };
           added.push(String(order.id));
         } else {
           entry.order = order;
@@ -3285,6 +3361,18 @@
             entry.itemsSig = sig;
             var oldUl = entry.el.querySelector(".items");
             if (oldUl) entry.el.replaceChild(buildItemsList(order), oldUl);
+          }
+          var notesSig = reservationNotesSignature(order);
+          if (notesSig !== entry.notesSig) {
+            entry.notesSig = notesSig;
+            var oldNotes = entry.el.querySelector(".order-notes");
+            var newNotes = buildReservationNotes(order, "order-notes");
+            if (oldNotes && newNotes) oldNotes.parentNode.replaceChild(newNotes, oldNotes);
+            else if (oldNotes) oldNotes.parentNode.removeChild(oldNotes);
+            else if (newNotes) {
+              var itemList = entry.el.querySelector(".items");
+              if (itemList && itemList.parentNode) itemList.parentNode.insertBefore(newNotes, itemList.nextSibling);
+            }
           }
         }
         applyTableOverrideToCard(String(order.id));
@@ -4290,6 +4378,7 @@
         li.appendChild(q);
         menu.appendChild(li);
       });
+      var reservationNotes = buildReservationNotes(r, "reservation-notes");
 
       var riceCue = buildRiceCue(r);
 
@@ -4323,6 +4412,7 @@
       el.appendChild(top);
       el.appendChild(name);
       if ((r.menu || []).length) el.appendChild(menu);
+      if (reservationNotes) el.appendChild(reservationNotes);
       if (riceCue) el.appendChild(riceCue);
       el.appendChild(actions);
       return el;
@@ -4442,9 +4532,11 @@
         if (!compact && item.done) li.textContent += "（完了）";
         list.appendChild(li);
       });
+      var orderNotes = buildReservationNotes(order, "order-notes");
       // 前菜はホールが出すので、ホールの進行中カードにも同じcueを出す (#222)
       card.appendChild(buildServeCue(order.id, "starter", order.people));
       card.appendChild(list);
+      if (orderNotes) card.appendChild(orderNotes);
       return card;
     }
     function buildHallStockCard(reservation) {
@@ -4467,6 +4559,8 @@
         list.appendChild(li);
       });
       card.appendChild(list);
+      var reservationNotes = buildReservationNotes(reservation, "reservation-notes");
+      if (reservationNotes) card.appendChild(reservationNotes);
       var cue = buildRiceCue(reservation);
       if (cue) card.appendChild(cue);
       return card;
@@ -4587,6 +4681,11 @@
         people: (Number(r.adults) || 0) + (Number(r.kids) || 0),
         adults: Number(r.adults) || 0,   // 内訳を保持 (配膳カードで「N名 幼M」表示)
         kids: Number(r.kids) || 0,
+        // TableCheck 予約由来の安全情報・要望を、進行中カードにも引き継ぐ。
+        allergies: r.allergies || null,
+        request: r.request || null,
+        memo: r.memo || null,
+        questions: Array.isArray(r.questions) ? r.questions : [],
         items: (r.menu || []).map(function (m) {
           return {
             name: m.name,

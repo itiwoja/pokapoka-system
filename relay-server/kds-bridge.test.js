@@ -101,6 +101,15 @@ test("内容が同じなら changed = false (無駄な書換・配信をしな�
   assert.equal(out.changed, false);
 });
 
+test("アレルギー・要望だけの更新も予約ストックへ反映する", function () {
+  var current = rec("mock-notes", { allergies: "卵", request: "窓側希望" });
+  var incoming = rec("mock-notes", { allergies: "卵・乳", request: "子供用椅子" });
+  var out = mergeStock([current], { "mock-notes": 1 }, [incoming]);
+  assert.equal(out.changed, true);
+  assert.equal(out.stock[0].allergies, "卵・乳");
+  assert.equal(out.stock[0].request, "子供用椅子");
+});
+
 test("結果は time 昇順に整列される", function () {
   var seen = {};
   var out = mergeStock([], seen, [rec("b", { time: "19:30" }), rec("a", { time: "18:00" })]);
