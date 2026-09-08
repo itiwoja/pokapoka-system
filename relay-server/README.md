@@ -472,17 +472,23 @@ upsert/404削除/当日パージ/KDS形式変換に加え、全件ページン�
 下限クランプ・HTTPS検証が効くこと、APIキー混入・キー名typo・不正JSONを起動時に弾くことを
 カバーする。テストは `configFile` を注入する形なので、各自の `config/config.json` に左右されない。
 
-## ⚠️ スキーマ確定待ちの箇所(Issue #74)
+## ⚠️ 暫定契約・実環境確認待ち(Issue #74)
 
-TableCheck 予約オブジェクトの正確なフィールド名は打合せ/APIコンソールで確認後、
-**`tablecheck-sync.js` の `normalizeReservation()` / `normalizeMenu()` だけ**直せばよい:
+TableCheck 連携は、`docs/テーブルチェックAPI.md` に記載した暫定契約を前提に実装する。
+現在の正規化処理は、Booking v1 の `orders[]`、`pax_adult` / `pax_child`、
+`questions[]`、`special_request` を受け取り、予約ストックへ変換する。
+旧モックとの互換性のため、候補キーと memo パーサーもフォールバックとして残している。
 
-1. 🔴 メニューが構造化フィールドで返るか(`courses` 等)、memo 自由テキストか
-   → memo の場合は `parseMenuFromMemo()` の書式と店側の記載ルールを揃える
-2. ⚠️ 大人/子供の内訳フィールド名(無ければ pax 合計を adults に寄せる現仕様のまま)
-3. ⚠️ 認証ヘッダーの正確な形式(`server.js` の `tcFetch()` に TODO 記載)
+実環境で確認が必要なものは次のとおり:
 
-関連資料: [knowledge/2026-07-15_テーブルチェックAPI連携_データ定義・裏どり結果.md](../knowledge/2026-07-15_テーブルチェックAPI連携_データ定義・裏どり結果.md)
+1. APIキー・Shop IDの発行と、本番／テスト環境の利用権限
+2. 認証方法・認証ヘッダーの最終仕様（現実装は Bearer）
+3. API連携の料金と、予約通知メール（Messaging v1）の契約可否
+
+料金・通知メールは現行KDSの必須経路に含めず、契約確定後に別途反映する。
+
+関連資料: [docs/テーブルチェックAPI.md](../docs/テーブルチェックAPI.md) ／
+[knowledge/2026-07-15_テーブルチェックAPI連携_データ定義・裏どり結果.md](../knowledge/2026-07-15_テーブルチェックAPI連携_データ定義・裏どり結果.md)
 
 
 ## 注文のWebSocket配信

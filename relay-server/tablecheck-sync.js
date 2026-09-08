@@ -4,10 +4,10 @@
  * server.js から使う正規化・upsert・パージ処理を、serve-log.js と同様に
  * 依存ゼロの純粋関数として切り出したもの (node tablecheck-sync.test.js で検証)。
  *
- * ⚠️ スキーマ未確定フィールドについて (Issue #74):
- *   TableCheck の予約オブジェクトの正確なフィールド名 (顧客名・大人/子供内訳・
- *   メニュー・アレルギー) は API コンソールでの確認待ち。normalizeReservation()
- *   は「ありそうな候補キー」を広めに受け、確定後にここだけ直せば済む構造にしてある。
+ * 暫定契約 (Issue #74):
+ *   Booking v1 の orders[] / pax_adult / pax_child / questions[] /
+ *   special_request を正本として受ける。実環境の認証・契約条件が未確定のため、
+ *   旧モック互換の候補キーと memo パーサーはフォールバックとして残す。
  */
 "use strict";
 
