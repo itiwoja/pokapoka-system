@@ -138,6 +138,17 @@ function createAuditLog(options) {
     }
   }
 
+  function append(entry) {
+    try {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.appendFileSync(filePath, JSON.stringify(entry) + "\n", { encoding: "utf8", mode: 0o600 });
+      return true;
+    } catch (err) {
+      report(logger, "監査ログを書き込めない: " + filePath, err);
+      return false;
+    }
+  }
+
   function load() {
     var raw;
     try {
@@ -171,9 +182,10 @@ function createAuditLog(options) {
   function record(event) {
     try {
       event = event || {};
+      var recordedAt = nowMs();
       var actor = event.actor || {};
       var entry = {
-        timestamp: new Date(nowMs()).toISOString(),
+        timestamp: new Date(recordedAt).toISOString(),
         operation: safeText(event.operation, "unknown"),
         target: safeText(event.target, "unknown"),
         result: safeText(event.result, "unknown"),
@@ -185,8 +197,14 @@ function createAuditLog(options) {
         before: safeSummary(event.before),
         after: safeSummary(event.after),
       };
-      var next = bounded(records.concat([entry]), nowMs());
-      if (!persist(next)) return null;
+      var next = bounded(records.concat([entry]), recordedAt);
+      // 保持期限・最大件数に触れない通常時は1行だけ追記する。
+      // 超過が発生したときだけ、期限切れ・古い行を含めて全体を再構成する。
+      if (next.length === records.length + 1) {
+        if (!append(entry)) return null;
+      } else if (!persist(next)) {
+        return null;
+      }
       records = next;
       return clone(entry);
     } catch (err) {

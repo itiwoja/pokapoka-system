@@ -102,6 +102,38 @@ test("保持日数と最大件数を常に適用する", function (t) {
   assert.equal(fs.readFileSync(f.log.filePath, "utf8").trim().split("\n").length, 2);
 });
 
+test("通常の記録は1行追記し、保持上限を超えたときだけ全件を書き換える", function (t) {
+  var f = fixture({ maxRecords: 2 });
+  t.after(function () { fs.rmSync(f.dir, { recursive: true, force: true }); });
+
+  var appendCount = 0;
+  var renameCount = 0;
+  var originalAppend = fs.appendFileSync;
+  var originalRename = fs.renameSync;
+  fs.appendFileSync = function (filePath) {
+    if (filePath === f.log.filePath) appendCount++;
+    return originalAppend.apply(fs, arguments);
+  };
+  fs.renameSync = function (sourcePath, targetPath) {
+    if (targetPath === f.log.filePath) renameCount++;
+    return originalRename.apply(fs, arguments);
+  };
+  t.after(function () {
+    fs.appendFileSync = originalAppend;
+    fs.renameSync = originalRename;
+  });
+
+  f.log.record(event({ target: "seat:1" }));
+  f.log.record(event({ target: "seat:2" }));
+  assert.equal(appendCount, 2);
+  assert.equal(renameCount, 0);
+
+  f.log.record(event({ target: "seat:3" }));
+  assert.equal(appendCount, 2);
+  assert.equal(renameCount, 1);
+  assert.deepEqual(f.log.query().map(function (x) { return x.target; }), ["seat:2", "seat:3"]);
+});
+
 test("書き込み失敗をloggerへ出し、業務処理へ例外を投げない", function (t) {
   var dir = fs.mkdtempSync(path.join(os.tmpdir(), "pokapoka-audit-fail-"));
   t.after(function () { fs.rmSync(dir, { recursive: true, force: true }); });
