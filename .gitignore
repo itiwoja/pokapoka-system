@@ -31,3 +31,6 @@ config/audit-log.jsonl
 .codex/
 .output/
 .workspace/
+
+# 店内注文DB（SQLiteのWAL・SHMを含む）
+data/
