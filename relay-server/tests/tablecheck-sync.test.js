@@ -23,6 +23,11 @@ eq("menu構造化", rec.menu, [{ name: "土鍋御膳", qty: 2, options: "大盛�
 var recPax = s.normalizeReservation({ id: "r2", start_at: "2026-07-15T19:00:00+0900", pax: 4, status: "booked" });
 eq("内訳なし→paxをadultsへ", [recPax.adults, recPax.kids], [4, 0]);
 
+var recInvalidPax = s.normalizeReservation({
+  id: "r2-negative", start_at: "2026-07-15T19:15:00+0900", pax: 2, children: 3, status: "booked",
+});
+eq("paxがkidsを下回ってもadultsは負にならない", [recInvalidPax.adults, recInvalidPax.kids], [0, 3]);
+
 eq("start_at無しはnull", s.normalizeReservation({ id: "r3" }), null);
 
 // --- 確定スキーマ(2026-07-16 実機確認)での正規化 ---
