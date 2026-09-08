@@ -46,6 +46,23 @@ test("config.json を環境変数形のオーバーレイへ変換する", funct
   });
 });
 
+test("auth.cookieSecureを環境変数形へ変換し、環境変数で上書きできる", function () {
+  var overlay = loadConfig.load(writeConfig({ auth: { cookieSecure: true } }));
+  assert.deepEqual(overlay, { RELAY_COOKIE_SECURE: "1" });
+  assert.deepEqual(loadConfig.mergeEnv(overlay, { RELAY_COOKIE_SECURE: "0" }), { RELAY_COOKIE_SECURE: "0" });
+
+  var relay = serverModule.createRelay({
+    configFile: overlay,
+    env: { MOCK: "1" },
+    source: { listReservations: async function () { return []; }, listSyncEvents: async function () { return []; }, getReservation: async function () { return null; } },
+    mockSource: {},
+  });
+  assert.equal(relay.config.authCookieSecure, "1");
+  assert.throws(function () {
+    serverModule.createRelay({ env: { MOCK: "1", RELAY_COOKIE_SECURE: "yes" }, mockSource: {} });
+  }, /auto \/ 1 \/ 0/);
+});
+
 test("ファイルが無ければ空オーバーレイ(環境変数だけで従来どおり動く)", function () {
   assert.deepEqual(loadConfig.load(path.join(tmpDir, "does-not-exist.json")), {});
   assert.deepEqual(loadConfig.load(null), {});
@@ -152,6 +169,7 @@ test("同梱の config.example.json は雛形として読み込める", function
   assert.equal(overlay.HOST, "auto");   // 起動時にLAN IPv4を自動検出 (#144追補)
   assert.equal(overlay.PORT, "8000");
   assert.equal(overlay.TABLECHECK_BASE, "https://api.tablecheck.com");
+  assert.equal(overlay.RELAY_COOKIE_SECURE, "auto");
 });
 
 test.after(function () { fs.rmSync(tmpDir, { recursive: true, force: true }); });

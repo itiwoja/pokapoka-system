@@ -39,6 +39,8 @@
     "_note": "店内Wi-Fiを客と共用している場合の共有トークン(#174)。空なら認証なし=到達できる端末は誰でも操作できる。設定すると他端末はページもAPIもトークンが必要になり、/qr のQRから開けば自動で入る(Cookie)。8文字以上。スタッフ用と客用でWi-Fiが分かれているなら空のままでよい。",
     "token": "",
     "_trustLoopback": "ミニPC自身(127.0.0.1)をトークン無しで通すか。QRでトークンを配る導線がミニPC上の /qr から始まるため既定は true。ミニPCを他人が触る運用なら false にする。",
-    "trustLoopback": true
+    "trustLoopback": true,
+    "_cookieSecure": "CookieのSecure属性。autoはTLSソケットで受けた場合のみ付与する。通常の店内HTTPはauto、HTTPSリバースプロキシでTLS終端する場合はtrueを明示する。転送ヘッダは自動判定に使わない。",
+    "cookieSecure": "auto"
   }
 }

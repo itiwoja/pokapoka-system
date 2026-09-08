@@ -34,6 +34,7 @@ var KEY_TO_ENV = {
   // config.json に置く (このファイル自体が .gitignore 済み) #174
   "auth.token": "RELAY_TOKEN",
   "auth.trustLoopback": "RELAY_TRUST_LOOPBACK",
+  "auth.cookieSecure": "RELAY_COOKIE_SECURE",
 };
 
 // 秘密情報は config.json に置かせない。黙って無視すると「キーを書いたのに MOCK のまま」という

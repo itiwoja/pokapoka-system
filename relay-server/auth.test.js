@@ -8,7 +8,7 @@ var TOKEN = "pokapoka-kitchen-2026";
 var LAN = "192.168.1.77";
 
 function req(headers) {
-  return { headers: headers || {} };
+  return { method: "GET", headers: headers || {} };
 }
 function at(pathname, query) {
   return new URL("http://localhost" + pathname + (query ? "?" + query : ""));
@@ -58,6 +58,14 @@ test("違うトークンは通さない", function () {
   assert.equal(auth.check(req(), at("/", "token=wrong"), TOKEN, LAN).ok, false);
   // 前方一致で通ってしまわないこと
   assert.equal(auth.check(req(), at("/", "token=" + TOKEN.slice(0, 10)), TOKEN, LAN).ok, false);
+  assert.equal(auth.check(req({ cookie: "relay_token=" + TOKEN }), at("/", "token=wrong"), TOKEN, LAN).ok, false,
+    "無効なquery tokenを有効なCookieで迂回させない");
+  assert.equal(auth.check(req(), at("/", "token=" + TOKEN + "&token=wrong"), TOKEN, "127.0.0.1").ok, false,
+    "重複tokenやループバック免除で曖昧なquery tokenを許可しない");
+  var post = req();
+  post.method = "POST";
+  assert.equal(auth.check(post, at("/api/orders", "token=" + TOKEN), TOKEN, LAN).ok, false,
+    "本文を持つAPIでtoken付きURLを使わせない");
 });
 
 test("Cookie の切り出しは他のキーに引きずられない", function () {
@@ -79,10 +87,13 @@ test("ループバックの信頼は明示的に切れる (ミニPCを他人が�
   assert.equal(auth.check(req(), at("/", "token=" + TOKEN), TOKEN, "127.0.0.1", false).ok, true);
 });
 
-test("Cookie ヘッダは Path とライフタイムを持つ", function () {
+test("Cookie ヘッダはHttpOnly・Path・ライフタイム・SameSiteを持つ", function () {
   var header = auth.cookieHeader(TOKEN);
   assert.match(header, /^relay_token=/);
   assert.match(header, /Path=\//);
   assert.match(header, /Max-Age=\d+/);
   assert.match(header, /SameSite=Lax/);
+  assert.match(header, /HttpOnly/);
+  assert.doesNotMatch(header, /; Secure/);
+  assert.match(auth.cookieHeader(TOKEN, true), /; Secure$/);
 });
