@@ -677,7 +677,107 @@
     hasOrderSnapshot = true;
   }
 
+  // 差分は連続する番号だけ適用する。欠落・再起動は全件で復旧する。
+  function createOrderStreamState() {
+    var session = null, sequence = -1, orders = new Map();
+    function decode(order) {
+      if (!order || typeof order.orderId !== "string" || !Array.isArray(order.items) ||
+          !Number.isFinite(Date.parse(order.orderedAt))) throw new Error("invalid order");
+      return { id: order.orderId, table: order.table, type: order.status || "new",
+        start: Date.parse(order.orderedAt), people: order.people,
+        items: order.items.map(function (item) {
+          return { name: item.name, qty: item.qty, options: item.note, allergies: item.allergies, done: false };
+        }) };
+    }
+    return { accept: function (msg) {
+      if (!msg || typeof msg.sessionId !== "string" || !Number.isSafeInteger(msg.sequence) || msg.sequence < 0) throw new Error("invalid envelope");
+      if (msg.type === "orders.snapshot") {
+        if (!Array.isArray(msg.orders)) throw new Error("invalid snapshot");
+        var next = new Map();
+        msg.orders.forEach(function (raw) { var order = decode(raw); next.set(order.id, order); });
+        orders = next;
+        session = msg.sessionId;
+        sequence = msg.sequence;
+      } else {
+        if (session !== msg.sessionId) throw new Error("snapshot required");
+        if (msg.type === "heartbeat") {
+          if (msg.sequence !== sequence) throw new Error("sequence gap");
+          return null;
+        }
+        if (msg.sequence <= sequence) return null;
+        if (msg.sequence !== sequence + 1) throw new Error("sequence gap");
+        if (msg.type === "order.cancelled") {
+          if (typeof msg.orderId !== "string") throw new Error("invalid cancellation");
+          orders.delete(msg.orderId);
+        } else if (msg.type === "order.created" || msg.type === "order.updated") {
+          var order = decode(msg.order);
+          orders.set(order.id, order);
+        } else { throw new Error("unknown message"); }
+        sequence = msg.sequence;
+      }
+      return Array.from(orders.values()).sort(function (a, b) { return a.start - b.start || a.id.localeCompare(b.id); });
+    } };
+  }
+
+  var orderSocket = null, orderSocketReady = false, orderSocketEpoch = 0;
+  function startOrderSocket() {
+    if (typeof window.WebSocket !== "function") return;
+    var retry = 0, retryTimer = null, lastReceived = 0;
+    function connect() {
+      var socket, state = createOrderStreamState();
+      orderSocketEpoch++;
+      markSyncAttempt("orders");
+      lastReceived = Date.now();
+      try {
+        socket = new window.WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/orders");
+      } catch (_) { schedule(); return; }
+      orderSocket = socket;
+      socket.onmessage = function (event) {
+        if (socket !== orderSocket) return;
+        try {
+          var msg = JSON.parse(event.data);
+          var feed = state.accept(msg);
+          if (feed) applyOrders(feed);
+          orderSocketReady = true;
+          lastReceived = Date.now();
+          retry = 0;
+          markSyncSuccess("orders");
+        } catch (_) { disconnect(); }
+      };
+      socket.onerror = function () { if (socket === orderSocket) disconnect(); };
+      socket.onclose = function () { if (socket === orderSocket) disconnect(); };
+    }
+    function schedule() {
+      if (retryTimer !== null) return;
+      retryTimer = setTimeout(function () { retryTimer = null; connect(); }, Math.min(1000 * Math.pow(2, retry++), 30000));
+    }
+    function disconnect() {
+      var old = orderSocket;
+      orderSocket = null;
+      orderSocketReady = false;
+      orderSocketEpoch++;
+      if (old) old.close();
+      markSyncFailure("orders");
+      schedule();
+    }
+    setInterval(function () {
+      if (orderSocket && Date.now() - lastReceived > 25000) disconnect();
+    }, 1000);
+    function resume() {
+      if (typeof document !== "undefined" && document.hidden) return;
+      if (orderSocket) disconnect();
+      if (retryTimer !== null) clearTimeout(retryTimer);
+      retryTimer = null;
+      connect();
+    }
+    window.addEventListener("online", resume);
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", resume);
+    connect();
+  }
+
   async function tickOrders() {
+    if (orderSocketReady) return;
+    var epoch = orderSocketEpoch;
     var res, incoming;
     markSyncAttempt("orders");
     try {
@@ -695,6 +795,7 @@
       markSyncFailure("orders");
       return;                          // 通信断: 直前の表示を保持 (window.KDS_ORDERS に触らない)
     }
+    if (orderSocketReady || epoch !== orderSocketEpoch) return;
     markSyncSuccess("orders");
     applyOrders(incoming);
   }
@@ -702,6 +803,7 @@
   if (typeof module !== "undefined" && module.exports) {
     // Node (テスト) から require された場合はポーリングしない
     module.exports = {
+      createOrderStreamState: createOrderStreamState,
       mergeStock: mergeStock,
       findNewOrders: findNewOrders,
       itemStateKey: itemStateKey,
@@ -730,13 +832,14 @@
     setInterval(tickOnce, POLL_MS);
     tickHealth();
     setInterval(tickHealth, HEALTH_POLL_MS);
+    startOrderSocket();
     tickOrders();
     setInterval(tickOrders, ORDER_POLL_MS);
     tickKitchen();
     setInterval(tickKitchen, KITCHEN_POLL_MS);
     setInterval(publishSyncStatus, STATUS_TICK_MS);
     console.log("[kds-bridge] 予約ストック取込を開始 (" + API + " を " + POLL_MS / 1000 + "秒間隔) / " +
-      "注文取込 (" + API_ORDERS + " を " + ORDER_POLL_MS / 1000 + "秒間隔) / " +
+      "注文取込 (WebSocket優先・切断中は " + API_ORDERS + " を " + ORDER_POLL_MS / 1000 + "秒間隔) / " +
       "厨房状態の端末間同期 (" + API_KITCHEN + " を " + KITCHEN_POLL_MS / 1000 + "秒間隔) / " +
       "同期状態 (" + API_HEALTH + " を " + HEALTH_POLL_MS / 1000 + "秒間隔) / " +
       "着席時に座席占有を登録 (" + API_SEATS + ")");

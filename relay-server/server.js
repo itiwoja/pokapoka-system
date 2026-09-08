@@ -202,7 +202,7 @@ function createRelay(options) {
     }
 
     if (url.pathname === "/api/orders" || url.pathname.indexOf("/api/orders/") === 0) {
-      return handleOrders(req, res, url, { orders: orders, ttlMs: config.orderTtlMs, audit: auditContext });
+      return handleOrders(req, res, url, { orders: orders, ttlMs: config.orderTtlMs, stream: orderStream, audit: auditContext });
     }
 
     if (url.pathname === "/api/print" && req.method === "POST") {
@@ -267,7 +267,7 @@ function createRelay(options) {
     }
 
     var rel;
-    try { rel = url.pathname === "/" ? "/kds-a-grid.html" : decodeURIComponent(url.pathname); }
+    try { rel = (url.pathname === "/" || url.pathname === "/kds") ? "/kds-a-grid.html" : decodeURIComponent(url.pathname); }
     catch (err) { res.writeHead(400); return res.end("bad request"); }
     // URL内のWindows/POSIX両方の区切りを同じものとして扱い、実行OSに関係なく
     // エンコードされたパストラバーサルをallowlist判定より先に拒否する。
@@ -300,6 +300,8 @@ function createRelay(options) {
       res.end(data);
     });
   });
+
+  var orderStream = require("./orders-websocket").attachOrdersWebSocket(server, orders, config, log);
 
   function resyncThenPoll() {
     return track(reservationSync.enqueueResync().then(function () {
@@ -355,6 +357,7 @@ function createRelay(options) {
   }
 
   function stop() {
+    orderStream.close();
     timers.forEach(function (timer) { clearIntervalFn(timer); });
     timers = [];
     started = false;
@@ -865,6 +868,7 @@ function handleOrders(req, res, url, context) {
         return json(res, { ok: false, error: result.error }, 400);
       }
       var put = orderIntake.putOrder(context.orders, result.order);
+      context.stream.refresh();
       var operation = put.created ? "order.create" : (put.updated ? "order.update" : "order.duplicate");
       recordAudit(context.audit, operation, auditTarget("order", result.order.id), "success", null, {
         itemCount: Array.isArray(result.order.items) ? result.order.items.length : 0,
@@ -894,6 +898,7 @@ function handleOrders(req, res, url, context) {
       recordAudit(context.audit, "order.cancel", auditTarget("order", orderId), "failure", null, { reason: "not-found" });
       return json(res, { ok: false, error: "order not found" }, 404);
     }
+    context.stream.refresh();
     recordAudit(context.audit, "order.cancel", auditTarget("order", orderId), "success",
       { state: "active" }, { state: "deleted" });
     res.writeHead(204, { "Cache-Control": "no-store" });
