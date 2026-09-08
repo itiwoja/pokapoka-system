@@ -81,7 +81,8 @@ function attachOrdersWebSocket(server, orders, config, log) {
       client.ping();
       send(client, message("heartbeat"));
     });
-  }, 10000);
+  // KDS は最終受信から10秒で同期遅延を表示するため、通信・タイマーの余裕を残す。
+  }, 5000);
   expiry.unref();
   heartbeat.unref();
   return { refresh, close() {

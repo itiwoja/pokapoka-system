@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const { once } = require("node:events");
 const WS = require("ws");
 const { createRelay } = require("./server");
-const { createOrderStreamState } = require("./kds-bridge");
+const { createOrderStreamState, createSyncStatusTracker } = require("./kds-bridge");
 
 async function setup(t, env = {}) {
   const relay = createRelay({ port: 0, env: Object.assign({ MOCK: "1" }, env),
@@ -22,6 +22,26 @@ async function setup(t, env = {}) {
   }
   return { relay, base, connect };
 }
+
+test("注文がなくてもheartbeatで同期正常を保ち、受信停止時は遅延を検出する", { timeout: 9000 }, async t => {
+  const { connect } = await setup(t);
+  const socket = connect();
+  const first = JSON.parse((await once(socket, "message"))[0]);
+  const state = createOrderStreamState();
+  const tracker = createSyncStatusTracker({ channels: ["orders"] });
+  state.accept(first);
+  tracker.success("orders", 0);
+  const received = once(socket, "message");
+  const heartbeat = JSON.parse((await received)[0]);
+  assert.equal(heartbeat.type, "heartbeat");
+  assert.equal(heartbeat.sequence, first.sequence);
+  assert.equal(state.accept(heartbeat), null);
+  // ネットワーク配送が500ms遅れても、次のheartbeat直前まで正常を維持する。
+  tracker.success("orders", 5500);
+  assert.equal(tracker.snapshot(10500).channels.orders.state, "normal");
+  // 受信が止まった場合の既存の警告は維持する。
+  assert.equal(tracker.snapshot(15500).channels.orders.state, "delayed");
+});
 
 test("WebSocket: 初期全件・複数端末への差分・冪等再送・取消・再接続", { timeout: 10000 }, async t => {
   const { base, connect } = await setup(t);
