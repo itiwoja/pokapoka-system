@@ -73,7 +73,7 @@
 
 ## Issue #155・#159・#160・#152 phase1（同一ブラウザ）
 
-- ホールモードには比較prototype A/B/Cを追加する。Aは従来の進行中＋予約の2ペイン、Bは予約ストック主表示＋進行中compact、Cは提供準備完了主表示＋予約ストック副表示＋進行中summary。選択はホールだけに表示し、`#hall=A|B|C` と `kds_hall_proto_v1` へ保存する。有効hash、有効LocalStorage、Aの順で初期値を決め、無効hashはAへ正規化する。キッチンのgrid/laneはprototype選択の影響を受けない。
+- ホールモードの既定表示は、従来のグリッド＋予約ストックを表示した読取専用とする。比較prototype A/B/C（Aは従来の進行中＋予約の2ペイン、Bは予約ストック主表示＋進行中compact、Cは提供準備完了主表示＋予約ストック副表示＋進行中summary）はコードを保持するが、2026-09-03の判断により `HALL_PROTO_ENABLED = false` で既定無効とする。フラグを有効化した場合のみ、選択をホールに表示し、`#hall=A|B|C` と `kds_hall_proto_v1` へ保存する。有効hash、有効LocalStorage、Aの順で初期値を決め、無効hashはAへ正規化する。キッチンのgrid/laneはprototype選択の影響を受けない。
 - 予約メニューを既存の `itemCategory` で判定し、rice品目を1品以上含み予約時刻まで30分以内（時刻超過を含む）の全予約へ独立した「炊飯準備」cueを表示する。非rice・31分以上には表示せず、同時表示件数に上限を設けない。cue状態はrid単位で `kds_rice_cue_v1` に保存し、確認操作はキッチンだけに許可する。
 - 厨房限定卓番overrideは `kds_table_override_v1` にorder id単位で保存する。`effectiveTable(order)` を表示・伝票preview・hall-ready snapshot・コンロ所有卓表示にだけ適用し、`window.KDS_ORDERS`、`order.table`、relay/POS/TableCheck、`/api/seats` は変更しない。重複候補は初回決定で保存せず警告し、同一候補の「重複を許可して変更」を2回目の決定として保存する。候補変更、モーダル閉鎖、モード変更で確認状態を解除する。
 - 全品目完了時はカード消去前に `kds_hall_ready_v1` へorder id単位のsnapshot（effective卓番、完了時刻、品目要約）をidempotentに作る。cueはホール専用で、dismissed tombstoneは当日中保持する。dismissは専用6秒undoでactiveへ戻せ、既存厨房完了undoとはstate/timerを共有しない。
@@ -81,7 +81,7 @@
 
 ## Issue #204 現行版への確認済み記録の適用範囲
 
-上記の完成レベル確認は、注記どおり2026-07-14時点の旧版を対象にした記録です。Issue #204で追加・変更された現行作業ツリーのUI（ホールA/B/C、炊飯準備cue、厨房限定卓番上書き、提供準備完了cue）を含む版へ、そのまま「確認済み」を適用しません。
+上記の完成レベル確認は、注記どおり2026-07-14時点の旧版を対象にした記録です。Issue #204で追加・変更された現行作業ツリーのUI（ホールモードの既定表示、炊飯準備cue、厨房限定卓番上書き、提供準備完了cue）を含む版へ、そのまま「確認済み」を適用しません。ホールA/B/C比較prototypeは2026-09-03の判断で既定無効になっているため、A/B/C比較の旧版試験結果も現行版の合格証跡には流用しません。
 
 現行版のローカルブラウザ回帰は [現行KDSブラウザ回帰試験・受け入れ記録](現行KDSブラウザ回帰試験_受け入れ記録.md) のREG-01〜REG-10を正本とします。そこでは、同一origin 2タブのLocalStorage/BroadcastChannel確認と、中継ServerのMOCK確認を、店舗実機・店内LAN・実プリンター・TableCheck LIVEの受け入れから分離します。
 
