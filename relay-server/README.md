@@ -59,6 +59,18 @@ API 契約前でも、**予約SaaS(TableCheck) の操作を模した最小パネ
 
 ### いますぐ試す(API契約前・モックモード)
 
+APIクライアントのHTTP疎通を自動確認する場合は、リポジトリ直下から実行する:
+
+```powershell
+npm --prefix relay-server run check:tablecheck
+```
+
+ローカルの `127.0.0.1` に一時HTTPモックを起動し、既存の Booking / Sync クライアントで
+一覧取得・詳細取得・新規/変更/キャンセル検知を実行する。APIキー・Shop IDの準備や
+`npm install` は不要。実環境の設定ファイル・環境変数は読み込まず、終了時にモックを停止する。
+成功時は全項目が pass、失敗時は非ゼロ終了となる。
+確認項目と本番接続前の未確認事項は [モック疎通確認](tablecheck-connectivity.md) を参照。
+
 ```sh
 node relay-server/server.js        # APIキー未設定なら自動でモック
 # または明示的に

@@ -70,6 +70,7 @@ function createReservation(input) {
   var id = input.id ? String(input.id) : nextRid();
   var rec = {
     id: id,
+    shop_id: input.shop_id != null ? String(input.shop_id) : "mock-shop",
     status: input.status || "confirmed",
     start_at: input.start_at || today(19, 0),
     first_name: input.first_name != null ? String(input.first_name) : "",
@@ -79,6 +80,7 @@ function createReservation(input) {
     pax_senior: num(input.pax_senior),
     pax_baby: num(input.pax_baby),
     orders: normalizeOrders(input.orders),
+    questions: Array.isArray(input.questions) ? copy(input.questions) : [],
     special_request: input.special_request != null ? String(input.special_request) : null,
     updated_at: new Date().toISOString(),
   };
@@ -118,13 +120,14 @@ function updateReservation(id, patch) {
   if (!DB[id]) return null;
   patch = patch || {};
   var rec = DB[id];
-  ["first_name", "last_name", "start_at", "special_request", "status"].forEach(function (k) {
+  ["shop_id", "first_name", "last_name", "start_at", "special_request", "status"].forEach(function (k) {
     if (patch[k] !== undefined) rec[k] = patch[k];
   });
   ["pax_adult", "pax_child", "pax_senior", "pax_baby"].forEach(function (k) {
     if (patch[k] !== undefined) rec[k] = num(patch[k]);
   });
   if (patch.orders !== undefined) rec.orders = normalizeOrders(patch.orders);
+  if (patch.questions !== undefined) rec.questions = Array.isArray(patch.questions) ? copy(patch.questions) : [];
   rec.pax = totalPax(rec);
   rec.updated_at = new Date().toISOString();
   pushEvent("updated", id);
