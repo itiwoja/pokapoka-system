@@ -13,7 +13,7 @@
 | 項目 | 記録 |
 | --- | --- |
 | 実施日・時刻 | 2026-09-08 15:55〜16:05頃（ローカルMOCK実測） |
-| 対象ソース | `kds-a-grid.html`。commit `e08fed5`（完了取消、炊飯時刻境界、モード切替、提供時間ログの修正版） |
+| 対象ソース | `kds-a-grid.html`。commit `25a4e66`（完了取消、炊飯時刻境界、モード切替、提供時間ログの修正版） |
 | 中継Server | `MOCK=1 PORT=8123 node relay-server/server.js` |
 | KDS URL | `http://127.0.0.1:8123/`（loopbackのみ。店舗LANの合否ではない） |
 | 予約デモURL | `http://127.0.0.1:8123/demo` |
