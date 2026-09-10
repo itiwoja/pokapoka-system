@@ -33,6 +33,10 @@
 3. **PR を出す**
    - `gh pr create` で `main` 向けに Pull Request を作成する
    - PR には変更内容・目的・確認手順（テスト計画）を書く
+   - PR 本文は、実改行を含む UTF-8 の Markdown ファイルを `--body-file` で渡す。JSON/JavaScript のエスケープ済み文字列や、本文中に `\n` を埋め込んだ `--body` は使わない
+   - Windows / PowerShell では、本文ファイルを UTF-8（BOM なし）で作成し、見出し・箇条書き・コードスパンが Markdown として読めることを確認する。`\n`、`\r`、`\t` などのバックスラッシュ表記を改行や制御文字の代わりに使わない
+   - このリポジトリでは `scripts/pr.ps1 -Action create -Title <タイトル> -BodyFile <本文ファイル>`（更新は `-Action edit -Number <番号>`）を使い、作成・更新後の読み戻し検証まで実行する
+   - 作成後は `gh pr view <番号> --json body --jq .body` で本文を読み戻し、見出しが独立行に表示され、本文に文字列 `\n` や置換文字 `�` が混入していないことを確認する
 4. **承認を待つ**
    - レビュー・承認（Approve）が付くまでマージしない
    - CI がある場合はグリーンになるまでマージしない
