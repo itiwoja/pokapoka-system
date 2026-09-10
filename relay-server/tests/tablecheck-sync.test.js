@@ -1,8 +1,8 @@
 /**
- * tablecheck-sync.test.js — node relay-server/tablecheck-sync.test.js で実行
+ * tablecheck-sync.test.js — node relay-server/tests/tablecheck-sync.test.js で実行
  */
 "use strict";
-var s = require("./tablecheck-sync");
+var s = require("../tablecheck-sync");
 var pass = 0, fail = 0;
 function eq(name, got, want) {
   var g = JSON.stringify(got), w = JSON.stringify(want);
@@ -22,6 +22,11 @@ eq("menu構造化", rec.menu, [{ name: "土鍋御膳", qty: 2, options: "大盛�
 
 var recPax = s.normalizeReservation({ id: "r2", start_at: "2026-07-15T19:00:00+0900", pax: 4, status: "booked" });
 eq("内訳なし→paxをadultsへ", [recPax.adults, recPax.kids], [4, 0]);
+
+var recInvalidPax = s.normalizeReservation({
+  id: "r2-negative", start_at: "2026-07-15T19:15:00+0900", pax: 2, children: 3, status: "booked",
+});
+eq("paxがkidsを下回ってもadultsは負にならない", [recInvalidPax.adults, recInvalidPax.kids], [0, 3]);
 
 eq("start_at無しはnull", s.normalizeReservation({ id: "r3" }), null);
 
@@ -73,6 +78,8 @@ console.log("normalizeStatus");
 eq("canceled検知", s.normalizeStatus("Cancelled_by_user"), "canceled");
 eq("no_show検知", s.normalizeStatus("no-show"), "no_show");
 eq("既定はbooked", s.normalizeStatus("something"), "booked");
+eq("未知のseat系statusは安全側のbooked", s.normalizeStatus("seating_soon"), "booked");
+eq("未知のarrival系statusは安全側のbooked", s.normalizeStatus("arrival_pending"), "booked");
 
 console.log("normalizeStatus(確定enum 11値 → KDS挙動 / Issue #117)");
 // 載る (内部status=booked / ACTIVE_STATUSES)
@@ -134,11 +141,13 @@ put("rej", "rejected");      // ★取りこぼし: 従来はbooked扱いで残�
 put("iou", "iou_prepay");    // 確定前: 暫定で外す
 put("cfm", "confirmed");     // 確定: 残る
 put("att", "attended");      // 来店済(暫定booked): 残る
+put("unknown-seat", "seating_soon"); // 未知値は安全側で棚に残す
 s.purge(store2, now);
 eq("rejectedはpurgeで除去", store2.has("rej"), false);
 eq("iou_prepayはpurgeで除去", store2.has("iou"), false);
 eq("confirmedは残る", store2.has("cfm"), true);
 eq("attendedは残る(暫定)", store2.has("att"), true);
+eq("未知のseat系statusはpurgeで残る", store2.has("unknown-seat"), true);
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

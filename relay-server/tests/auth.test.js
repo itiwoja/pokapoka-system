@@ -2,7 +2,7 @@
 
 var test = require("node:test");
 var assert = require("node:assert/strict");
-var auth = require("./auth");
+var auth = require("../auth");
 
 var TOKEN = "pokapoka-kitchen-2026";
 var LAN = "192.168.1.77";

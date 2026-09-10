@@ -18,7 +18,7 @@ npm --prefix relay-server run check:tablecheck
 
 ## 確認する通信とデータ
 
-`tablecheck-connectivity.test.js` が `server.js` の `createTableCheckSource` を使用する。
+`tests/tablecheck-connectivity.test.js` が `server.js` の `createTableCheckSource` を使用する。
 通常の `MOCK=1` による関数呼び出しの省略経路ではなく、実クライアントのHTTP・JSON処理を通す。
 接続先はテスト内で固定するため、本番設定のHTTPS制限を変更する必要はない。
 

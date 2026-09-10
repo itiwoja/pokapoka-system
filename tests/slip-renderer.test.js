@@ -1,14 +1,14 @@
 "use strict";
 /**
  * slip-renderer.test.js — 依存ゼロの素の Node テスト
- * 実行: node --test slip-renderer.test.js
+ * 実行: node --test tests/slip-renderer.test.js
  *
  * 描画そのもの(canvas)はブラウザでしか動かないため、ここではテンプレートの
  * 正規化・判定・差込フィールド置換という純粋関数だけを検証する。
  */
 var test = require("node:test");
 var assert = require("node:assert/strict");
-var R = require("./slip-renderer.js");
+var R = require("../slip-renderer.js");
 
 test("defaultTemplate: 80mm・品目リストを1つ持つ既定レイアウトを返す", function () {
   var t = R.defaultTemplate();

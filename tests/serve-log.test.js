@@ -1,11 +1,11 @@
 // ============================================================
 // serve-log.test.js — 依存ゼロの素の Node テスト
-// 実行: node mockup/serve-log.test.js
+// 実行: node --test tests/serve-log.test.js
 //
 // serve-log.js の純粋関数を検証する。フレームワーク・外部パッケージ不要。
 // ============================================================
 var assert = require('assert');
-var SL = require('./serve-log.js');
+var SL = require('../serve-log.js');
 
 var passed = 0;
 function test(name, fn) {

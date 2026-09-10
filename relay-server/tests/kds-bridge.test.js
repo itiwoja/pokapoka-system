@@ -1,5 +1,5 @@
 /**
- * kds-bridge.test.js — node --test relay-server/kds-bridge.test.js で実行
+ * kds-bridge.test.js — node --test relay-server/tests/kds-bridge.test.js で実行
  *
  * mergeStock() のマージ・削除判定 (Issue #129):
  *   由来判定は rid の形式 (接頭辞/長さ) ではなく「ブリッジが取り込んだ実績 (seen)」で行う。
@@ -8,7 +8,7 @@
 
 var test = require("node:test");
 var assert = require("node:assert/strict");
-var bridge = require("./kds-bridge");
+var bridge = require("../kds-bridge");
 var mergeStock = bridge.mergeStock;
 var findNewOrders = bridge.findNewOrders;
 var reconcileDoneCounts = bridge.reconcileDoneCounts;

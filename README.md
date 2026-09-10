@@ -14,7 +14,9 @@
 | `relay-server/` | **店内中継サーバー**。TableCheck 予約の取込と KDS の Web 配信（[詳細 README](relay-server/README.md)） |
 | `order-client.js` | 注文端末の送信・端末保存・受付確認・再送（[組み込み手順](docs/注文端末_通信モジュール組み込み.md)） |
 | `config/config.example.json` | 端末接続先などの設定雛形（実体 `config/config.json` は .gitignore 済み） |
-| `serve-log.js` / `serve-log.test.js` | 提供時間計測ロジックの Node テスト用参照実装 |
+| `serve-log.js` / `tests/serve-log.test.js` | 提供時間計測ロジックの Node テスト用参照実装 |
+| `tests/` | KDS画面・提供時間・伝票描画のテスト |
+| `relay-server/tests/` | 中継サーバー・通信モジュールのテスト |
 | `docs/` | PRD・要件定義・DB設計などの設計ドキュメント |
 | `knowledge/` | 打合せ議事録・調査メモ・裏どり結果 |
 
@@ -59,12 +61,11 @@ GitHub Actions は Pull Request と `main` への push で Node.js 22 を使用�
 TableCheck などの実 API は不要です。ローカルでもリポジトリ直下から同じテストを再現できます。
 
 ```sh
-cd relay-server
-npm ci
+npm --prefix relay-server ci
 npm test
-cd ..
-node --test ./*.test.js
 ```
+
+`npm run test:kds` / `npm run test:relay` で個別にも実行できます。
 
 `npm ci` は `relay-server/package-lock.json` に固定された依存関係をクリーンに導入します。
 いずれかのテストが失敗するとコマンドと GitHub Actions は非ゼロ終了します。
@@ -108,7 +109,7 @@ TableCheck ◀── 外向きpull ── server.js ── /api/stock(JSON) ─�
 計測ロジックは `kds-a-grid.html` にインライン実装（単一HTML要件のため）していますが、同一ロジックを `serve-log.js` に切り出して Node テストで検証しています。
 
 ```sh
-node serve-log.test.js
+node --test tests/serve-log.test.js
 ```
 
 コンソールからの参照用アクセサ:
@@ -120,7 +121,7 @@ window.KDS_exportServeCSV() // CSV ダウンロード
 window.KDS_clearServeLog()  // ログ全消去
 ```
 
-> **注**: `serve-log.js` は Node テスト用の参照実装です。`kds-a-grid.html` 内のインライン版とロジックは同一なので、片方を変更したら両方（と `serve-log.test.js`）を同期してください。
+> **注**: `serve-log.js` は Node テスト用の参照実装です。`kds-a-grid.html` 内のインライン版とロジックは同一なので、片方を変更したら両方（と `tests/serve-log.test.js`）を同期してください。
 
 ## 遅延アラート：10分超の静的な赤表示（Issue #12・#158）
 

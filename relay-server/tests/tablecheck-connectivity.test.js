@@ -6,9 +6,9 @@ var test = require("node:test");
 var assert = require("node:assert/strict");
 var http = require("node:http");
 var events = require("node:events");
-var mock = require("./mock-tablecheck");
-var serverModule = require("./server");
-var booking = require("./booking-resync");
+var mock = require("../mock-tablecheck");
+var serverModule = require("../server");
+var booking = require("../booking-resync");
 
 test("TableCheck モックHTTP疎通（実APIの認証・権限・仕様は未検証）", { timeout: 20000 }, async function (t) {
   var shopId = "mock-shop";

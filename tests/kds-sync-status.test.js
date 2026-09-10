@@ -5,7 +5,7 @@ var assert = require("node:assert/strict");
 var fs = require("node:fs");
 var path = require("node:path");
 
-var html = fs.readFileSync(path.join(__dirname, "kds-a-grid.html"), "utf8");
+var html = fs.readFileSync(path.join(__dirname, "..", "kds-a-grid.html"), "utf8");
 
 test("KDSはrelay同期の全体状態と予約・注文・厨房の経路別表示を持つ", function () {
   assert.match(html, /id="syncStatus"[^>]*data-state="pending"/);

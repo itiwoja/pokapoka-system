@@ -2,7 +2,7 @@
 
 var test = require("node:test");
 var assert = require("node:assert/strict");
-var booking = require("./booking-resync");
+var booking = require("../booking-resync");
 
 function rawReservation(id, startAt, status) {
   return {
