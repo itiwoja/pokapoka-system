@@ -1,0 +1,3 @@
+[submodule "order-terminal"]
+	path = order-terminal
+	url = https://github.com/mukkunaru/restaurant-order-system.git
