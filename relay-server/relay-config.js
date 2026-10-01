@@ -22,6 +22,7 @@ function createConfig(env, options) {
   if (!isMock) validateTableCheckBase(base, src.TABLECHECK_ALLOW_CUSTOM_BASE === "1");
   var pollMs = normalizeInterval(src.POLL_MS, isMock ? 3000 : 30000, isMock ? 100 : 30000);
   var resyncMs = normalizeInterval(src.RESYNC_MS, 900000, isMock ? 1000 : 60000);
+  var tls = normalizeTlsFiles(src.TLS_CERT_FILE, src.TLS_KEY_FILE);
   return {
     port: options.port !== undefined ? options.port : (Number(src.PORT) || 8000),
     host: resolveHost(src.HOST),
@@ -50,7 +51,25 @@ function createConfig(env, options) {
     // autoは実際のTLSソケットだけを信頼する。X-Forwarded-Protoは任意クライアントが
     // 偽装できるため参照しない。TLS終端プロキシ利用時は明示的に1へ設定する (#209)
     authCookieSecure: normalizeCookieSecure(src.RELAY_COOKIE_SECURE),
+    tlsCertFile: tls.cert,
+    tlsKeyFile: tls.key,
+    // 仕様書 §17 の時間差モック注文。実注文と混ざらないよう MOCK モードでのみ許可する
+    mockOrderScenario: normalizeMockOrderScenario(src.MOCK_ORDER_SCENARIO, isMock),
   };
+}
+
+function normalizeTlsFiles(cert, key) {
+  cert = cert ? String(cert) : "";
+  key = key ? String(key) : "";
+  if (!cert !== !key) throw new Error("server.tlsCert と server.tlsKey (環境変数は TLS_CERT_FILE / TLS_KEY_FILE) は両方指定する");
+  return { cert: cert || null, key: key || null };
+}
+
+function normalizeMockOrderScenario(value, isMock) {
+  if (value === undefined || value === null || value === "" || value === "0") return false;
+  if (value !== "1") throw new Error("order.mockScenario は true / false (環境変数は 1 / 0) のいずれかにする");
+  if (!isMock) throw new Error("MOCK_ORDER_SCENARIO は MOCK モードでのみ使える (実注文に模擬注文を混ぜない)");
+  return true;
 }
 
 function normalizeCookieSecure(value) {

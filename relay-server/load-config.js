@@ -19,6 +19,9 @@ var DEFAULT_PATH = path.resolve(__dirname, "..", "config", "config.json");
 var KEY_TO_ENV = {
   "server.host": "HOST",
   "server.port": "PORT",
+  // 実機WSS検証でNode自身にTLSを終端させる場合の証明書と秘密鍵のパス (リポジトリ直下からの相対可)
+  "server.tlsCert": "TLS_CERT_FILE",
+  "server.tlsKey": "TLS_KEY_FILE",
   "tablecheck.base": "TABLECHECK_BASE",
   "tablecheck.shopId": "SHOP_ID",
   "tablecheck.pollMs": "POLL_MS",
@@ -30,6 +33,7 @@ var KEY_TO_ENV = {
   "seat.walkinTtlMin": "SEAT_WALKIN_TTL_MIN",
   "kitchen.ttlMin": "KITCHEN_TTL_MIN",
   "order.ttlMin": "ORDER_TTL_MIN",
+  "order.mockScenario": "MOCK_ORDER_SCENARIO",
   // 店内LAN内でだけ使う共有トークン。クラウドのAPIキーと違い店ごとに書き換える設定値なので
   // config.json に置く (このファイル自体が .gitignore 済み) #174
   "auth.token": "RELAY_TOKEN",

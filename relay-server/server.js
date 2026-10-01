@@ -19,10 +19,13 @@
  * 起動:
  *   本番:   TABLECHECK_API_KEY=xxx node relay-server/server.js   (host/shopId は config.json)
  *   モック: MOCK=1 node relay-server/server.js
+ *   WSS検証: TLS_CERT_FILE=cert.pem TLS_KEY_FILE=key.pem MOCK=1 MOCK_ORDER_SCENARIO=1 node relay-server/server.js
  */
 "use strict";
 
 var http = require("http");
+var https = require("https");
+var fs = require("fs");
 var path = require("path");
 var kitchen = require("./kitchen-state");
 var auth = require("./auth");
@@ -100,7 +103,15 @@ function createRelay(options) {
     getReservation: tableCheckSource.getReservation,
   });
 
-  var server = http.createServer(function (req, res) {
+  // TLS証明書を渡したときだけNode自身がHTTPS/WSSで待ち受ける (実機WSS検証用)。
+  // 本番の推奨構成はリバースプロキシでの終端のまま。読めない証明書は起動前に止める
+  var tlsOptions = config.tlsCertFile ? {
+    cert: fs.readFileSync(path.resolve(root, config.tlsCertFile)),
+    key: fs.readFileSync(path.resolve(root, config.tlsKeyFile)),
+  } : null;
+  var mockOrderScenario = null;
+
+  var server = createListener(tlsOptions, function (req, res) {
     var url;
     try { url = new URL(req.url, "http://localhost"); }
     catch (err) { return httpUtil.text(res, 400, "bad request"); }
@@ -162,6 +173,7 @@ function createRelay(options) {
         mode: config.isMock ? "mock" : "live",
         pollMs: config.pollMs,
         resyncMs: config.resyncMs,
+        ordersStream: orderStream.stats(),
       }, reservationSync.health()));
     }
     if (pathname === "/api/audit") {
@@ -221,12 +233,17 @@ function createRelay(options) {
     server.listen(config.port, config.host, function () {
       var address = server.address();
       var listenPort = address && address.port || config.port;
-      var baseUrl = "http://" + (config.host.includes(":") ? "[" + config.host + "]" : config.host) + ":" + listenPort;
+      var baseUrl = (tlsOptions ? "https://" : "http://") + (config.host.includes(":") ? "[" + config.host + "]" : config.host) + ":" + listenPort;
       log("起動: " + baseUrl + "  (モード: " +
         (config.isMock ? "MOCK — デモ予約を配信" : "LIVE — TableCheck へ " + config.pollMs / 1000 + "秒間隔で pull") + ")");
       if (config.isMock) {
         if (env.SEED === "1") { mock.seed(); log("SEED=1: デモ予約を1件シード"); }
         log("デモ操作コンソール: " + baseUrl + "/demo");
+        if (config.mockOrderScenario) {
+          mockOrderScenario = require("./mock-order-scenario").startMockOrderScenario({
+            orders: orders, refresh: orderStream.refresh, log: log,
+          });
+        }
       }
       log("KDS(デシャップ): " + baseUrl + "/  / 予約: /api/stock / 注文: /api/orders / 状態: /api/health");
       if (config.authToken) {
@@ -254,6 +271,8 @@ function createRelay(options) {
   }
 
   function stop() {
+    if (mockOrderScenario) mockOrderScenario.stop();
+    mockOrderScenario = null;
     orderStream.close();
     timers.forEach(function (timer) { clearIntervalFn(timer); });
     timers = [];
@@ -279,6 +298,10 @@ function createRelay(options) {
     resyncThenPoll: resyncThenPoll,
     whenInitialSync: function () { return initialSync; },
   };
+}
+
+function createListener(tlsOptions, handler) {
+  return tlsOptions ? https.createServer(tlsOptions, handler) : http.createServer(handler);
 }
 
 function defaultLog(message) {

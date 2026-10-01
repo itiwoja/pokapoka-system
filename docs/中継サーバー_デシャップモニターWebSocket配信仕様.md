@@ -1,6 +1,6 @@
 # 中継サーバー―デシャップモニター WebSocket配信仕様
 
-> 実装状況（2026-09-08）: `/ws/orders` と `/kds`、差分配信、再接続、認証・死活確認を実装。HTTP取得は切断時フォールバックとして維持。取消は既存UIに合わせ即時除去し、自動モックシナリオ・ACK監視は未実装。運用方法は [relay-server README](../relay-server/README.md#注文のwebsocket配信) を参照。
+> 実装状況（2026-10-01）: `/ws/orders` と `/kds`、差分配信、再接続、認証・死活確認を実装。HTTP取得は切断時フォールバックとして維持。検証用に、証明書指定時のNode自身でのHTTPS/WSS待受、§17の自動モックシナリオ（`MOCK_ORDER_SCENARIO=1`）、§15のACK記録（`/api/health` の `ordersStream`）を追加。取消は既存UIに合わせ即時除去。運用方法は [relay-server README](../relay-server/README.md#注文のwebsocket配信) を参照。
 
 ## 1. 目的
 

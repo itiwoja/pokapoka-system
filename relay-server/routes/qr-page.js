@@ -27,14 +27,14 @@ function handleQrPage(res, config, hostHeader) {
 
   var base, reachable;
   if (usable) {
-    base = (config.authCookieSecure === "1" ? "https://" : "http://") + fromHeader;
+    base = (config.authCookieSecure === "1" || config.tlsCertFile ? "https://" : "http://") + fromHeader;
     reachable = true;
   } else {
     var isLoopback = config.host === "127.0.0.1" || config.host === "localhost";
     var lanIp = isLoopback ? relayConfig.detectLanIp() : config.host;
     if (lanIp === "0.0.0.0" || lanIp === "::") lanIp = relayConfig.detectLanIp();
     reachable = !!lanIp && lanIp !== "127.0.0.1";   // 127.0.0.1待ち受けでは他端末から届かない
-    base = (config.authCookieSecure === "1" ? "https://" : "http://") +
+    base = (config.authCookieSecure === "1" || config.tlsCertFile ? "https://" : "http://") +
       (lanIp || "127.0.0.1") + ":" + config.port;
   }
   // 認証有効時は QR にトークンを載せる。iPad は1回読めば Cookie が入り、以後は不要 (#174)

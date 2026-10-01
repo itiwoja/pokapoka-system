@@ -11,7 +11,7 @@ function attachOrdersWebSocket(server, orders, config, log) {
   catch (err) {
     if (err.code !== "MODULE_NOT_FOUND") throw err;
     log("WebSocket無効: relay-server で npm ci を実行してください。HTTP注文取得は継続します。");
-    return { refresh() {}, close() {} };
+    return { refresh() {}, stats() { return null; }, close() {} };
   }
   const wss = new WebSocketServer({ noServer: true, maxPayload: 4096, perMessageDeflate: false });
   const sessionId = crypto.randomUUID();
@@ -67,8 +67,16 @@ function attachOrdersWebSocket(server, orders, config, log) {
       client.on("error", () => client.terminate());
       client.alive = true;
       client.on("pong", () => { client.alive = true; });
-      // この経路は配信専用。注文の書込みは検証済みHTTP APIに限定する。
-      client.on("message", () => {});
+      // この経路は配信専用。注文の書込みは検証済みHTTP APIに限定し、受け付けるのは受信確認だけ。
+      // ACKは再送に使わず、/api/health で端末の追従状況を確認するためだけに記録する (仕様書 §15)。
+      client.on("message", data => {
+        let ack;
+        try { ack = JSON.parse(data); } catch (_) { return; }
+        if (!ack || ack.type !== "orders.ack" || ack.sessionId !== sessionId ||
+            !Number.isSafeInteger(ack.sequence) || ack.sequence < 0 || ack.sequence > sequence) return;
+        if (client.ackSequence === undefined || ack.sequence > client.ackSequence) client.ackSequence = ack.sequence;
+        client.ackAt = new Date().toISOString();
+      });
       send(client, message("orders.snapshot", { orders: feed.map(wire) }));
     });
   }
@@ -85,7 +93,14 @@ function attachOrdersWebSocket(server, orders, config, log) {
   }, 5000);
   expiry.unref();
   heartbeat.unref();
-  return { refresh, close() {
+  function stats() {
+    const clients = Array.from(wss.clients);
+    const acked = clients.filter(client => client.ackSequence !== undefined);
+    return { sessionId, sequence, clients: clients.length,
+      upToDate: acked.filter(client => client.ackSequence === sequence).length,
+      lowestAck: acked.length ? Math.min.apply(null, acked.map(client => client.ackSequence)) : null };
+  }
+  return { refresh, stats, close() {
     clearInterval(expiry);
     clearInterval(heartbeat);
     server.removeListener("upgrade", upgrade);
