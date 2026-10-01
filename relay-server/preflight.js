@@ -20,7 +20,7 @@ var http = require("http");
 var childProcess = require("child_process");
 var loadConfig = require("./load-config");
 
-/* server.js の resolveHost()/detectLanIp() と同じ規則。
+/* relay-config.js の resolveHost()/detectLanIp() と同じ規則。
    診断ツールはサーバー本体が読み込めない状況でこそ使うので、あえて依存しない */
 function detectLanIp() {
   var candidates = lanAddresses().filter(function (a) { return !a.linkLocal; });

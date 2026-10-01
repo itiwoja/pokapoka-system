@@ -16,20 +16,17 @@
  */
 "use strict";
 
-var MAX_TABLE_LENGTH = 6;    // seat-occupancy.js と揃える
+var seats = require("./seat-occupancy");
+
+// 卓番の規則は座席占有と共有する。注文と座席で同じ卓番の解釈がずれないようにするため
+var MAX_TABLE_LENGTH = seats.MAX_TABLE_LENGTH;
+var validateTable = seats.validateTable;
 var MAX_ORDER_ID_LENGTH = 64;
 var MAX_ITEMS = 60;
 var MAX_NAME_LENGTH = 80;
 var MAX_NOTE_LENGTH = 200;
 var MAX_QTY = 99;
 var MAX_PEOPLE = 99;
-
-function validateTable(value) {
-  if (typeof value !== "string") return null;
-  var table = value.trim();
-  if (!table || table.length > MAX_TABLE_LENGTH) return null;
-  return table;
-}
 
 function validateOrderId(value) {
   if (typeof value !== "string" && typeof value !== "number") return null;
