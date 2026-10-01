@@ -147,7 +147,7 @@ function starAlign(kind) { return ESC + GS + "\x61" + (STAR_ALIGN[kind] || "\x00
 function starScale(w, h) { return ESC + "\x69" + String.fromCharCode(h) + String.fromCharCode(w); }
 var STAR_BOLD_ON = ESC + "\x45";
 var STAR_BOLD_OFF = ESC + "\x46";
-var STAR_CUT = ESC + "\x64\x33";
+var STAR_CUT = ESC + "\x64\x33";   // n はASCIIの '3' (0x33)
 
 /* 初期化に ESC @ は使わない。仕様書には載っているが本番機では解釈されず、
    1行目に "@" がそのまま印字された (2026-07-31 実機確認)。
@@ -251,9 +251,6 @@ function buildRasterEscPos(raster, feedLines) {
   parts.push(ctl(ESC + "\x64\x02" + ESC + "\x6d"));                                   // カット
   return Buffer.concat(parts);
 }
-
-/** Star のカット。n はASCIIの '3' (0x33) = 紙送り付きパーシャルカット */
-var STAR_CUT = ESC + "\x64\x33";
 
 /**
  * StarPRNT: ESC GS S でラスタービットイメージを1コマンドで送る (mC-Print3 の本線)。

@@ -35,7 +35,7 @@ function handleSeats(req, res, url, context) {
       if (!occupancy) {
         recordAudit(context.audit, "seat.update", auditTarget("seat", requestedTable), "failure", null,
           { reason: "invalid-table" });
-        return json(res, { ok: false, error: "table must be a non-empty string of at most 6 characters" }, 400);
+        return json(res, { ok: false, error: "table must be a non-empty string of at most " + seats.MAX_TABLE_LENGTH + " characters" }, 400);
       }
       recordAudit(context.audit, previous ? "seat.update" : "seat.create", auditTarget("seat", occupancy.table),
         "success", previous ? { state: "occupied" } : null,
