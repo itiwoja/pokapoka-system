@@ -454,7 +454,11 @@ KDS 本体は無改修。**このサーバー経由で `/` を開くと、配信
 
 ## 内部構成
 
-- `server.js`: HTTPルーティングとサーバーの起動・停止
+- `server.js`: 部品の組み立て、共有トークン認証、URLの振り分け、サーバーの起動・停止
+- `relay-config.js`: 既定値・`config/config.json`・環境変数から実行時設定を組み立てて検証する
+- `routes/`: 各APIの処理（`seats.js` 座席占有、`kitchen.js` 厨房状態、`orders.js` 注文、`print.js` 印刷・プリンターIP・印刷スタイル、`audit.js` 監査ログ閲覧、`mock.js` モック予約、`qr-page.js` 接続用QR、`static.js` 静的ファイルとKDSへのブリッジ注入）
+- `http-util.js`: JSON応答・リクエスト本文の読取などHTTPの小道具
+- `request-audit.js`: リクエストから監査ログ用の主体・対象（不透明ID）を作る
 - `tablecheck-source.js`: TableCheck APIの取得とモック切替
 - `printer-settings.js`: 印刷スタイル・プリンターIPの読込と保存
 - `tests/`: 各モジュールとHTTP経由の回帰テスト

@@ -90,6 +90,7 @@ function toOccupiedSeats(reservations, walkins, now, beforeMinutes, afterMinutes
 }
 
 module.exports = {
+  MAX_TABLE_LENGTH: MAX_TABLE_LENGTH,
   validateTable: validateTable,
   registerWalkin: registerWalkin,
   releaseWalkin: releaseWalkin,

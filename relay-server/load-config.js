@@ -2,7 +2,7 @@
  * load-config.js — config/config.json を読み、環境変数と同じ形に変換する (依存ゼロ)
  *
  * 設定の優先順位は「既定値 < config/config.json < 環境変数」。
- * ファイルの値を env 形のオーバーレイに直してから server.js の createConfig() へ渡すので、
+ * ファイルの値を env 形のオーバーレイに直してから relay-config.js の createConfig() へ渡すので、
  * 下限クランプ・HTTPS検証といった既存の検証ロジックはファイル経由の値にもそのまま効く。
  *
  * APIキーはこのファイルでは扱わない (環境変数のみ)。理由は KEY_TO_ENV の直下を参照。
