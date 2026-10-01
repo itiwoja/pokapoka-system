@@ -222,6 +222,34 @@
   function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {} }
 
   /**
+   * 同期対象の GET を1回行う。本文が isValid を満たせばそれを返す。
+   * 失敗 (非2xx・想定外の本文・通信断) は同期状態へ記録して null を返すので、
+   * 呼び出し側は何も書き換えずに戻れば直前の表示を保持できる (6/18 方針)。
+   * 成功の記録は呼び出し側で行う: 注文は応答を待つ間に WebSocket へ切り替わることがあり、
+   * その場合の古い応答を成功として数えないため。
+   */
+  async function fetchForSync(channel, url, isValid) {
+    markSyncAttempt(channel);
+    try {
+      var res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) {
+        markSyncFailure(channel, res.status);
+        return null;
+      }
+      var body = await res.json();
+      if (isValid(body)) return body;
+    } catch (e) {
+      // 通信断・JSON として読めない本文。下で失敗として記録する
+    }
+    markSyncFailure(channel);
+    return null;
+  }
+
+  function isPlainObject(value) {
+    return !!value && typeof value === "object" && !Array.isArray(value);
+  }
+
+  /**
    * サーバー取得分 (incoming) を既存ストックへマージする純粋関数。
    * seen (取込済み rid の記録) は incoming に載った rid をこの場で書き足す。
    * @param {Array}  stock    - 現在の kds_stock_v1 の中身
@@ -272,23 +300,8 @@
   }
 
   async function tickOnce() {
-    var res, incoming;
-    markSyncAttempt("reservations");
-    try {
-      res = await fetch(API, { cache: "no-store" });
-      if (!res.ok) {
-        markSyncFailure("reservations", res.status);
-        return;
-      }
-      incoming = await res.json();
-      if (!Array.isArray(incoming)) {
-        markSyncFailure("reservations");
-        return;
-      }
-    } catch (e) {
-      markSyncFailure("reservations");
-      return;                                // 通信断: 直前の表示を保持 (6/18 方針)
-    }
+    var incoming = await fetchForSync("reservations", API, Array.isArray);
+    if (!incoming) return;
     markSyncSuccess("reservations");
 
     // 着席時に「誰が座っているか」を座席占有へ載せるため、rid → 予約者名を控えておく。
@@ -311,22 +324,7 @@
   }
 
   async function tickHealth() {
-    markSyncAttempt("relay");
-    try {
-      var res = await fetch(API_HEALTH, { cache: "no-store" });
-      if (!res.ok) {
-        markSyncFailure("relay", res.status);
-        return;
-      }
-      var health = await res.json();
-      if (!health || typeof health !== "object" || Array.isArray(health)) {
-        markSyncFailure("relay");
-        return;
-      }
-      markSyncSuccess("relay");
-    } catch (e) {
-      markSyncFailure("relay");
-    }
+    if (await fetchForSync("relay", API_HEALTH, isPlainObject)) markSyncSuccess("relay");
   }
 
   /* ===================== 座席占有の登録 (#123) =====================
@@ -516,23 +514,10 @@
 
   async function tickKitchen() {
     if (kitchenQueue.isBusy()) return;          // 未送信分がある間は古い relay 状態を取り込まない
-    var snap;
-    markSyncAttempt("kitchen");
-    try {
-      var res = await fetch(API_KITCHEN, { cache: "no-store" });
-      if (!res.ok) {
-        markSyncFailure("kitchen", res.status);
-        return;
-      }
-      snap = await res.json();
-      if (!snap || typeof snap.rev !== "number") {
-        markSyncFailure("kitchen");
-        return;
-      }
-    } catch (e) {
-      markSyncFailure("kitchen");
-      return;                                   // 通信断: 手元の状態を保持
-    }
+    var snap = await fetchForSync("kitchen", API_KITCHEN, function (body) {
+      return !!body && typeof body.rev === "number";
+    });
+    if (!snap) return;                          // 手元の状態を保持
     markSyncSuccess("kitchen");
 
     if (snap.sessionId !== kitchenSession) {    // relay 再起動 (rev が 0 に戻る) を検出
@@ -780,23 +765,8 @@
   async function tickOrders() {
     if (orderSocketReady) return;
     var epoch = orderSocketEpoch;
-    var res, incoming;
-    markSyncAttempt("orders");
-    try {
-      res = await fetch(API_ORDERS, { cache: "no-store" });
-      if (!res.ok) {
-        markSyncFailure("orders", res.status);
-        return;
-      }
-      incoming = await res.json();
-      if (!Array.isArray(incoming)) {
-        markSyncFailure("orders");
-        return;
-      }
-    } catch (e) {
-      markSyncFailure("orders");
-      return;                          // 通信断: 直前の表示を保持 (window.KDS_ORDERS に触らない)
-    }
+    var incoming = await fetchForSync("orders", API_ORDERS, Array.isArray);
+    if (!incoming) return;             // 直前の表示を保持 (window.KDS_ORDERS に触らない)
     if (orderSocketReady || epoch !== orderSocketEpoch) return;
     markSyncSuccess("orders");
     applyOrders(incoming);
