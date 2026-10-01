@@ -518,6 +518,22 @@ Upgrade/Connectionヘッダーを転送する。Node側はループバックで�
 `RELAY_TRUST_LOOPBACK=0` と共有トークンを設定してプロキシ経由でも認証する。
 プロキシのアイドルタイムアウトはheartbeat間隔より長くする。
 
+### WSS とモック注文シナリオでの検証
+
+実機でWSSを試すときは、証明書と秘密鍵のPEMを渡すとNode自身がHTTPS/WSSで待ち受ける
+（`config.json` の `server.tlsCert` / `server.tlsKey`、または環境変数 `TLS_CERT_FILE` / `TLS_KEY_FILE`。
+片方だけだと起動エラー）。本番の推奨構成はリバースプロキシでのTLS終端のまま。
+
+```sh
+openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj /CN=<中継サーバーのIP> \
+  -addext "subjectAltName=IP:<中継サーバーのIP>" -keyout key.pem -out cert.pem
+MOCK=1 MOCK_ORDER_SCENARIO=1 HOST=auto PORT=8443 TLS_CERT_FILE=/path/to/cert.pem TLS_KEY_FILE=/path/to/key.pem node relay-server/server.js
+```
+
+- 秘密鍵はリポジトリへ置かない。自己署名証明書はタブレット側で警告を承認するか、証明書をインストールして使う。
+- `MOCK_ORDER_SCENARIO=1`（`order.mockScenario: true`）は配信仕様書 §17 の時間差シナリオ。起動直後に `mock-001` / `mock-002` を保持し、5秒後に `mock-003` 追加、10秒後に `mock-001` 数量更新、15秒後に `mock-002` 取消。MOCKモード専用で、LIVEでは起動エラー。
+- KDSは差分・スナップショットを適用するたびに `orders.ack` を返す。サーバーは再送には使わず、`GET /api/health` の `ordersStream`（`clients` / `sequence` / `upToDate` / `lowestAck`）で端末の追従状況を確認できる。
+
 検証は既存の `POST /api/orders` で同じorderIdの新規・数量変更を送り、
 `DELETE /api/orders/{orderId}` で取消する。ブラウザーを複数開いて即時反映、
 Wi-Fi切断後の再接続を確認できる。実機のWi-Fi・スリープ・TLS試験は別途実施する。

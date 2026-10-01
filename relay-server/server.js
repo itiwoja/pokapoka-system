@@ -16,10 +16,12 @@
  * 起動:
  *   本番:   TABLECHECK_API_KEY=xxx node relay-server/server.js   (host/shopId は config.json)
  *   モック: MOCK=1 node relay-server/server.js
+ *   WSS検証: TLS_CERT_FILE=cert.pem TLS_KEY_FILE=key.pem MOCK=1 MOCK_ORDER_SCENARIO=1 node relay-server/server.js
  */
 "use strict";
 
 var http = require("http");
+var https = require("https");
 var fs = require("fs");
 var os = require("os");
 var path = require("path");
@@ -115,7 +117,15 @@ function createRelay(options) {
     getReservation: tableCheckSource.getReservation,
   });
 
-  var server = http.createServer(function (req, res) {
+  // TLS証明書を渡したときだけNode自身がHTTPS/WSSで待ち受ける (実機WSS検証用)。
+  // 本番の推奨構成はリバースプロキシでの終端のまま。読めない証明書は起動前に止める
+  var tlsOptions = config.tlsCertFile ? {
+    cert: fs.readFileSync(path.resolve(root, config.tlsCertFile)),
+    key: fs.readFileSync(path.resolve(root, config.tlsKeyFile)),
+  } : null;
+  var mockOrderScenario = null;
+
+  var server = createListener(tlsOptions, function (req, res) {
     var url;
     try { url = new URL(req.url, "http://localhost"); }
     catch (err) { res.writeHead(400); return res.end("bad request"); }
@@ -162,6 +172,7 @@ function createRelay(options) {
         mode: config.isMock ? "mock" : "live",
         pollMs: config.pollMs,
         resyncMs: config.resyncMs,
+        ordersStream: orderStream.stats(),
       }, reservationSync.health()));
     }
 
@@ -327,12 +338,17 @@ function createRelay(options) {
     server.listen(config.port, config.host, function () {
       var address = server.address();
       var listenPort = address && address.port || config.port;
-      var baseUrl = "http://" + (config.host.includes(":") ? "[" + config.host + "]" : config.host) + ":" + listenPort;
+      var baseUrl = (tlsOptions ? "https://" : "http://") + (config.host.includes(":") ? "[" + config.host + "]" : config.host) + ":" + listenPort;
       log("起動: " + baseUrl + "  (モード: " +
         (config.isMock ? "MOCK — デモ予約を配信" : "LIVE — TableCheck へ " + config.pollMs / 1000 + "秒間隔で pull") + ")");
       if (config.isMock) {
         if (env.SEED === "1") { mock.seed(); log("SEED=1: デモ予約を1件シード"); }
         log("デモ操作コンソール: " + baseUrl + "/demo");
+        if (config.mockOrderScenario) {
+          mockOrderScenario = require("./mock-order-scenario").startMockOrderScenario({
+            orders: orders, refresh: orderStream.refresh, log: log,
+          });
+        }
       }
       log("KDS(デシャップ): " + baseUrl + "/  / 予約: /api/stock / 注文: /api/orders / 状態: /api/health");
       if (config.authToken) {
@@ -360,6 +376,8 @@ function createRelay(options) {
   }
 
   function stop() {
+    if (mockOrderScenario) mockOrderScenario.stop();
+    mockOrderScenario = null;
     orderStream.close();
     timers.forEach(function (timer) { clearIntervalFn(timer); });
     timers = [];
@@ -387,6 +405,10 @@ function createRelay(options) {
   };
 }
 
+function createListener(tlsOptions, handler) {
+  return tlsOptions ? https.createServer(tlsOptions, handler) : http.createServer(handler);
+}
+
 function createConfig(env, options) {
   // 既定値 < config/config.json < 環境変数。ファイル由来の値も env と同じ経路を通るので、
   // 下限クランプや HTTPS 検証はどちらから来た値にも等しく効く。
@@ -399,6 +421,7 @@ function createConfig(env, options) {
   if (!isMock) validateTableCheckBase(base, src.TABLECHECK_ALLOW_CUSTOM_BASE === "1");
   var pollMs = normalizeInterval(src.POLL_MS, isMock ? 3000 : 30000, isMock ? 100 : 30000);
   var resyncMs = normalizeInterval(src.RESYNC_MS, 900000, isMock ? 1000 : 60000);
+  var tls = normalizeTlsFiles(src.TLS_CERT_FILE, src.TLS_KEY_FILE);
   return {
     port: options.port !== undefined ? options.port : (Number(src.PORT) || 8000),
     host: resolveHost(src.HOST),
@@ -427,7 +450,25 @@ function createConfig(env, options) {
     // autoは実際のTLSソケットだけを信頼する。X-Forwarded-Protoは任意クライアントが
     // 偽装できるため参照しない。TLS終端プロキシ利用時は明示的に1へ設定する (#209)
     authCookieSecure: normalizeCookieSecure(src.RELAY_COOKIE_SECURE),
+    tlsCertFile: tls.cert,
+    tlsKeyFile: tls.key,
+    // 仕様書 §17 の時間差モック注文。実注文と混ざらないよう MOCK モードでのみ許可する
+    mockOrderScenario: normalizeMockOrderScenario(src.MOCK_ORDER_SCENARIO, isMock),
   };
+}
+
+function normalizeTlsFiles(cert, key) {
+  cert = cert ? String(cert) : "";
+  key = key ? String(key) : "";
+  if (!cert !== !key) throw new Error("server.tlsCert と server.tlsKey (環境変数は TLS_CERT_FILE / TLS_KEY_FILE) は両方指定する");
+  return { cert: cert || null, key: key || null };
+}
+
+function normalizeMockOrderScenario(value, isMock) {
+  if (value === undefined || value === null || value === "" || value === "0") return false;
+  if (value !== "1") throw new Error("order.mockScenario は true / false (環境変数は 1 / 0) のいずれかにする");
+  if (!isMock) throw new Error("MOCK_ORDER_SCENARIO は MOCK モードでのみ使える (実注文に模擬注文を混ぜない)");
+  return true;
 }
 
 function normalizeCookieSecure(value) {
@@ -534,14 +575,14 @@ function handleQrPage(res, config, hostHeader) {
 
   var base, reachable;
   if (usable) {
-    base = (config.authCookieSecure === "1" ? "https://" : "http://") + fromHeader;
+    base = (config.authCookieSecure === "1" || config.tlsCertFile ? "https://" : "http://") + fromHeader;
     reachable = true;
   } else {
     var isLoopback = config.host === "127.0.0.1" || config.host === "localhost";
     var lanIp = isLoopback ? detectLanIp() : config.host;
     if (lanIp === "0.0.0.0" || lanIp === "::") lanIp = detectLanIp();
     reachable = !!lanIp && lanIp !== "127.0.0.1";   // 127.0.0.1待ち受けでは他端末から届かない
-    base = (config.authCookieSecure === "1" ? "https://" : "http://") +
+    base = (config.authCookieSecure === "1" || config.tlsCertFile ? "https://" : "http://") +
       (lanIp || "127.0.0.1") + ":" + config.port;
   }
   // 認証有効時は QR にトークンを載せる。iPad は1回読めば Cookie が入り、以後は不要 (#174)

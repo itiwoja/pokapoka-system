@@ -691,7 +691,10 @@
           return { name: item.name, qty: item.qty, options: item.note, allergies: item.allergies, done: false };
         }) };
     }
-    return { accept: function (msg) {
+    return { ack: function () {
+      // 適用済みの位置だけを返す。サーバーは追従状況の確認にのみ使い、再送はしない (仕様書 §15)
+      return session === null ? null : { type: "orders.ack", sessionId: session, sequence: sequence };
+    }, accept: function (msg) {
       if (!msg || typeof msg.sessionId !== "string" || !Number.isSafeInteger(msg.sequence) || msg.sequence < 0) throw new Error("invalid envelope");
       if (msg.type === "orders.snapshot") {
         if (!Array.isArray(msg.orders)) throw new Error("invalid snapshot");
@@ -739,7 +742,10 @@
         try {
           var msg = JSON.parse(event.data);
           var feed = state.accept(msg);
-          if (feed) applyOrders(feed);
+          if (feed) {
+            applyOrders(feed);
+            if (socket.readyState === 1) socket.send(JSON.stringify(state.ack()));
+          }
           orderSocketReady = true;
           lastReceived = Date.now();
           retry = 0;
