@@ -74,3 +74,77 @@ test("実HTTPサーバーで受付後に応答を失っても注文は1件", asy
     assert.equal(orders.length, 1); assert.equal(orders[0].id, "test-1");
   } finally { await relay.stop(); }
 });
+
+// Minimal IndexedDB double that reproduces the event order of a real browser:
+// the request error fires while tx.error is still null.
+function fakeIndexedDB({ failOpens = 0 } = {}) {
+  const rows = new Map(); let opens = 0;
+  const idb = {
+    get opens() { return opens; },
+    open() {
+      const request = {}; opens++;
+      setTimeout(() => {
+        if (opens <= failOpens) { request.error = new Error("open failed"); request.onerror(); return; }
+        request.result = {
+          createObjectStore() {},
+          transaction() {
+            const tx = { error: null };
+            tx.objectStore = () => ({
+              getAll() { const r = { result: [...rows.values()] }; setTimeout(() => tx.oncomplete()); return r; },
+              add(v) {
+                const r = {};
+                setTimeout(() => {
+                  if (rows.has(v.orderId)) {
+                    r.error = Object.assign(new Error("exists"), { name: "ConstraintError" });
+                    r.onerror(); tx.onerror(); tx.onabort();
+                  } else { rows.set(v.orderId, v); r.result = v.orderId; tx.oncomplete(); }
+                });
+                return r;
+              },
+              put(v) { const r = {}; setTimeout(() => { rows.set(v.orderId, v); r.result = v.orderId; tx.oncomplete(); }); return r; }
+            });
+            return tx;
+          }
+        };
+        if (request.onupgradeneeded) request.onupgradeneeded();
+        request.onsuccess();
+      });
+      return request;
+    }
+  };
+  return idb;
+}
+
+test("既存IDへのsubmitは重複として拒否理由を示す", async () => {
+  const saved = globalThis.indexedDB; globalThis.indexedDB = fakeIndexedDB();
+  try {
+    const client = create({ baseURL: "http://localhost/", fetch: async () => ack() });
+    await client.submit(payload());
+    await assert.rejects(client.submit(payload()), /既に端末に保存/);
+  } finally { globalThis.indexedDB = saved; }
+});
+
+test("送信中は前回のエラー文言を消す", async () => {
+  const store = memory(); const seen = [];
+  let fail = true;
+  const client = create({ ...opts(store), onChange: r => seen.push([r.status, r.error]),
+    fetch: async () => { if (fail) throw new Error("Failed to fetch"); return ack(); } });
+  await client.submit(payload()); await client.flush();
+  assert.equal((await client.list())[0].error, "Failed to fetch");
+  fail = false; seen.length = 0;
+  const record = (await client.list())[0]; record.nextAttemptAt = 0; await store.put(record);
+  await client.flush();
+  assert.deepEqual(seen[0], ["sending", null]);
+  assert.deepEqual(seen.at(-1), ["sent", null]);
+});
+
+test("IndexedDB openに失敗しても次の操作で開き直して回復する", async () => {
+  const saved = globalThis.indexedDB; const idb = globalThis.indexedDB = fakeIndexedDB({ failOpens: 1 });
+  try {
+    const client = create({ baseURL: "http://localhost/", fetch: async () => ack() });
+    await assert.rejects(client.submit(payload()), /open failed/);
+    await client.submit(payload());
+    assert.equal((await client.list()).length, 1);
+    assert.equal(idb.opens, 2);
+  } finally { globalThis.indexedDB = saved; }
+});

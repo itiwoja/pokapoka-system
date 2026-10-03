@@ -4,19 +4,40 @@
 (function (root) {
   "use strict";
   function indexedStore(name) {
-    var db = new Promise(function (resolve, reject) {
-      var request = root.indexedDB.open(name, 1);
-      request.onupgradeneeded = function () { request.result.createObjectStore("orders", { keyPath: "orderId" }); };
-      request.onsuccess = function () { resolve(request.result); };
-      request.onerror = function () { reject(request.error); };
-    });
+    var db = null;
+    // A failed open is not cached: the next operation opens again.
+    function open() {
+      if (db) return db;
+      var attempt = new Promise(function (resolve, reject) {
+        var request;
+        try { request = root.indexedDB.open(name, 1); } catch (error) { reject(error); return; }
+        request.onupgradeneeded = function () { request.result.createObjectStore("orders", { keyPath: "orderId" }); };
+        request.onsuccess = function () {
+          var connection = request.result;
+          // Reopen on the next operation if the browser closes or upgrades the connection.
+          connection.onclose = connection.onversionchange = function () { if (db === attempt) db = null; connection.close(); };
+          resolve(connection);
+        };
+        request.onerror = function () { reject(request.error || new Error("端末保存領域を開けませんでした")); };
+        request.onblocked = function () { reject(new Error("端末保存領域が他のタブで使用中です")); };
+      });
+      db = attempt;
+      attempt.catch(function () { if (db === attempt) db = null; });
+      return attempt;
+    }
     async function run(mode, action) {
-      var connection = await db;
+      var connection = await open();
       return new Promise(function (resolve, reject) {
         var tx = connection.transaction("orders", mode);
-        var request = action(tx.objectStore("orders"));
+        var request = action(tx.objectStore("orders")), requestError = null;
+        // tx.error is still null when the failing request's error event reaches us.
+        request.onerror = function () { requestError = request.error; };
         tx.oncomplete = function () { resolve(request.result); };
-        tx.onabort = tx.onerror = function () { reject(tx.error || new Error("注文の端末保存に失敗しました")); };
+        tx.onabort = tx.onerror = function () {
+          var cause = tx.error || requestError;
+          if (cause && cause.name === "ConstraintError") reject(new Error("この注文IDは既に端末に保存されています"));
+          else reject(cause || new Error("注文の端末保存に失敗しました"));
+        };
       });
     }
     return {
@@ -50,7 +71,7 @@
         record.error = "受付結果をスタッフが確認してください（再送期限超過）";
         await store.put(record); emit(record); return;
       }
-      record.status = "sending";
+      record.status = "sending"; record.error = null;
       await store.put(record); emit(record);
       var controller = new AbortController();
       var timeout = setTimeout(function () { controller.abort(); }, options.timeoutMs || 10000);
