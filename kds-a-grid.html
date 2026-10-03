@@ -3804,6 +3804,7 @@
     /* 未完了行タップ = +1。完了行タップ = qty-1 に戻す(現行「done行タップで未完了に戻る」の後継)。
        ×3→×2→×1→完了 のカウントダウンは doneCount(0..qty) で表現する (#153) */
     function onToggle(id, index) {
+      if (mode === "hall") return;   // ホールは読取専用 (#259): キーボード・レーン経路もここで止める
       var entry = cards[id];
       if (!entry) return;
       if (!doneMap[id]) doneMap[id] = entry.order.items.map(function (it) { return Number(it.doneCount) || 0; });
@@ -3832,6 +3833,7 @@
 
     /* 長押し(0.8s)= 誤タップの戻し。doneCount -1 (0未満にはしない) (#153) */
     function onItemDecrement(id, index) {
+      if (mode === "hall") return;   // ホールは読取専用 (#259): キーボード・レーン経路もここで止める
       var entry = cards[id];
       if (!entry) return;
       var order = entry.order;
