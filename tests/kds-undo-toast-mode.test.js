@@ -36,6 +36,8 @@ function harness(mode) {
     saveHallReady() { calls.push("saveHallReady"); },
     broadcastHallReady() { calls.push("broadcastHallReady"); },
     renderHallViews() {}, applyMode() {}, cancelReorder() {},
+    renderStock() {},   // #262: setMode が呼ぶ
+    serveCueState() { return { starter: false, dessert: false }; }, setServeCue() {},   // #260: undoHallReady が呼ぶ
     closeTableOverrideConfirm() {}, closeSeatDial() {}, lsSet() {}
   });
   vm.runInContext(["hideUndoToast", "undoComplete", "hideHallReadyUndo", "undoHallReady", "setMode"].map(source).join("\n"), context);
