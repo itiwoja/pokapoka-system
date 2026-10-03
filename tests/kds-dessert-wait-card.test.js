@@ -46,6 +46,7 @@ function undoHarness(dessertServed) {
   const calls = [];
   const snapshot = { status: "dismissed", dismissedAt: 1 };
   const context = vm.createContext({
+    mode: "hall",   // #261: 提供準備完了undoはホールでだけ実行される
     hallReadyUndoId: "7",
     hallReadyMap: { "7": snapshot },
     serveCueState() { return { starter: false, dessert: dessertServed }; },
