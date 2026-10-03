@@ -2952,6 +2952,8 @@
             if (msg.state && typeof msg.state === "object") serveCueMap[serveId] = msg.state;
             saveServeCues();
             applyServeCueToCard(serveId);
+            // 他タブでデザートを出した卓はこのタブでもカードを消す (#260)
+            if (serveCueState(serveId).dessert && cards[serveId]) removeCard(serveId, /*fade*/ true);
             renderHallViews();
           } else if (msg.type === "tableOverride" && msg.id != null) {
             var overrideId = String(msg.id);
@@ -3334,6 +3336,15 @@
       return card;
     }
 
+    /* 全品完了済みでも、デザートを出すまでホールにカードを残す卓か (#228 / #260)。
+       提供準備完了snapshotがあり、デザート未提供なら待ち。リロード後のカード再生成に使う。 */
+    function isDessertWaiting(order) {
+      if (!order || order.id == null || !isOrderAllDone(order)) return false;
+      var snapshot = hallReadyMap[String(order.id)];
+      if (!snapshot || snapshot.status === "retracted") return false;
+      return !serveCueState(order.id).dessert;
+    }
+
     /* 注文配列を DOM に同期 (新規追加 / 削除 / 既存はキャッシュ流用) */
     function render(orders) {
       var seen = {};
@@ -3344,7 +3355,8 @@
       var entry = cards[order.id];
         // 全品目完了済みの注文は再表示しない (完了消去したカードがポーリングで復活しないように)
         var allDone = isOrderAllDone(order);
-        if (!entry && allDone) return;
+        // ただしホールでデザート待ちの卓はカードを残す。リロードで失わない (#260)
+        if (!entry && allDone && !isDessertWaiting(order)) return;
         seen[order.id] = true;
         if (!entry) {
           var el = buildCard(order);
@@ -3751,7 +3763,10 @@
       delete snapshot.dismissedAt;
       saveHallReady();
       broadcastHallReady(key, snapshot);
+      // デザート提供で消したカードも戻す。提供済みを外せば次のrenderでカードが再生成される (#260)
+      if (serveCueState(key).dessert) setServeCue(key, "dessert", false);
       renderHallViews();
+      poll();
     }
 
     /* 完了状態をカード DOM へ反映。全完了なら必要に応じてフェードアウト */
