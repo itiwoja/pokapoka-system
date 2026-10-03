@@ -3744,6 +3744,7 @@
     }
     function undoHallReady() {
       if (!hallReadyUndoId) return;
+      if (mode !== "hall") { hideHallReadyUndo(); return; }   // 厨房側のトーストと取り違えない (#261)
       var key = hallReadyUndoId, snapshot = hallReadyMap[key];
       hideHallReadyUndo();
       if (!snapshot || snapshot.status !== "dismissed") return;
@@ -3866,6 +3867,7 @@
     }
     function undoComplete() {
       if (!undoInfo) return;
+      if (mode !== "kitchen") { hideUndoToast(); return; }   // ホールでは厨房の完了undoを実行しない (#261)
       var id = undoInfo.id, idx = undoInfo.index;
       hideUndoToast();
       if (!doneMap[id]) doneMap[id] = [];
@@ -5428,6 +5430,9 @@
       mode = (next === "hall") ? "hall" : "kitchen";
       lsSet(LS_MODE, mode);
       if (mode === "hall" && grab) cancelReorder();
+      // 相手モード用のundoトーストは閉じる。重なって別操作のundoが実行されるのを防ぐ (#261)
+      if (mode !== "kitchen") hideUndoToast();
+      else hideHallReadyUndo();
       if (mode !== "kitchen") closeTableOverrideConfirm();
       if (mode !== "kitchen" && seatDialContext === "tableOverride") closeSeatDial();
       applyMode();
