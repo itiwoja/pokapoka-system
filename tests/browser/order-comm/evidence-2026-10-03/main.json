@@ -1,0 +1,948 @@
+{
+ "meta": {
+  "label": "main-run3",
+  "root": "<scratch>/main",
+  "commit": "dd0c988a2826ed34f294ab90ca73f0bbba8bc8da",
+  "clientSha256": "b9e1f718d4275d118ad35ae4109f89f3f5baff07fb882516a08cf7ab42b56178",
+  "browser": "153.0.8010.12",
+  "node": "v24.21.0",
+  "playwright": "1.63.0",
+  "startedAt": "2026-10-03T10:48:30.861Z",
+  "finishedAt": "2026-10-03T10:50:12.056Z"
+ },
+ "results": [
+  {
+   "id": "A249-1",
+   "title": "保存完了後に送信される (リクエスト時点でIndexedDBにsending記録がある)",
+   "checks": [
+    {
+     "name": "submit直後・start前は送信0件でIDB記録はpending",
+     "ok": true,
+     "actual": {
+      "posts": 0,
+      "raw": [
+       "pending"
+      ]
+     }
+    },
+    {
+     "name": "リクエスト時点でIDBに同IDのsending記録が存在",
+     "ok": true,
+     "actual": [
+      "sending"
+     ]
+    },
+    {
+     "name": "送信本文 = IDB保存済みpayload",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "ACK後 sent・relay 1件",
+     "ok": true,
+     "actual": null
+    }
+   ],
+   "notes": [],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ]
+  },
+  {
+   "id": "A249-2",
+   "title": "未送信注文を保存して再読込 → 同じID・内容・時刻が復元され、同内容で送信される",
+   "checks": [
+    {
+     "name": "再読込後も1件・同じorderId",
+     "ok": true,
+     "actual": "k249-2"
+    },
+    {
+     "name": "payload(内容)が一致",
+     "ok": true,
+     "actual": {
+      "orderId": "k249-2",
+      "table": "T1",
+      "people": 2,
+      "items": [
+       {
+        "name": "土鍋御膳",
+        "qty": 2,
+        "note": "辛さ控えめ・ねぎ抜き",
+        "allergies": "えび"
+       },
+       {
+        "name": "出汁巻き",
+        "qty": 1
+       }
+      ],
+      "orderedAt": "2026-10-03T10:48:32.336Z"
+     }
+    },
+    {
+     "name": "createdAt・orderedAt(時刻)が一致",
+     "ok": true,
+     "actual": {
+      "createdAt": 1791024512336,
+      "orderedAt": "2026-10-03T10:48:32.336Z"
+     }
+    },
+    {
+     "name": "再読込直後はまだ未送信(pending)でrelay 0件",
+     "ok": true,
+     "actual": "pending"
+    },
+    {
+     "name": "復旧後に送信されsent",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "relayへ届いた本文 = 保存済みpayload",
+     "ok": true,
+     "actual": 1
+    },
+    {
+     "name": "relayの受付は1件・商品内容一致",
+     "ok": true,
+     "actual": [
+      "k249-2"
+     ]
+    }
+   ],
+   "notes": [],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ]
+  },
+  {
+   "id": "A249-3a",
+   "title": "保存失敗(add の transaction abort): 送信されず・エラー通知・カート保持",
+   "checks": [
+    {
+     "name": "画面にエラー表示",
+     "ok": true,
+     "actual": "注文を保存できませんでした: 注文の端末保存に失敗しました"
+    },
+    {
+     "name": "relayへ1件も送信されない",
+     "ok": true,
+     "actual": 0
+    },
+    {
+     "name": "IDBに記録が残らない",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "カートが保持され確定ボタンが再度有効",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "sent扱いの記録が無い",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "保存が回復すれば同じカートを再確定でき1件だけ受付",
+     "ok": true,
+     "actual": null
+    }
+   ],
+   "notes": [],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ]
+  },
+  {
+   "id": "A249-3b",
+   "title": "保存失敗(add が QuotaExceededError を送出): 送信されず・エラー通知・カート保持",
+   "checks": [
+    {
+     "name": "画面にエラー表示",
+     "ok": true,
+     "actual": "注文を保存できませんでした: simulated quota exceeded"
+    },
+    {
+     "name": "relayへ1件も送信されない",
+     "ok": true,
+     "actual": 0
+    },
+    {
+     "name": "IDBに記録が残らない",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "カートが保持され確定ボタンが再度有効",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "sent扱いの記録が無い",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "保存が回復すれば同じカートを再確定でき1件だけ受付",
+     "ok": true,
+     "actual": null
+    }
+   ],
+   "notes": [],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ]
+  },
+  {
+   "id": "A249-3c",
+   "title": "sending への状態保存に失敗 → 送信されない (保存完了前に送信しない)",
+   "checks": [
+    {
+     "name": "flushがエラーで終わる",
+     "ok": true,
+     "actual": "注文の端末保存に失敗しました"
+    },
+    {
+     "name": "送信0件・relay 0件",
+     "ok": true,
+     "actual": 0
+    },
+    {
+     "name": "IDB記録はpendingのまま(sentではない)",
+     "ok": true,
+     "actual": "pending"
+    },
+    {
+     "name": "保存が回復すれば送信されsent",
+     "ok": true,
+     "actual": null
+    }
+   ],
+   "notes": [],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ]
+  },
+  {
+   "id": "A249-3d",
+   "title": "ACK受信後に sent の保存が失敗 → 端末はsentにせず、再読込後に同IDで再送しrelayは重複受付しない",
+   "checks": [
+    {
+     "name": "sent保存失敗でflushがエラー",
+     "ok": true,
+     "actual": "注文の端末保存に失敗しました"
+    },
+    {
+     "name": "relayは1件受付済みだがIDB記録はsendingのまま(sentにならない)",
+     "ok": true,
+     "actual": {
+      "status": "sending",
+      "feed": 1
+     }
+    },
+    {
+     "name": "再読込後に同IDで再送→sent",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "POSTは2回・同一本文・2回目はrelayがduplicate判定・受付は1件のまま",
+     "ok": true,
+     "actual": [
+      {
+       "created": true,
+       "duplicate": false
+      },
+      {
+       "created": false,
+       "duplicate": true
+      }
+     ]
+    }
+   ],
+   "notes": [],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ]
+  },
+  {
+   "id": "P263-1",
+   "title": "既存IDへのsubmit拒否の理由が分かる (#263-1) / 元の記録は上書きされない",
+   "checks": [
+    {
+     "name": "2回目のsubmitは拒否される",
+     "ok": true,
+     "actual": {
+      "ok": false,
+      "message": "注文の端末保存に失敗しました"
+     }
+    },
+    {
+     "name": "メッセージが重複IDを示す (保存失敗と区別できる)",
+     "ok": false,
+     "actual": "注文の端末保存に失敗しました"
+    },
+    {
+     "name": "元の注文は1件のまま内容不変",
+     "ok": true,
+     "actual": null
+    }
+   ],
+   "notes": [
+    "拒否時のメッセージ: 注文の端末保存に失敗しました"
+   ],
+   "pass": false,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ]
+  },
+  {
+   "id": "P263-2",
+   "title": "sendingへ遷移したらエラー文言が消える (#263-2)",
+   "checks": [
+    {
+     "name": "1回目の失敗でpending+エラー文言",
+     "ok": true,
+     "actual": {
+      "orderId": "k263-2",
+      "payload": {
+       "orderId": "k263-2",
+       "table": "T1",
+       "people": 2,
+       "items": [
+        {
+         "name": "土鍋御膳",
+         "qty": 2,
+         "note": "辛さ控えめ",
+         "allergies": "えび"
+        }
+       ],
+       "orderedAt": "2026-10-03T10:48:41.325Z"
+      },
+      "status": "pending",
+      "retryCount": 1,
+      "createdAt": 1791024521325,
+      "nextAttemptAt": 1791024522333,
+      "error": "Failed to fetch"
+     }
+    },
+    {
+     "name": "再送のsending通知で error が null",
+     "ok": false,
+     "actual": [
+      {
+       "orderId": "k263-2",
+       "status": "sending",
+       "error": "Failed to fetch",
+       "retryCount": 1
+      }
+     ]
+    },
+    {
+     "name": "最終的にsent",
+     "ok": true,
+     "actual": null
+    }
+   ],
+   "notes": [
+    "再送時のsending通知: [{\"orderId\":\"k263-2\",\"status\":\"sending\",\"error\":\"Failed to fetch\",\"retryCount\":1}]"
+   ],
+   "pass": false,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "error: Failed to load resource: net::ERR_EMPTY_RESPONSE"
+   ]
+  },
+  {
+   "id": "P263-3",
+   "title": "IndexedDB open失敗からの回復 (#263-3)",
+   "checks": [
+    {
+     "name": "open失敗中のsubmitは拒否される(送信なし)",
+     "ok": true,
+     "actual": {
+      "ok": false,
+      "message": "simulated storage unavailable"
+     }
+    },
+    {
+     "name": "open障害が解消した後、再読込せずにsubmitできる",
+     "ok": false,
+     "actual": {
+      "ok": false,
+      "message": "simulated storage unavailable"
+     }
+    },
+    {
+     "name": "(参考) 再読込すれば両版とも回復する",
+     "ok": true,
+     "actual": {
+      "ok": true,
+      "id": "k263-3c"
+     }
+    }
+   ],
+   "notes": [
+    "open回復後(再読込なし)のsubmit: {\"ok\":false,\"message\":\"simulated storage unavailable\"}"
+   ],
+   "pass": false,
+   "console": [
+    "pageerror: simulated storage unavailable",
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ]
+  },
+  {
+   "id": "A250-1",
+   "title": "通信断(ブラウザoffline)→復帰: onlineイベントで同IDを再送し1件受付",
+   "checks": [
+    {
+     "name": "offline中はpending・エラー文言あり・relay 0件",
+     "ok": true,
+     "actual": "Failed to fetch"
+    },
+    {
+     "name": "復帰後sent",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "relay受付1件・POST1回",
+     "ok": true,
+     "actual": 1
+    }
+   ],
+   "notes": [],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "error: Failed to load resource: net::ERR_INTERNET_DISCONNECTED"
+   ]
+  },
+  {
+   "id": "A250-2",
+   "title": "サーバー受付後に応答だけ失う(ACK喪失): 同IDで再送、relayは重複受付しない",
+   "checks": [
+    {
+     "name": "最終的にsent",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "clientは応答喪失を失敗として扱い再送した (retryCount>=1, fetch>=2)",
+     "ok": true,
+     "actual": {
+      "retry": 1,
+      "fetch": 2
+     }
+    },
+    {
+     "name": "全POSTが同一本文(同じ注文ID・内容)",
+     "ok": true,
+     "actual": 3
+    },
+    {
+     "name": "relayでcreatedは1回だけ・残りはduplicate・受付は1件",
+     "ok": true,
+     "actual": [
+      {
+       "created": true,
+       "duplicate": false
+      },
+      {
+       "created": false,
+       "duplicate": true
+      },
+      {
+       "created": false,
+       "duplicate": true
+      }
+     ]
+    }
+   ],
+   "notes": [
+    "relay手前のPOST=3 / ブラウザのfetch発行=2 / 最終retryCount=1"
+   ],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "error: Failed to load resource: net::ERR_EMPTY_RESPONSE"
+   ]
+  },
+  {
+   "id": "A250-3",
+   "title": "タイムアウト(応答遅延): abort→同IDで再送、relayは重複受付しない",
+   "checks": [
+    {
+     "name": "最終的にsent",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "POST2回(同一本文)・relayの受付は1件",
+     "ok": true,
+     "actual": 2
+    },
+    {
+     "name": "created 1回 + duplicate 1回",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "遅延応答のabortにより最初の試行はretryCount増加",
+     "ok": true,
+     "actual": 1
+    }
+   ],
+   "notes": [
+    "relay判定: [{\"created\":false,\"duplicate\":true},{\"created\":true,\"duplicate\":false}]"
+   ],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ]
+  },
+  {
+   "id": "A250-4-408",
+   "title": "HTTP 408 は再送対象(pending)で、復帰後に1件受付",
+   "checks": [
+    {
+     "name": "408 でpending (failedにならない)",
+     "ok": true,
+     "actual": "HTTP 408"
+    },
+    {
+     "name": "障害中は再送が続く (retryCount>=2) が、relayには入らない",
+     "ok": true,
+     "actual": {
+      "retry": 3,
+      "status": "pending"
+     }
+    },
+    {
+     "name": "復帰後sent・relay 1件",
+     "ok": true,
+     "actual": null
+    }
+   ],
+   "notes": [
+    "ブラウザのfetch発行=4 / relay手前のPOST=7 / 最終retryCount=3"
+   ],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "error: Failed to load resource: the server responded with a status of 408 (Request Timeout)",
+    "error: Failed to load resource: the server responded with a status of 408 (Request Timeout)",
+    "error: Failed to load resource: the server responded with a status of 408 (Request Timeout)"
+   ]
+  },
+  {
+   "id": "A250-4-429",
+   "title": "HTTP 429 は再送対象(pending)で、復帰後に1件受付",
+   "checks": [
+    {
+     "name": "429 でpending (failedにならない)",
+     "ok": true,
+     "actual": "HTTP 429"
+    },
+    {
+     "name": "障害中は再送が続く (retryCount>=2) が、relayには入らない",
+     "ok": true,
+     "actual": {
+      "retry": 3,
+      "status": "pending"
+     }
+    },
+    {
+     "name": "復帰後sent・relay 1件",
+     "ok": true,
+     "actual": null
+    }
+   ],
+   "notes": [
+    "ブラウザのfetch発行=4 / relay手前のPOST=4 / 最終retryCount=3"
+   ],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "error: Failed to load resource: the server responded with a status of 429 (Too Many Requests)",
+    "error: Failed to load resource: the server responded with a status of 429 (Too Many Requests)",
+    "error: Failed to load resource: the server responded with a status of 429 (Too Many Requests)"
+   ]
+  },
+  {
+   "id": "A250-4-500",
+   "title": "HTTP 500 は再送対象(pending)で、復帰後に1件受付",
+   "checks": [
+    {
+     "name": "500 でpending (failedにならない)",
+     "ok": true,
+     "actual": "HTTP 500"
+    },
+    {
+     "name": "障害中は再送が続く (retryCount>=2) が、relayには入らない",
+     "ok": true,
+     "actual": {
+      "retry": 3,
+      "status": "pending"
+     }
+    },
+    {
+     "name": "復帰後sent・relay 1件",
+     "ok": true,
+     "actual": null
+    }
+   ],
+   "notes": [
+    "ブラウザのfetch発行=4 / relay手前のPOST=4 / 最終retryCount=3"
+   ],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+   ]
+  },
+  {
+   "id": "A250-4-503",
+   "title": "HTTP 503 は再送対象(pending)で、復帰後に1件受付",
+   "checks": [
+    {
+     "name": "503 でpending (failedにならない)",
+     "ok": true,
+     "actual": "HTTP 503"
+    },
+    {
+     "name": "障害中は再送が続く (retryCount>=2) が、relayには入らない",
+     "ok": true,
+     "actual": {
+      "retry": 3,
+      "status": "pending"
+     }
+    },
+    {
+     "name": "復帰後sent・relay 1件",
+     "ok": true,
+     "actual": null
+    }
+   ],
+   "notes": [
+    "ブラウザのfetch発行=4 / relay手前のPOST=4 / 最終retryCount=3"
+   ],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "error: Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "error: Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "error: Failed to load resource: the server responded with a status of 503 (Service Unavailable)"
+   ]
+  },
+  {
+   "id": "A250-5-ack-wrong-id",
+   "title": "受付確認が揃わない応答(200 だが別の注文ID)ではsentにならない",
+   "checks": [
+    {
+     "name": "sentにならずpending/sending・再送が続く",
+     "ok": true,
+     "actual": {
+      "status": "pending",
+      "retry": 3,
+      "error": "注文IDの一致する受付確認がありません"
+     }
+    },
+    {
+     "name": "変更履歴にsentが一度も無い",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "正しいACKが来れば sent・relay 1件",
+     "ok": true,
+     "actual": null
+    }
+   ],
+   "notes": [],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ]
+  },
+  {
+   "id": "A250-5-ack-no-ok",
+   "title": "受付確認が揃わない応答(200 だが ok:true が無い)ではsentにならない",
+   "checks": [
+    {
+     "name": "sentにならずpending/sending・再送が続く",
+     "ok": true,
+     "actual": {
+      "status": "pending",
+      "retry": 3,
+      "error": "注文IDの一致する受付確認がありません"
+     }
+    },
+    {
+     "name": "変更履歴にsentが一度も無い",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "正しいACKが来れば sent・relay 1件",
+     "ok": true,
+     "actual": null
+    }
+   ],
+   "notes": [],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ]
+  },
+  {
+   "id": "A250-5-ack-html",
+   "title": "受付確認が揃わない応答(200 だがJSONでない(キャプティブポータル相当))ではsentにならない",
+   "checks": [
+    {
+     "name": "sentにならずpending/sending・再送が続く",
+     "ok": true,
+     "actual": {
+      "status": "pending",
+      "retry": 3,
+      "error": "Unexpected token '<', \"<html>capt\"... is not valid JSON"
+     }
+    },
+    {
+     "name": "変更履歴にsentが一度も無い",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "正しいACKが来れば sent・relay 1件",
+     "ok": true,
+     "actual": null
+    }
+   ],
+   "notes": [],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ]
+  },
+  {
+   "id": "A250-5-status204",
+   "title": "受付確認が揃わない応答(204 (200/201以外の2xx))ではsentにならない",
+   "checks": [
+    {
+     "name": "sentにならずpending/sending・再送が続く",
+     "ok": true,
+     "actual": {
+      "status": "pending",
+      "retry": 3,
+      "error": "HTTP 204"
+     }
+    },
+    {
+     "name": "変更履歴にsentが一度も無い",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "正しいACKが来れば sent・relay 1件",
+     "ok": true,
+     "actual": null
+    }
+   ],
+   "notes": [],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ]
+  },
+  {
+   "id": "A250-6a",
+   "title": "再送対象外4xx(relayの400: allergiesが配列)はfailedで停止し自動再送しない",
+   "checks": [
+    {
+     "name": "failed・HTTP 400",
+     "ok": true,
+     "actual": "HTTP 400"
+    },
+    {
+     "name": "以後POSTは1回のまま(自動再送なし)・relay 0件",
+     "ok": true,
+     "actual": 1
+    },
+    {
+     "name": "存在しないIDのretryは拒否",
+     "ok": true,
+     "actual": "設定修正後の failed 注文だけ再送できます"
+    }
+   ],
+   "notes": [],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "error: Failed to load resource: the server responded with a status of 400 (Bad Request)"
+   ]
+  },
+  {
+   "id": "A250-6b",
+   "title": "認証エラー(401): failedで停止 → 認証修正後のretryで復帰",
+   "checks": [
+    {
+     "name": "トークン無し → failed・HTTP 401",
+     "ok": true,
+     "actual": "HTTP 401"
+    },
+    {
+     "name": "自動再送されない(POST1回)",
+     "ok": true,
+     "actual": 1
+    },
+    {
+     "name": "誤ったトークンでretry → 再びfailed(HTTP 401)",
+     "ok": true,
+     "actual": {
+      "posts": 2
+     }
+    },
+    {
+     "name": "認証失敗中にrelayへ注文は入らない",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "正しいトークンでretry → sent・relay 1件",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "トークンがIndexedDBに保存されていない",
+     "ok": true,
+     "actual": null
+    }
+   ],
+   "notes": [],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "error: Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "error: Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+   ]
+  },
+  {
+   "id": "A250-7",
+   "title": "作成から30分超の未確認注文は needs_review になり自動投入されない (時計はブラウザ側でモック)",
+   "checks": [
+    {
+     "name": "初回はpending",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "30分+1秒経過した注文aはneeds_review・理由文言あり",
+     "ok": true,
+     "actual": {
+      "status": "needs_review",
+      "error": "受付結果をスタッフが確認してください（再送期限超過）"
+     }
+    },
+    {
+     "name": "aはrelayへ送られていない",
+     "ok": true,
+     "actual": [
+      "k250-7b"
+     ]
+    },
+    {
+     "name": "新しい注文bは通常どおりsent",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "start後・時間経過後もaは自動投入されない(needs_reviewのまま)",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "再読込後もneeds_reviewのまま・送られない",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "needs_reviewはretry()でも再送できない(スタッフ照合が前提)",
+     "ok": true,
+     "actual": "設定修正後の failed 注文だけ再送できます"
+    }
+   ],
+   "notes": [],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "error: Failed to load resource: net::ERR_EMPTY_RESPONSE"
+   ]
+  },
+  {
+   "id": "A250-7b",
+   "title": "期限の境界: 29分59秒の未確認注文はまだ再送される",
+   "checks": [
+    {
+     "name": "29:59 ではsent",
+     "ok": true,
+     "actual": "sent"
+    }
+   ],
+   "notes": [],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "error: Failed to load resource: net::ERR_EMPTY_RESPONSE"
+   ]
+  },
+  {
+   "id": "A250-8",
+   "title": "検証画面: 二重タップでも1件・状態表示・KDSへ1件反映",
+   "checks": [
+    {
+     "name": "client.submit は1回だけ呼ばれる",
+     "ok": true,
+     "actual": 1
+    },
+    {
+     "name": "IDB記録1件・relay受付1件・POST1回",
+     "ok": true,
+     "actual": 1
+    },
+    {
+     "name": "画面に状態表示 (sent)",
+     "ok": true,
+     "actual": "c3fdac1e95fae5c82725f9583fb10f05 : sent"
+    },
+    {
+     "name": "KDS画面(/kds)に注文の品目が表示される",
+     "ok": true,
+     "actual": null
+    },
+    {
+     "name": "KDSへの反映は1件(出現数1)",
+     "ok": true,
+     "actual": 1
+    }
+   ],
+   "notes": [
+    "KDS本文中の「土鍋御膳」出現数: 1"
+   ],
+   "pass": true,
+   "console": [
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ]
+  }
+ ]
+}

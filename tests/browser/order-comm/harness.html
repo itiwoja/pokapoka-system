@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>order-client 検証画面</title>
+<style>body{font-family:sans-serif;margin:16px} li{margin:2px 0} #err{color:#b00}</style></head>
+<body>
+<h1>order-client 検証画面 (最小・検証専用)</h1>
+<ul id="cart"></ul>
+<button id="confirm">注文確定</button>
+<p id="err"></p>
+<h2>端末の注文記録</h2>
+<ul id="orders"></ul>
+<script src="/order-client.js"></script>
+<script>
+"use strict";
+var q = new URLSearchParams(location.search);
+window.__skew = 0;           // 時計モック: now() = Date.now() + __skew
+window.__token = null;       // getToken が返す値
+window.__changes = [];       // onChange の履歴 (証跡)
+window.__errors = [];        // onError の履歴
+window.__submitCalls = 0;
+var client = null, busy = false, done = false;
+var cart = { table: "T1", people: 2, items: [{ name: "土鍋御膳", qty: 2, note: "辛さ控えめ", allergies: "えび" }, { name: "出汁巻き", qty: 1, note: "", allergies: "" }] };
+function renderCart() {
+  var ul = document.getElementById("cart"); ul.innerHTML = "";
+  if (done) { return; }
+  cart.items.forEach(function (i) { var li = document.createElement("li"); li.textContent = i.name + " x" + i.qty; ul.appendChild(li); });
+}
+function setErr(text) { document.getElementById("err").textContent = text || ""; }
+function renderOrder(o) {
+  var ul = document.getElementById("orders");
+  var li = ul.querySelector('[data-id="' + o.orderId + '"]');
+  if (!li) { li = document.createElement("li"); li.setAttribute("data-id", o.orderId); ul.appendChild(li); }
+  li.textContent = o.orderId + " : " + o.status + (o.error ? " (" + o.error + ")" : "");
+}
+window.initClient = function () {
+  client = OrderClient.create({
+    timeoutMs: q.get("timeoutMs") ? +q.get("timeoutMs") : undefined,
+    maxAgeMs: q.get("maxAgeMs") ? +q.get("maxAgeMs") : undefined,
+    now: function () { return Date.now() + window.__skew; },
+    getToken: function () { return window.__token; },
+    onChange: function (o) { window.__changes.push({ orderId: o.orderId, status: o.status, error: o.error, retryCount: o.retryCount }); renderOrder(o); },
+    onError: function (e) { window.__errors.push(String(e && e.message || e)); setErr("端末保存エラー: " + (e && e.message)); }
+  });
+  window.client = client; return client;
+};
+window.buildPayload = function () {
+  return { table: cart.table, people: cart.people, items: cart.items.map(function (i) { return { name: i.name, qty: i.qty, note: i.note, allergies: i.allergies }; }) };
+};
+// 画面側の二重タップ防止とカート保持 (組み込みドキュメントの例に沿った最小実装)
+document.getElementById("confirm").addEventListener("click", async function () {
+  if (busy || done) return;
+  busy = true; this.disabled = true; setErr("");
+  try {
+    window.__submitCalls++;
+    window.__lastId = await client.submit(window.buildPayload());
+    done = true; renderCart();
+  } catch (e) { setErr("注文を保存できませんでした: " + e.message); this.disabled = false; }
+  finally { busy = false; }
+});
+window.directSubmit = async function (payload) {
+  try { return { ok: true, id: await client.submit(payload) }; } catch (e) { return { ok: false, message: e.message }; }
+};
+// client とは別の接続で IndexedDB の中身を読む (証跡用)。DBが無ければ作らない。
+window.rawRecords = async function () {
+  var name = "pokapoka-orders:" + new URL("/api/orders", location.href).href;
+  var dbs = await indexedDB.databases();
+  if (!dbs.some(function (d) { return d.name === name; })) return [];
+  return new Promise(function (resolve, reject) {
+    var r = indexedDB.open(name);
+    r.onerror = function () { reject(r.error); };
+    r.onsuccess = function () {
+      var db = r.result;
+      if (!db.objectStoreNames.contains("orders")) { db.close(); resolve([]); return; }
+      var g = db.transaction("orders", "readonly").objectStore("orders").getAll();
+      g.onsuccess = function () { db.close(); resolve(g.result); };
+      g.onerror = function () { db.close(); reject(g.error); };
+    };
+  });
+};
+renderCart();
+</script>
+</body></html>
