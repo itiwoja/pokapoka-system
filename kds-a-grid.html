@@ -5438,6 +5438,8 @@
       if (mode !== "kitchen") closeTableOverrideConfirm();
       if (mode !== "kitchen" && seatDialContext === "tableOverride") closeSeatDial();
       applyMode();
+      // 炊飯準備cueの確認ボタンはモードで出し分けるため、切替時に予約ストックを再描画する (#262)
+      renderStock();
     }
     /* ===================== タイマー (経過時間 / 時計) ===================== */
     function updateTimers() {
