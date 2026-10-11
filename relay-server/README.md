@@ -2,11 +2,13 @@
 
 > **2026-10-11: TableCheck API連携は行わないことになった。** 予約情報は店員の手入力で扱う方針とする（入力方法は未設計）。
 > TableCheck の実API取得処理・疎通確認・暫定契約の文書は [`archive/tablecheck/`](../archive/tablecheck/README.md) へ退避した。
-> 予約ストア・モック・デモコンソールは、手入力の受け皿として残している。
+> 予約を持っているのはこのシステムだけになったため、予約は SQLite(`data/reservations.sqlite`)に保存する。
+> TableCheck を模したモックとデモコンソール(`/demo`)を含め、TableCheck 用のコードはすべて `archive/tablecheck/` へ退避した。予約を入れる入口(画面・API)は手入力の設計後に作る。
 
-予約(メニュー・人数等)を当日分だけ保持し、KDS の予約ストックに流し込むサーバー。
+予約(メニュー・人数等)を保存し、当日分を KDS の予約ストックに流し込むサーバー。
 6/18 議事録の「ファイルを置くだけの見かけ上のサーバー」役と、予約ストック役の2役を1プロセスで担う。
-**依存パッケージはほぼゼロ・Node 18+ で動作**(本体リポジトリの単一HTML主義に合わせた設計)。
+**依存パッケージはほぼゼロ・Node 22.13+ で動作**(本体リポジトリの単一HTML主義に合わせた設計)。
+予約の保存に Node 標準の `node:sqlite` を使うため、これより古い Node では起動しない。
 追加依存は注文配信の `ws` と、以下の印刷まわりの2つです:
 
 | パッケージ | 使う場所 | 無いとどうなるか |
@@ -17,70 +19,49 @@
 印刷を使うなら初回に `cd relay-server && npm install` を実行する。
 
 **どちらも遅延読込(lazy require)なので、未インストールでもサーバーは起動する**(#173)。
-`npm install` 漏れやオフラインのミニPCでも、**予約取込・`/api/stock`・KDS配信は通常どおり動く**。
+`npm install` 漏れやオフラインのミニPCでも、**`/api/stock`・KDS配信は通常どおり動く**。
 欠けている場合は起動ログに理由と対処が出る。
 
 ```
-【予約の供給源】           【店内ミニPC = このサーバー】          【KDS端末】
-MOCK(デモ予約) ◀─ 差分取込 ─ server.js ── /api/stock(JSON) ──▶ kds-bridge.js
- ※手入力は未設計 ◀─ 起動時+15分毎の当日全件再構築               → kds_stock_v1 へマージ
-                            当日分のみメモリ保持
+【予約の入力】             【店内ミニPC = このサーバー】          【KDS端末】
+店員の手入力(未設計) ──▶ data/reservations.sqlite
+                            server.js ── /api/stock(当日分) ──▶ kds-bridge.js
+                                                                  → kds_stock_v1 へマージ
                             kds-a-grid.html も配信                → BroadcastChannel で全端末反映
 
 【注文端末(各卓16台)】── POST /api/orders ──▶ 注文(当日メモリ) ── /api/orders ──▶ window.KDS_ORDERS
  別チームが実装                卓番はペイロードで受け取る                        → 新規オーダーのカード
 ```
 
-## 予約が本当にデシャップまで届くかを手で検証する（デモコンソール）
+## 予約の保存(reservation-store.js)
 
-**予約SaaS(TableCheck) の操作を模した最小パネル** `tablecheck-demo.html`
-から予約を作成/人数変更/キャンセルして、KDS(デシャップ)に反映されるまでを実機で確認できる。
-TableCheck API 連携は中止したが、予約ストック → KDS の経路は予約の手入力(未設計)でも使う想定のため、
-モックとデモコンソールは残している。
+- 予約は SQLite に保存する。既定のファイルは `data/reservations.sqlite`(`data/` は .gitignore 済み)で、
+  `reservation.dbFile`(環境変数 `RESERVATION_DB_FILE`)で変えられる。再起動しても予約は残る。
+- 書き込みは WAL モードで行い、ミニPCの電源断でファイルが壊れにくいようにしている。
+- `/api/stock` は**当日**の予約のうち、status が `booked` でメニューがあるものだけを返す。
+  先の日付の予約は保存したまま、その日になったら配信する。
+- 過ぎた日の予約は読み出しのたびに削除する(履歴は持たない)。
+- 起動直後から `/api/stock` は 200 を返す(TableCheck の初回取得を待つための 503 は不要になった)。
+- 予約を入れる入口(画面・API)は未設計。`reservation-store.js` の `save` / `cancel` を、手入力の設計後に
+  画面・APIへつなぐ。それまでは `/api/stock` は常に空で、KDS の「＋追加」ボタン(端末ローカル)だけが予約を作れる。
 
-```
-【デモコンソール /demo】        【このサーバー(MOCK)】          【KDS /】
-予約を作成/変更/キャンセル ──▶ /api/mock/reservations ──▶ 正規化 ──▶ /api/stock
-(本物のTableCheckスキーマ形)    → 数秒でポーリング反映         → 注入済みブリッジが取込
-                                                            → 予約ストックに出る
-```
-
-- 送信する予約は**確定済みの本物 TableCheck Reservation スキーマ**(`first_name`/`last_name`,
-  `pax_adult`/`pax_child`, `orders[].menu_item_name_translations`, `special_request`, `status`)で
-  組み立てる。正規化以降はこの形を前提にしている。
-- KDS 配信時にブリッジ(`kds-bridge.js`)を**サーバー側で1行注入**するので、`/` を開くだけで
-  取込が始まる(KDS 本体ファイルは無改修)。同一タブ内でも反映される。
-- 手順: `node relay-server/server.js` → ブラウザで `/demo`(操作) と `/`(デシャップ) を**並べて開く**
-  → コンソールで予約を作る → 数秒で予約ストックに出る。
-
-- 予約ストアは、供給源から差分を短い間隔(`POLL_MS`)で取り込み、当日全件の再構築を**起動時と15分ごと**に行う。
-  全件取得が成功したときだけメモリ上のstoreを一括差し替える。
-- 供給源は既定で MOCK(デモ予約)。`MOCK=0` で起動すると予約ソースなし(予約は常に空)になり、
-  `/api/mock/*` は 403 を返す。TableCheck の実API取得処理は [`archive/tablecheck/`](../archive/tablecheck/README.md) へ退避した。
-- 初回全件リシンクが成功するまで `/api/stock` は **503** を返す。KDSブリッジは非200時に
-  直前表示を保持するため、再起動直後の空配列による予約一括削除を防げる。
-- 予約データは**メモリのみ・当日分のみ**保持(6/18 議事録「サーバに保存しない」を実装で担保)。
+**バックアップ**: 予約の正本はこのファイルだけなので、ミニPCの故障に備えて
+`data/reservations.sqlite` を定期的に別媒体へコピーする(方法と頻度は運用で決める)。
+コピーはサーバー停止中に行うか、`sqlite3 data/reservations.sqlite ".backup <コピー先>"` を使う
+(稼働中にファイルを単純コピーすると、WAL に残った直近の書き込みが欠けることがある)。
 
 ## 使い方
 
-### いますぐ試す(モックモード)
+### いますぐ試す
 
 ```sh
-node relay-server/server.js        # 既定でモック
-# 予約ソースなし(予約は常に空)で起動する場合
-MOCK=0 node relay-server/server.js
+node relay-server/server.js
 ```
 
-- http://127.0.0.1:8000/demo … **予約デモコンソール**(ここで予約を作成/変更/キャンセル)
-- http://127.0.0.1:8000/ … **KDS(デシャップ)**(作った予約がここに出る)
+- http://127.0.0.1:8000/ … **KDS(デシャップ)**
 
 **KDS は空の状態から始まる**(中継サーバー配信時は KDS 内蔵の自動デモを抑止するため)。
-コンソールから予約を作れば、数秒後に KDS の予約ストックへ反映され、
-「人数変更(updated)」「キャンセル(→ストックから消える)」も手で試せる。
-開いてすぐ1件見せたいときは `SEED=1 node relay-server/server.js` で起動する。
 
-> 予約の差分取込間隔は既定 3秒(`POLL_MS` で変更可)。
-> `/api/mock/*` の注入エンドポイントは MOCK 時のみ有効(`MOCK=0` では 403)。
 > KDS の自動デモ抑止は、配信時に注入する `window.__KDS_SUPPRESS_DEMO__` フラグ、
 > または URL の `?nodemo=1` で効く(単体で開いた KDS は従来どおり自動デモ)。
 
@@ -95,7 +76,7 @@ cp config/config.example.json config/config.json
 ```json
 {
   "server":      { "host": "192.168.1.10", "port": 8000 },
-  "reservation": { "pollMs": 3000, "resyncMs": 900000 },
+  "reservation": { "dbFile": "" },
   "seat":        { "beforeMin": 30, "afterMin": 120 }
 }
 ```
@@ -104,15 +85,15 @@ cp config/config.example.json config/config.json
   `config.example.json` だけ。
 - 優先順位は **既定値 < `config/config.json` < 環境変数**。環境変数は一時的な上書きに使える
   (例: `PORT=8200 node relay-server/server.js`)。
-- 連携中止で使わなくなった `tablecheck` セクションは、旧雛形からコピーした値が残っていても読み飛ばす。
+- 連携中止で使わなくなった `tablecheck` セクションと `reservation.pollMs` / `reservation.resyncMs` は、
+  旧雛形からコピーした値が残っていても読み飛ばす。環境変数の `MOCK` / `POLL_MS` / `RESYNC_MS` も使わない。
 - キー名を間違えた場合も**黙って既定値に落ちず、起動時に指摘して止まる**。
 
 | config.json | 環境変数 | 既定 | 説明 |
 |---|---|---|---|
 | `server.host` | `HOST` | 127.0.0.1 | listen先。**デシャップモニターと注文端末はここへ繋ぐ** |
 | `server.port` | `PORT` | 8000 | HTTP ポート |
-| `reservation.pollMs` | `POLL_MS` | 3000 | 予約の差分取込間隔(下限100) |
-| `reservation.resyncMs` | `RESYNC_MS` | 900000 | 当日全件の再構築間隔(既定15分、下限1秒) |
+| `reservation.dbFile` | `RESERVATION_DB_FILE` | `data/reservations.sqlite` | 予約を保存する SQLite ファイル(リポジトリ直下からの相対可) |
 | `seat.beforeMin` / `seat.afterMin` | `SEAT_BEFORE_MIN` / `SEAT_AFTER_MIN` | 30 / 120 | 予約時刻の前後どこまでを在席とみなすか |
 | `seat.walkinTtlMin` | `SEAT_WALKIN_TTL_MIN` | 120 | ローカル登録した占有をいつ諦めるか(1〜1440分)。退店イベントが無いため時間で切る #123 |
 | `kitchen.ttlMin` | `KITCHEN_TTL_MIN` | 720 | 厨房状態(#132)を最後の更新から何分保持するか(1〜1440分) |
@@ -120,12 +101,11 @@ cp config/config.example.json config/config.json
 | `auth.token` | `RELAY_TOKEN` | — | **共有トークン**(8文字以上)。設定すると他端末はトークン必須になる。未設定なら認証なし(従来どおり) #174 |
 | `auth.trustLoopback` | `RELAY_TRUST_LOOPBACK` | 1 | ミニPC自身(127.0.0.1)をトークン無しで通すか。`0` で無効 |
 | `auth.cookieSecure` | `RELAY_COOKIE_SECURE` | `auto` | 認証Cookieの`Secure`属性。`auto` / `true` / `false` (環境変数は`auto` / `1` / `0`) |
-| **(不可)** | `MOCK` | 1 | `0` で予約ソースなし(予約は常に空、`/api/mock/*` は403) |
 
 ### 本番(店内LANの端末へ配信)
 
-起動方法はモックと同じ `node relay-server/server.js`。予約の手入力は未設計のため、
-現時点で予約ストックに予約を出せるのは `/demo` のデモ予約だけである。
+起動方法は同じ `node relay-server/server.js`。予約の手入力は未設計のため、
+現時点でサーバーの予約ストックは空のままである。
 
 `server.host` 未指定時は安全のため `127.0.0.1` のみにbindする。**この既定のままだとミニPC自身
 からしか到達できず、デシャップモニターや注文端末からは繋がらない**ので、店内LANの固定IPを
@@ -209,21 +189,16 @@ cd relay-server && npm run preflight
 | パス | 内容 |
 |---|---|
 | `/` , `/kds-a-grid.html` | KDS 本体(配信時にブリッジを1行注入) |
-| `/demo` | 予約デモコンソール(`tablecheck-demo.html`) |
-| `/api/stock` | KDS 予約ストック形式 `[{rid,time,adults,kids,name,menu[],allergies?,request?,seenAt}]`。`allergies` はアレルギー設問/記述、`request` はその他の設問回答・要望を正規化した注記。メニュー無し(席だけ)予約は含まない。初回全件リシンク成功までは503 |
-| `/api/health` | モード・ready状態・最終差分ポール・最終全件リシンク・保持件数 |
+| `/api/stock` | KDS 予約ストック形式 `[{rid,time,adults,kids,name,menu[],allergies?,request?,seenAt}]`。`allergies` はアレルギー、`request` は要望の注記。当日の `booked` だけで、メニュー無し(席だけ)予約は含まない |
+| `/api/health` | ready状態・予約の保存件数(`reservations`)・注文配信の状況(`ordersStream`) |
 | `GET /api/kitchen-state` | 厨房状態の共有スナップショット `{sessionId,rev,updatedAt,konro,done,locked,seq,deleted}`。→「厨房状態の端末間同期」 |
 | `POST /api/kitchen-state` | 厨房状態の変更イベント投入 `{events:[...]}`。応答は `{ok,rev,sessionId}` |
 | `GET /api/orders` | KDS 注文フィード(注文端末由来)。→「注文端末との契約」 |
 | `POST /api/orders` | 注文の投入。`orderId` で冪等 |
 | `DELETE /api/orders/{orderId}` | 注文の取消 |
-| `GET /api/seats` | 当日の座席占有 `[{table,source:"walkin"\|"reservation",rid?,name?,since}]`。初回全件リシンク成功までは503。→「座席占有」 |
+| `GET /api/seats` | 当日の座席占有 `[{table,source:"walkin"\|"reservation",rid?,name?,since}]`。→「座席占有」 |
 | `POST /api/seats` | 占有の登録 `{table:"5"}`。`{table:"3",rid:"r-1",name:"山田様"}` なら予約の着席として扱う |
 | `DELETE /api/seats/{table}` | 占有の解除 |
-| `GET /api/mock/reservations` | (MOCK限定) 上流の生予約一覧(本物スキーマ) |
-| `POST /api/mock/reservations` | (MOCK限定) 予約作成。body は TableCheck Reservation 形 |
-| `PATCH /api/mock/reservations/{id}` | (MOCK限定) 予約変更(人数・メニュー等) |
-| `DELETE /api/mock/reservations/{id}` | (MOCK限定) 予約キャンセル(status=cancelled) |
 | `POST /api/print` | チビ伝を実機プリンターへ印字(#144)。**画像印字**は `{ip, raster:{width,height,data(base64)}, feedLines?, emulation?}`(自由配置レイアウトの本線)。**テキスト印字**は `{ip, table, meta, store?, style?, items:[{name,qty,note}]}`。`raster` が付いていれば画像経路を使う(寸法とデータ長が食い違う `raster` は400で拒否し、黙って別物を印字しない)。`ip` は店内LAN想定のプライベートIPv4のみ許可(10/8・172.16-31/12・192.168/16)。ポート9100固定のRAWポートへ生ソケットで送信 |
 | `GET /api/slip-style` | サーバー保存のレイアウト/スタイルを返す(未設定は `{}`) |
 | `POST /api/slip-style` | レイアウト/スタイルを保存し `config/slip-style.json` へ永続化(git管理外)。自由配置レイアウト(`elements[]`)は描画がブラウザ側のため中身を解釈せずそのまま預かる(50KB上限)。旧テキスト型スタイルは従来どおり許容値へ丸める。どの端末で設定しても全端末のKDSに反映される |
@@ -275,11 +250,11 @@ KDS 画面の「印刷」ボタンは、プリンターIP未設定時は従来�
 ### 座席占有(#123)
 
 運用上の本題は**座席バッティング** — 新規客(ウォークイン)が、この後来店する予約の席を
-先に埋めてしまう問題。**TableCheck では防げない**: 新規客の卓番は店内で発生するローカルデータで、
-クラウドは「新規客が5番卓に座った」ことを知り得ない。店内で塞ぐしかない。
+先に埋めてしまう問題。新規客の卓番は注文端末/KDSで発生するローカルデータで、予約ストアには載らない。
+店内で塞ぐ。
 
 ```
-予約の供給源 ──▶ relay(store) ─┬─ /api/stock ──▶ KDS 予約ストック
+予約(SQLite) ──▶ relay(store) ─┬─ /api/stock ──▶ KDS 予約ストック
                                    └─ /api/seats ──▶ 卓番選択UI(#118)・注文端末
 KDS(着席操作) ── POST /api/seats ──▶ relay(ローカル占有: メモリMap)
 ```
@@ -297,7 +272,7 @@ KDS(着席操作) ── POST /api/seats ──▶ relay(ローカル占有: メ
   (`order.id` が `res-<rid>`、`order.table` が案内した卓番)
 - **解除は手動 + TTL**(`seat.walkinTtlMin`、既定120分)。POS連携が無く「退店した」という
   イベントが存在しないため、解除し忘れた席が永久に埋まったままにならないよう時間で諦める
-- 保存はしない(#115)。当日メモリのみ
+- ローカル登録した占有は保存しない(#115)。当日メモリのみ
 
 **未決**: 予約の手入力で確定卓番を持たせるかは未設計(TableCheck 連携は中止)。持たない場合でも、
 着席時のローカル登録があるので占有ビュー自体は成立する(予約の「事前」占有だけが作れない)。
@@ -442,10 +417,10 @@ KDS 本体は無改修。**このサーバー経由で `/` を開くと、配信
 
 - `server.js`: 部品の組み立て、共有トークン認証、URLの振り分け、サーバーの起動・停止
 - `relay-config.js`: 既定値・`config/config.json`・環境変数から実行時設定を組み立てて検証する
-- `routes/`: 各APIの処理（`seats.js` 座席占有、`kitchen.js` 厨房状態、`orders.js` 注文、`print.js` 印刷・プリンターIP・印刷スタイル、`audit.js` 監査ログ閲覧、`mock.js` モック予約、`qr-page.js` 接続用QR、`static.js` 静的ファイルとKDSへのブリッジ注入）
+- `routes/`: 各APIの処理（`seats.js` 座席占有、`kitchen.js` 厨房状態、`orders.js` 注文、`print.js` 印刷・プリンターIP・印刷スタイル、`audit.js` 監査ログ閲覧、`qr-page.js` 接続用QR、`static.js` 静的ファイルとKDSへのブリッジ注入）
 - `http-util.js`: JSON応答・リクエスト本文の読取などHTTPの小道具
 - `request-audit.js`: リクエストから監査ログ用の主体・対象（不透明ID）を作る
-- `reservation-source.js`: 予約の供給源(MOCK のデモ予約／予約ソースなし)の切替
+- `reservation-store.js`: 予約の保存(SQLite)・取消・当日分の読み出しと KDS 予約ストック形式への変換
 - `printer-settings.js`: 印刷スタイル・プリンターIPの読込と保存
 - `tests/`: 各モジュールとHTTP経由の回帰テスト
 
@@ -461,12 +436,11 @@ Node.js 22 を使用する GitHub Actions と同じく、`npm ci` は lockfile �
 導入し、`npm test` は`tests/` 内の全 `*.test.js` を実行する。テストは店舗の設定ファイル、
 認証情報、外部 API を必要とせず、失敗時は非ゼロ終了する。
 
-正規化(スキーマ候補キー・pax→adults フォールバック)、memo パーサ、
-upsert/404削除/当日パージ/KDS形式変換に加え、原子的なstore差替え、
-初回503ゲート、失敗時の直前状態保持、差分との直列実行をカバーする。
+予約ストアは、入力の検証、上書き保存・取消、当日分の抽出と過去日の削除、KDS形式への変換、
+ファイルに保存した予約が再起動後も残ることをカバーする。
 
 設定については、config.json の env 形への変換、環境変数による上書き、ファイル由来の値にも
-下限クランプが効くこと、旧 `tablecheck` セクションの読み飛ばし、キー名typo・不正JSONを起動時に弾くことを
+下限クランプが効くこと、旧 `tablecheck` セクションと取込間隔キーの読み飛ばし、キー名typo・不正JSONを起動時に弾くことを
 カバーする。テストは `configFile` を注入する形なので、各自の `config/config.json` に左右されない。
 
 ## TableCheck 連携の中止(Issue #74)
@@ -475,13 +449,11 @@ upsert/404削除/当日パージ/KDS形式変換に加え、原子的なstore差
 
 実APIの取得処理(`tablecheck-source.js`・Booking v1 ページング)、モックHTTP疎通確認とその手順書、
 暫定契約の文書は [`archive/tablecheck/`](../archive/tablecheck/README.md) へ退避した。
-予約ストアの正規化(`tablecheck-sync.js`)・モック(`mock-tablecheck.js`)・デモコンソールは、
-手入力の受け皿として relay-server に残している。
-
-TableCheck 連携は、`archive/tablecheck/docs/テーブルチェックAPI.md` に記載した暫定契約を前提に実装した。
-正規化処理は、Booking v1 の `orders[]`、`pax_adult` / `pax_child`、
-`questions[]`、`special_request` を受け取り、予約ストックへ変換する。
-旧モックとの互換性のため、候補キーと memo パーサーもフォールバックとして残している。
+その後、予約の正本を SQLite へ移す際に、TableCheck 形式の正規化(`tablecheck-sync.js`)、
+差分取込・全件再構築(`booking-resync.js`)、供給源の切替(`reservation-source.js`)、
+モック(`mock-tablecheck.js`)とデモコンソール(`tablecheck-demo.html`・`/api/mock/*`)も
+[`archive/tablecheck/`](../archive/tablecheck/README.md) へ退避した。relay-server に TableCheck 用のコードは残っていない
+(旧 `config.json` の `tablecheck` セクションを読み飛ばす処理だけは、起動を止めないために残している)。
 
 実環境で確認する予定だったもの（連携中止により確認不要）:
 
@@ -522,11 +494,11 @@ Upgrade/Connectionヘッダーを転送する。Node側はループバックで�
 ```sh
 openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj /CN=<中継サーバーのIP> \
   -addext "subjectAltName=IP:<中継サーバーのIP>" -keyout key.pem -out cert.pem
-MOCK=1 MOCK_ORDER_SCENARIO=1 HOST=auto PORT=8443 TLS_CERT_FILE=/path/to/cert.pem TLS_KEY_FILE=/path/to/key.pem node relay-server/server.js
+MOCK_ORDER_SCENARIO=1 HOST=auto PORT=8443 TLS_CERT_FILE=/path/to/cert.pem TLS_KEY_FILE=/path/to/key.pem node relay-server/server.js
 ```
 
 - 秘密鍵はリポジトリへ置かない。自己署名証明書はタブレット側で警告を承認するか、証明書をインストールして使う。
-- `MOCK_ORDER_SCENARIO=1`（`order.mockScenario: true`）は配信仕様書 §17 の時間差シナリオ。起動直後に `mock-001` / `mock-002` を保持し、5秒後に `mock-003` 追加、10秒後に `mock-001` 数量更新、15秒後に `mock-002` 取消。MOCKモード専用で、`MOCK=0` では起動エラー。
+- `MOCK_ORDER_SCENARIO=1`（`order.mockScenario: true`）は配信仕様書 §17 の時間差シナリオ。起動直後に `mock-001` / `mock-002` を保持し、5秒後に `mock-003` 追加、10秒後に `mock-001` 数量更新、15秒後に `mock-002` 取消。実注文に模擬注文が混ざるため、店舗運用では有効にしない。
 - KDSは差分・スナップショットを適用するたびに `orders.ack` を返す。サーバーは再送には使わず、`GET /api/health` の `ordersStream`（`clients` / `sequence` / `upToDate` / `lowestAck`）で端末の追従状況を確認できる。
 
 検証は既存の `POST /api/orders` で同じorderIdの新規・数量変更を送り、

@@ -29,7 +29,7 @@ eq("merge reservations and prefer reservation", seats.toOccupiedSeats(reservatio
   { table: "9", source: "walkin", since: 600 },
 ]);
 
-/* --- 着席の登録 (#123): 卓番はスタッフがKDSで決めるローカルデータで、TableCheck側には無い --- */
+/* --- 着席の登録 (#123): 卓番はスタッフがKDSで決めるローカルデータで、予約ストアには無い --- */
 var seated = new Map();
 eq("register seated reservation", seats.registerWalkin(seated, "3", 1000, { rid: "r-1", name: "山田様" }),
   { table: "3", source: "reservation", since: 1000, rid: "r-1", name: "山田様" });

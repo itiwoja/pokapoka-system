@@ -7,10 +7,7 @@ const { createRelay } = require("../server");
 const { createOrderStreamState, createSyncStatusTracker } = require("../kds-bridge");
 
 async function setup(t, env = {}) {
-  const relay = createRelay({ port: 0, env: Object.assign({ MOCK: "1" }, env),
-    log() {}, auditLog: { record() {} }, source: {
-      async listReservations() { return []; }, async listSyncEvents() { return []; }, async getReservation() { return null; }
-    } });
+  const relay = createRelay({ port: 0, env, log() {}, auditLog: { record() {} } });
   relay.start();
   await once(relay.server, "listening");
   t.after(() => relay.stop());

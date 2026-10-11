@@ -13,11 +13,11 @@ var SEAT_PREFIX = "/api/seats/";
 /** /api/seats — 当日の座席占有の取得・登録・解除 (#123) */
 function handleSeats(req, res, url, context) {
   if (url.pathname === "/api/seats" && req.method === "GET") {
-    if (!context.reservationSync.health().ready) {
-      return json(res, { ok: false, error: "initial reservation sync pending" }, 503);
-    }
+    var reservations;
+    try { reservations = context.reservations.todaySnapshot(); }
+    catch (err) { return json(res, { ok: false, error: "reservation store unavailable" }, 503); }
     return json(res, seats.toOccupiedSeats(
-      context.reservationSync.storeSnapshot(),
+      reservations,
       context.walkins,
       Date.now(),
       context.beforeMin,
@@ -28,7 +28,7 @@ function handleSeats(req, res, url, context) {
   if (url.pathname === "/api/seats" && req.method === "POST") {
     return httpUtil.readJson(req, res, function (body) {
       // rid があれば「予約の着席」。卓番はスタッフが KDS で割り当てるローカルデータで、
-      // TableCheck 側には無い(あっても希望席種まで)ため、ここが唯一の正本になる
+      // 予約ストアには無い(あっても予定の卓番まで)ため、ここが唯一の正本になる
       var requestedTable = body && body.table != null ? String(body.table).trim() : "unknown";
       var previous = context.walkins.get(requestedTable);
       var occupancy = seats.registerWalkin(context.walkins, body && body.table, Date.now(), body);

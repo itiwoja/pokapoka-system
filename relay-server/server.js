@@ -1,12 +1,12 @@
 /**
- * server.js — ぽかぽか店内 中継サーバー (依存ほぼゼロ・Node 18+。printer.js の iconv-lite のみ例外 #144)
+ * server.js — ぽかぽか店内 中継サーバー (依存ほぼゼロ・Node 22.13+。予約保存に node:sqlite を使う。printer.js の iconv-lite のみ例外 #144)
  *
  * 役割:
  *   1. リポジトリ直下の静的ファイルを配信
- *   2. 予約の供給源から差分を短い間隔で取得し、予約変更を反映 (TableCheck連携は2026-10-11中止。今はMOCKのみ)
- *   3. 起動時+15分間隔で全件取得し、当日storeを自己修復
- *   4. 初回全件取得が成功するまで /api/stock を503にしてKDSの誤削除を防止
- *   5. POST /api/print でチビ伝を実機プリンターへ中継(ブラウザは生ソケットを開けないため #144)
+ *   2. 予約を SQLite (既定 data/reservations.sqlite) に保存し、当日分を /api/stock でKDSへ配信
+ *      (TableCheck連携は2026-10-11中止。予約は店員の手入力で扱うが、入力の入口は未設計)
+ *   3. 注文端末からの注文受付と WebSocket 配信
+ *   4. POST /api/print でチビ伝を実機プリンターへ中継(ブラウザは生ソケットを開けないため #144)
  *
  * このファイルが持つのは、部品の組み立て・認証・URLの振り分け・起動と停止だけ。
  * 各APIの処理は routes/、設定の解決は relay-config.js にある。
@@ -16,9 +16,8 @@
  *   優先順位は「既定値 < config/config.json < 環境変数」。
  *
  * 起動:
- *   既定:   node relay-server/server.js           (MOCK — /demo からデモ予約を作れる)
- *   予約なし: MOCK=0 node relay-server/server.js   (予約ソースなし。予約の手入力は未設計)
- *   WSS検証: TLS_CERT_FILE=cert.pem TLS_KEY_FILE=key.pem MOCK=1 MOCK_ORDER_SCENARIO=1 node relay-server/server.js
+ *   既定:   node relay-server/server.js
+ *   WSS検証: TLS_CERT_FILE=cert.pem TLS_KEY_FILE=key.pem MOCK_ORDER_SCENARIO=1 node relay-server/server.js
  */
 "use strict";
 
@@ -29,10 +28,9 @@ var path = require("path");
 var kitchen = require("./kitchen-state");
 var auth = require("./auth");
 var audit = require("./audit-log");
-var booking = require("./booking-resync");
 var loadConfig = require("./load-config");
 var printer = require("./printer");
-var createReservationSource = require("./reservation-source").createReservationSource;
+var openReservationStore = require("./reservation-store").openReservationStore;
 var printerSettings = require("./printer-settings");
 var attachOrdersWebSocket = require("./orders-websocket").attachOrdersWebSocket;
 var createConfig = require("./relay-config").createConfig;
@@ -40,7 +38,6 @@ var httpUtil = require("./http-util");
 var requestAudit = require("./request-audit");
 var handleAudit = require("./routes/audit").handleAudit;
 var handleKitchenState = require("./routes/kitchen").handleKitchenState;
-var handleMock = require("./routes/mock").handleMock;
 var handleOrders = require("./routes/orders").handleOrders;
 var printRoutes = require("./routes/print");
 var handleQrPage = require("./routes/qr-page").handleQrPage;
@@ -53,12 +50,9 @@ function createRelay(options) {
   options = options || {};
   var env = options.env || process.env;
   var config = createConfig(env, options);
-  var mock = options.mockSource || require("./mock-tablecheck");
   var printerModule = options.printer || printer;
   var log = options.log || defaultLog;
   var now = options.now || function () { return new Date(); };
-  var setIntervalFn = options.setInterval || setInterval;
-  var clearIntervalFn = options.clearInterval || clearInterval;
   var root = path.resolve(__dirname, "..");
   var auditLog = options.auditLog || audit.createAuditLog({
     filePath: options.auditLogPath || path.join(root, "config", "audit-log.jsonl"),
@@ -71,27 +65,19 @@ function createRelay(options) {
       },
     },
   });
-  var timers = [];
-  var inFlight = new Set();
   var walkins = new Map();
   // 厨房状態の共有 (#132)。sessionId は relay 再起動を端末側が検出するための識別子で、
   // 再起動すると rev が 0 に戻るため、これが無いと端末が「取込済み」と誤認する
   var kitchenState = kitchen.createState(options.sessionId || String(Date.now().toString(36)));
   var orders = new Map();      // 注文端末から受けた注文 (当日メモリのみ #115)
   var started = false;
-  var initialSync = Promise.resolve();
   var slipStyle = printerSettings.createSlipStyleStore(options.slipStylePath || path.join(root, "config", "slip-style.json"), printerModule, log);
   var printerIp = printerSettings.createPrinterIpStore(options.printerIpPath || path.join(root, "config", "printer-ip.json"), printerModule, log);
 
-  var reservationSource = options.source || createReservationSource({ isMock: config.isMock, mock: mock });
-
-  var reservationSync = booking.createReservationSync({
-    now: now,
-    log: log,
-    listReservations: reservationSource.listReservations,
-    listSyncEvents: reservationSource.listSyncEvents,
-    getReservation: reservationSource.getReservation,
-  });
+  // 予約の正本。config の reservation.dbFile > 起動スクリプトの既定ファイル > メモリ上 (テストで店舗の data/ を汚さない)
+  var reservationDbPath = config.reservationDbFile ? path.resolve(root, config.reservationDbFile)
+    : options.reservationDbPath || ":memory:";
+  var reservations = options.reservations || openReservationStore(reservationDbPath, { now: now });
 
   // TLS証明書を渡したときだけNode自身がHTTPS/WSSで待ち受ける (実機WSS検証用)。
   // 本番の推奨構成はリバースプロキシでの終端のまま。読めない証明書は起動前に止める
@@ -155,23 +141,31 @@ function createRelay(options) {
     var pathname = url.pathname;
 
     if (pathname === "/api/stock") {
-      var stock = reservationSync.stockResponse(Date.now());
-      return json(res, stock.body, stock.code);
+      // 読めないときは 503。KDSブリッジは非200なら直前の予約ストックを保持する (空配列で一括削除しない)
+      var stock;
+      try { stock = reservations.stock(Date.now()); }
+      catch (err) {
+        log("予約を読めない: " + (err && err.message || err));
+        return json(res, { ok: false, error: "reservation store unavailable" }, 503);
+      }
+      return json(res, stock);
     }
     if (pathname === "/api/health") {
-      return json(res, Object.assign({
-        mode: config.isMock ? "mock" : "none",
-        pollMs: config.pollMs,
-        resyncMs: config.resyncMs,
+      var reservationHealth;
+      try { reservationHealth = reservations.health(); }
+      catch (err) { reservationHealth = { store: "sqlite", error: "unavailable" }; }
+      return json(res, {
+        ready: true,
+        reservations: reservationHealth,
         ordersStream: orderStream.stats(),
-      }, reservationSync.health()));
+      });
     }
     if (pathname === "/api/audit") {
       return handleAudit(req, res, url, { auditLog: auditLog, authToken: config.authToken });
     }
     if (pathname === "/api/seats" || pathname.indexOf("/api/seats/") === 0) {
       return handleSeats(req, res, url, {
-        reservationSync: reservationSync,
+        reservations: reservations,
         walkins: walkins,
         beforeMin: config.seatBeforeMin,
         afterMin: config.seatAfterMin,
@@ -191,30 +185,9 @@ function createRelay(options) {
     if (pathname === "/api/printer") return printRoutes.handlePrinterIp(req, res, printContext);
     if (pathname === "/api/slip-style") return printRoutes.handleSlipStyle(req, res, printContext);
 
-    if (pathname.indexOf("/api/mock/") === 0) {
-      if (!config.isMock) return httpUtil.text(res, 403, "mock endpoints are disabled when MOCK=0");
-      return handleMock(req, res, url, mock, reservationSync);
-    }
-    if (pathname === "/demo") return httpUtil.serveFile(res, path.join(__dirname, "tablecheck-demo.html"));
     if (pathname === "/qr") return handleQrPage(res, config, req.headers && req.headers.host);
 
     return serveStatic(res, url, root);
-  }
-
-  function resyncThenPoll() {
-    return track(reservationSync.enqueueResync().then(function () {
-      return reservationSync.enqueuePoll();
-    }));
-  }
-
-  function pollTick() {
-    return reservationSync.health().ready ? track(reservationSync.enqueuePoll()) : resyncThenPoll();
-  }
-
-  function track(promise) {
-    var tracked = Promise.resolve(promise).finally(function () { inFlight.delete(tracked); });
-    inFlight.add(tracked);
-    return tracked;
   }
 
   function start() {
@@ -224,16 +197,11 @@ function createRelay(options) {
       var address = server.address();
       var listenPort = address && address.port || config.port;
       var baseUrl = (tlsOptions ? "https://" : "http://") + (config.host.includes(":") ? "[" + config.host + "]" : config.host) + ":" + listenPort;
-      log("起動: " + baseUrl + "  (モード: " +
-        (config.isMock ? "MOCK — デモ予約を配信" : "予約ソースなし — 予約は空のまま (MOCK=0)") + ")");
-      if (config.isMock) {
-        if (env.SEED === "1") { mock.seed(); log("SEED=1: デモ予約を1件シード"); }
-        log("デモ操作コンソール: " + baseUrl + "/demo");
-        if (config.mockOrderScenario) {
-          mockOrderScenario = require("./mock-order-scenario").startMockOrderScenario({
-            orders: orders, refresh: orderStream.refresh, log: log,
-          });
-        }
+      log("起動: " + baseUrl + "  (予約の保存先: " + reservations.file + ")");
+      if (config.mockOrderScenario) {
+        mockOrderScenario = require("./mock-order-scenario").startMockOrderScenario({
+          orders: orders, refresh: orderStream.refresh, log: log,
+        });
       }
       log("KDS(デシャップ): " + baseUrl + "/  / 予約: /api/stock / 注文: /api/orders / 状態: /api/health");
       if (config.authToken) {
@@ -248,14 +216,8 @@ function createRelay(options) {
       var deps = printRoutes.printerDependencies(printerModule);
       if (!deps.ok) {
         log("⚠ 実機印刷は無効: " + deps.error);
-        log("⚠ 予約取込とKDS配信は通常どおり動きます (印刷を使うなら relay-server で npm install)");
+        log("⚠ 予約・注文のKDS配信は通常どおり動きます (印刷を使うなら relay-server で npm install)");
       }
-
-      initialSync = resyncThenPoll();
-      timers = [
-        setIntervalFn(pollTick, config.pollMs),
-        setIntervalFn(resyncThenPoll, config.resyncMs),
-      ];
     });
     return server;
   }
@@ -264,29 +226,23 @@ function createRelay(options) {
     if (mockOrderScenario) mockOrderScenario.stop();
     mockOrderScenario = null;
     orderStream.close();
-    timers.forEach(function (timer) { clearIntervalFn(timer); });
-    timers = [];
     started = false;
-    var closeServer = new Promise(function (resolve, reject) {
+    return new Promise(function (resolve, reject) {
       if (!server.listening) return resolve();
       server.close(function (err) { if (err) reject(err); else resolve(); });
+    }).then(function () {
+      if (!options.reservations) reservations.close();
     });
-    return closeServer.then(function () {
-      return Promise.all(Array.from(inFlight));
-    }).then(function () {});
   }
 
   return {
     config: config,
     server: server,
-    sync: reservationSync,
+    reservations: reservations,
     kitchenState: kitchenState,
     orders: orders,
     start: start,
     stop: stop,
-    pollTick: pollTick,
-    resyncThenPoll: resyncThenPoll,
-    whenInitialSync: function () { return initialSync; },
   };
 }
 
@@ -309,7 +265,10 @@ if (require.main === module) {
     console.error("[relay] 雛形: config/config.example.json");
     process.exit(1);
   }
-  createRelay({ configFile: configFile }).start();
+  createRelay({
+    configFile: configFile,
+    reservationDbPath: path.join(__dirname, "..", "data", "reservations.sqlite"),
+  }).start();
 }
 
 module.exports = {

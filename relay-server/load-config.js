@@ -20,8 +20,7 @@ var KEY_TO_ENV = {
   // 実機WSS検証でNode自身にTLSを終端させる場合の証明書と秘密鍵のパス (リポジトリ直下からの相対可)
   "server.tlsCert": "TLS_CERT_FILE",
   "server.tlsKey": "TLS_KEY_FILE",
-  "reservation.pollMs": "POLL_MS",
-  "reservation.resyncMs": "RESYNC_MS",
+  "reservation.dbFile": "RESERVATION_DB_FILE",
   "seat.beforeMin": "SEAT_BEFORE_MIN",
   "seat.afterMin": "SEAT_AFTER_MIN",
   "seat.walkinTtlMin": "SEAT_WALKIN_TTL_MIN",
@@ -35,9 +34,10 @@ var KEY_TO_ENV = {
   "auth.cookieSecure": "RELAY_COOKIE_SECURE",
 };
 
-// TableCheck API 連携の中止 (2026-10-11) で使わなくなったセクション。
-// 店舗の config.json に旧雛形の値が残っていても起動を止めないよう、中身ごと読み飛ばす。
+// TableCheck API 連携の中止 (2026-10-11) で使わなくなったセクションとキー。
+// 店舗の config.json に旧雛形の値が残っていても起動を止めないよう、読み飛ばす。
 var RETIRED_SECTIONS = { tablecheck: true };
+var RETIRED_KEYS = { "reservation.pollMs": true, "reservation.resyncMs": true };
 
 /**
  * 設定ファイルを env 形のオーバーレイへ変換して返す。
@@ -72,6 +72,7 @@ function toOverlay(json, file) {
     Object.keys(body).forEach(function (key) {
       if (isComment(key)) return;
       var dotted = section + "." + key;
+      if (RETIRED_KEYS[dotted]) return;
       var envKey = KEY_TO_ENV[dotted];
       if (!envKey) throw new Error(reject(file, dotted, "未知のキー。指定できるのは " + Object.keys(KEY_TO_ENV).join(", ")));
 

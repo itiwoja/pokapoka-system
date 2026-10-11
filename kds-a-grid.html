@@ -2422,7 +2422,7 @@
       return notes.join(" / ");
     }
 
-    /* 予約の questions[] / special_request を中継サーバーが分離した形と、
+    /* 予約のアレルギー・要望を中継サーバーが分離した形と、
        旧形式の memo/specialRequest の両方を受け、厨房カードへ安全に表示する。 */
     function reservationNotesSignature(record) {
       if (!record) return "";
@@ -2549,7 +2549,7 @@
         var last = localStorage.getItem(LS_DAY);
         if (last && last !== today) {
           // LS_BRIDGE_SEEN も破棄する。予約ストック(LS_STOCK)だけ消して取込済み記録を残すと、
-          // TableCheck 側で日程変更された予約 (予約IDは不変) が「取込済み」と判定されて
+          // 日程変更された予約 (予約IDは不変) が「取込済み」と判定されて
           // 変更後の日に二度と取り込まれない (#172)
           [LS_STOCK, LS_DONE, LS_DONE_V1, LS_ORDER, LS_KONRO, LS_LOCKED, LS_DELETED,
            LS_BRIDGE_SEEN, LS_RICE_CUE, LS_TABLE_OVERRIDE, LS_HALL_READY, LS_SLIP_PRINTED, LS_SERVE_CUE].forEach(function (key) {
@@ -4727,11 +4727,10 @@
         people: (Number(r.adults) || 0) + (Number(r.kids) || 0),
         adults: Number(r.adults) || 0,   // 内訳を保持 (配膳カードで「N名 幼M」表示)
         kids: Number(r.kids) || 0,
-        // TableCheck 予約由来の安全情報・要望を、進行中カードにも引き継ぐ。
+        // 予約由来の安全情報・要望を、進行中カードにも引き継ぐ。
         allergies: r.allergies || null,
         request: r.request || null,
         memo: r.memo || null,
-        questions: Array.isArray(r.questions) ? r.questions : [],
         items: (r.menu || []).map(function (m) {
           return {
             name: m.name,
@@ -5420,7 +5419,7 @@
     /* ----- 削除済み注文ID (トゥームストーン #67) -----
        POS接続後は window.KDS_ORDERS が毎秒上書きされるため、配列から除くだけでは
        次のポーリングで削除した注文が復活する。削除済みIDを保持し getOrders() で除外し続ける。
-       POS側APIへの削除伝播はテーブルチェック連携の仕様確定後に設計する (#74)。 */
+       POS側APIへの削除伝播は未設計 (テーブルチェック連携は 2026-10-11 に中止 #74)。 */
     function loadDeleted() {
       var v = safeParse(localStorage.getItem(LS_DELETED), {}) || {};
       deletedIds = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};

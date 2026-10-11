@@ -12,12 +12,8 @@ const { createRelay } = require("../server");
 const { createOrderStreamState } = require("../kds-bridge");
 const { startMockOrderScenario } = require("../mock-order-scenario");
 
-const SOURCE = {
-  async listReservations() { return []; }, async listSyncEvents() { return []; }, async getReservation() { return null; },
-};
-
 async function setup(t, env = {}) {
-  const relay = createRelay({ port: 0, env: Object.assign({ MOCK: "1" }, env), log() {}, auditLog: { record() {} }, source: SOURCE });
+  const relay = createRelay({ port: 0, env, log() {}, auditLog: { record() {} } });
   relay.start();
   await once(relay.server, "listening");
   t.after(() => relay.stop());
@@ -61,11 +57,11 @@ test("TLS証明書を渡すとHTTPSで画面を配信し、WSSでスナップシ
   assert.equal(health.body.ordersStream.clients, 1);
 });
 
-test("TLS証明書と秘密鍵の片方だけ、MOCK=0でのモックシナリオは起動エラー", () => {
-  const options = { port: 0, log() {}, auditLog: { record() {} }, source: SOURCE };
-  assert.throws(() => createRelay(Object.assign({ env: { MOCK: "1", TLS_CERT_FILE: "cert.pem" } }, options)), /tlsKey/);
-  assert.throws(() => createRelay(Object.assign({ env: { MOCK: "0", MOCK_ORDER_SCENARIO: "1" } }, options)),
-    /MOCK モードでのみ/);
+test("TLS証明書と秘密鍵の片方だけ、不正なモックシナリオ値は起動エラー", () => {
+  const options = { port: 0, log() {}, auditLog: { record() {} } };
+  assert.throws(() => createRelay(Object.assign({ env: { TLS_CERT_FILE: "cert.pem" } }, options)), /tlsKey/);
+  assert.throws(() => createRelay(Object.assign({ env: { MOCK_ORDER_SCENARIO: "yes" } }, options)),
+    /order\.mockScenario/);
 });
 
 test("KDSのACKを記録し、/api/health で追従状況を確認できる", { timeout: 10000 }, async t => {

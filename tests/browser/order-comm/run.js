@@ -2,7 +2,7 @@
 /* 注文通信のブラウザ検証ランナー (検証専用。製品コードは変更しない)。
  *   node run.js --root <order-client.js と relay-server を含むcloneのパス> --label main --out <出力dir>
  * 環境変数: PW_MODULE (playwright-core のパス), CHROME_PATH (chromiumの実行ファイル), BASE_PORT (既定 4410)
- * 外部通信なし: relay は MOCK モード・127.0.0.1 限定。 */
+ * 外部通信なし: relay は 127.0.0.1 限定。 */
 var cp = require("child_process");
 var fs = require("fs");
 var path = require("path");
@@ -32,7 +32,7 @@ function httpJson(port, p, headers) {
 async function startEnv(opts) {
   opts = opts || {};
   var proxyPort = BASE + 2 * (portSeq++), relayPort = proxyPort + 1;  // シナリオごとに別ポート (4410〜)
-  var env = Object.assign({}, process.env, { HOST: "127.0.0.1", PORT: String(relayPort), MOCK: "1" });
+  var env = Object.assign({}, process.env, { HOST: "127.0.0.1", PORT: String(relayPort) });
   delete env.MOCK_ORDER_SCENARIO;
   if (opts.token) { env.RELAY_TOKEN = opts.token; env.RELAY_TRUST_LOOPBACK = "0"; }
   var relay = cp.spawn(process.execPath, ["relay-server/server.js"], { cwd: ROOT, env: env, stdio: "ignore" });

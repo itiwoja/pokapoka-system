@@ -37,14 +37,10 @@ test("印刷用の依存が無くてもサーバーは起動し、予約取込�
     "};",
     "var http = require('http');",
     "var relay = require(" + JSON.stringify(serverPath) + ").createRelay({",
-    "  port: 0, env: { MOCK: '1' }, mockSource: {}, log: function () {},",
-    "  source: { listReservations: async function () { return []; },",
-    "            listSyncEvents: async function () { return []; },",
-    "            getReservation: async function () { return null; } },",
+    "  port: 0, env: {}, log: function () {},",
     "});",
     "relay.start();",
     "relay.server.on('listening', async function () {",
-    "  await relay.whenInitialSync();",
     "  var port = relay.server.address().port;",
     "  function req(pathname, method, body) {",
     "    return new Promise(function (resolve) {",
@@ -77,18 +73,17 @@ test("印刷用の依存が無くてもサーバーは起動し、予約取込�
   assert.equal(out.qr, 503, "QRページも理由付きの503で断るべき");
 });
 
-function rawReservation(id) {
+function todayReservation(rid, fields) {
   var startAt = new Date();
   startAt.setHours(18, 30, 0, 0);
-  return {
-    id: id,
-    start_at: startAt.toISOString(),
-    status: "confirmed",
-    first_name: "太郎",
-    last_name: "山田",
-    pax_adult: 2,
-    orders: [{ menu_item_name_translations: { ja: "土鍋御膳" }, qty: 1 }],
-  };
+  return Object.assign({
+    rid: rid,
+    startAt: startAt.toISOString(),
+    name: "山田 太郎",
+    adults: 2,
+    table: "3",
+    menu: [{ name: "土鍋御膳", qty: 1 }],
+  }, fields);
 }
 
 function requestJson(server, pathname) {
@@ -129,43 +124,25 @@ function requestRaw(server, pathname, options) {
   });
 }
 
-function createTestRelay(source, intervalCalls) {
-  return serverModule.createRelay({
+function createTestRelay(options) {
+  return serverModule.createRelay(Object.assign({
     port: 0,
-    env: { MOCK: "1", POLL_MS: "3000", RESYNC_MS: "900000" },
-    source: source,
-    mockSource: {},
+    env: {},
     log: function () {},
-    setInterval: function (fn, ms) {
-      intervalCalls.push({ fn: fn, ms: ms });
-      return intervalCalls.length;
-    },
-    clearInterval: function () {},
-  });
+  }, options));
 }
 
 test("トークン認証は401を維持し、QRのGET/HEADはCookie発行後clean URLへリダイレクトする", async function (t) {
   var TOKEN = "pokapoka-kitchen-2026";
-  var resolveReservations;
   // RELAY_TRUST_LOOPBACK=0 でループバック免除を切り、127.0.0.1 から「他端末」として叩く
   var relay = serverModule.createRelay({
     port: 0,
-    env: { MOCK: "1", POLL_MS: "3000", RESYNC_MS: "900000", RELAY_TOKEN: TOKEN, RELAY_TRUST_LOOPBACK: "0" },
-    source: {
-      listReservations: function () { return new Promise(function (resolve) { resolveReservations = resolve; }); },
-      listSyncEvents: async function () { return []; },
-      getReservation: async function () { return null; },
-    },
-    mockSource: {},
+    env: { RELAY_TOKEN: TOKEN, RELAY_TRUST_LOOPBACK: "0" },
     log: function () {},
-    setInterval: function () { return 0; },
-    clearInterval: function () {},
   });
   t.after(function () { return relay.stop(); });
   relay.start();
   await events.once(relay.server, "listening");
-  resolveReservations([]);
-  await relay.whenInitialSync();
 
   // トークン無し: ページも API も通らない
   assert.equal((await requestRaw(relay.server, "/")).status, 401);
@@ -226,18 +203,11 @@ test("RELAY_COOKIE_SECURE=1ならHTTPバックエンドでもSecure Cookieを明
   var TOKEN = "pokapoka-kitchen-2026";
   var relay = serverModule.createRelay({
     port: 0,
-    env: { MOCK: "1", RELAY_TOKEN: TOKEN, RELAY_TRUST_LOOPBACK: "0", RELAY_COOKIE_SECURE: "1" },
-    source: {
-      listReservations: async function () { return []; },
-      listSyncEvents: async function () { return []; },
-      getReservation: async function () { return null; },
-    },
-    mockSource: {}, log: function () {}, setInterval: function () { return 0; }, clearInterval: function () {},
+    env: { RELAY_TOKEN: TOKEN, RELAY_TRUST_LOOPBACK: "0", RELAY_COOKIE_SECURE: "1" }, log: function () {},
   });
   t.after(function () { return relay.stop(); });
   relay.start();
   await events.once(relay.server, "listening");
-  await relay.whenInitialSync();
 
   var response = await requestRaw(relay.server, "/?token=" + encodeURIComponent(TOKEN));
   assert.equal(response.status, 303);
@@ -253,17 +223,10 @@ test("RELAY_COOKIE_SECURE=1ならHTTPバックエンドでもSecure Cookieを明
 });
 
 test("トークン未設定なら従来どおり認証なしで通る", async function (t) {
-  var resolveReservations;
-  var relay = createTestRelay({
-    listReservations: function () { return new Promise(function (resolve) { resolveReservations = resolve; }); },
-    listSyncEvents: async function () { return []; },
-    getReservation: async function () { return null; },
-  }, []);
+  var relay = createTestRelay();
   t.after(function () { return relay.stop(); });
   relay.start();
   await events.once(relay.server, "listening");
-  resolveReservations([]);
-  await relay.whenInitialSync();
 
   assert.equal((await requestRaw(relay.server, "/")).status, 200);
   assert.equal((await requestRaw(relay.server, "/api/stock")).status, 200);
@@ -271,69 +234,65 @@ test("トークン未設定なら従来どおり認証なしで通る", async fu
     "認証無効時に監査ログをHTTP公開しない");
 });
 
-test("初回全件リシンク中は/api/stockが503、成功後は200になる", async function (t) {
-  var resolveReservations;
-  var intervalCalls = [];
-  var relay = createTestRelay({
-    listReservations: function () {
-      return new Promise(function (resolve) { resolveReservations = resolve; });
-    },
-    listSyncEvents: async function () { return []; },
-    getReservation: async function () { return null; },
-  }, intervalCalls);
+test("/api/stockは保存済みの当日予約を配信し、/api/healthは保存先を返す", async function (t) {
+  var relay = createTestRelay();
   t.after(function () { return relay.stop(); });
-
   relay.start();
   await events.once(relay.server, "listening");
-  assert.deepEqual(await requestJson(relay.server, "/api/stock"), {
-    status: 503,
-    body: { ok: false, error: "initial reservation sync pending" },
-  });
+  assert.deepEqual(await requestJson(relay.server, "/api/stock"), { status: 200, body: [] }, "起動直後から200で空を返す");
 
-  resolveReservations([rawReservation("r1")]);
-  await relay.whenInitialSync();
+  relay.reservations.save(todayReservation("r1"));
+  relay.reservations.save(todayReservation("r2", { menu: [] }));   // 席だけ予約は載せない
+  relay.reservations.save(todayReservation("r3"));
+  relay.reservations.cancel("r3");
   var stock = await requestJson(relay.server, "/api/stock");
   assert.equal(stock.status, 200);
   assert.deepEqual(stock.body.map(function (r) { return r.rid; }), ["r1"]);
+  assert.equal(stock.body[0].time, "18:30");
 
   var health = await requestJson(relay.server, "/api/health");
   assert.equal(health.body.ready, true);
-  assert.equal(health.body.resyncMs, 900000);
-  assert.deepEqual(intervalCalls.map(function (call) { return call.ms; }), [3000, 900000]);
+  assert.deepEqual(health.body.reservations, { store: "sqlite", reservations: 3 });
 });
 
-test("初回失敗中の30秒tickは全件リシンクを再試行する", async function (t) {
-  var attempts = 0;
+test("予約を読めないときは/api/stockと/api/seatsが503を返し、プロセスは落ちない", async function (t) {
+  var broken = function () { throw new Error("disk I/O error"); };
   var relay = createTestRelay({
-    listReservations: async function () {
-      attempts++;
-      if (attempts === 1) throw new Error("temporary failure");
-      return [];
-    },
-    listSyncEvents: async function () { return []; },
-    getReservation: async function () { return null; },
-  }, []);
+    reservations: { stock: broken, todaySnapshot: broken, health: broken, file: ":memory:", close: function () {} },
+  });
   t.after(function () { return relay.stop(); });
-
   relay.start();
   await events.once(relay.server, "listening");
-  await relay.whenInitialSync();
-  assert.equal((await requestJson(relay.server, "/api/stock")).status, 503);
+  assert.deepEqual(await requestJson(relay.server, "/api/stock"),
+    { status: 503, body: { ok: false, error: "reservation store unavailable" } });
+  assert.equal((await requestRaw(relay.server, "/api/seats")).status, 503);
+  assert.deepEqual((await requestJson(relay.server, "/api/health")).body.reservations, { store: "sqlite", error: "unavailable" });
+  assert.equal((await requestRaw(relay.server, "/api/orders")).status, 200, "注文は予約ストアの故障に巻き込まれない");
+});
 
-  await relay.pollTick();
-  assert.equal(attempts, 2);
-  assert.deepEqual(await requestJson(relay.server, "/api/stock"), { status: 200, body: [] });
+test("予約はSQLiteファイルに残り、再起動後も配信される", async function (t) {
+  var os2 = require("os");
+  var fs2 = require("fs");
+  var dir = fs2.mkdtempSync(path.join(os2.tmpdir(), "relay-reservations-"));
+  t.after(function () { fs2.rmSync(dir, { recursive: true, force: true }); });
+  var dbPath = path.join(dir, "reservations.sqlite");
+
+  var first = createTestRelay({ reservationDbPath: dbPath });
+  first.start();
+  await events.once(first.server, "listening");
+  first.reservations.save(todayReservation("r-keep"));
+  await first.stop();
+
+  var second = createTestRelay({ reservationDbPath: dbPath });
+  t.after(function () { return second.stop(); });
+  second.start();
+  await events.once(second.server, "listening");
+  var stock = await requestJson(second.server, "/api/stock");
+  assert.deepEqual(stock.body.map(function (r) { return r.rid; }), ["r-keep"]);
 });
 
 test("厨房状態APIはイベントを畳み込み、別端末が1回の取得で追いつける", async function (t) {
-  var resolveReservations;
-  var relay = createTestRelay({
-    listReservations: function () {
-      return new Promise(function (resolve) { resolveReservations = resolve; });
-    },
-    listSyncEvents: async function () { return []; },
-    getReservation: async function () { return null; },
-  }, []);
+  var relay = createTestRelay();
   t.after(function () { return relay.stop(); });
   relay.start();
   await events.once(relay.server, "listening");
@@ -379,27 +338,20 @@ test("厨房状態APIはイベントを畳み込み、別端末が1回の取得�
   assert.match(JSON.parse(invalid.text).error, /konro\.num/);
 
   assert.equal((await requestRaw(relay.server, "/api/kitchen-state", { method: "DELETE" })).status, 405);
-
-  resolveReservations([]);
-  await relay.whenInitialSync();
 });
 
-test("座席APIは初回同期前503で、同期後もwalk-in操作を維持する", async function (t) {
-  var resolveReservations;
-  var relay = createTestRelay({
-    listReservations: function () {
-      return new Promise(function (resolve) { resolveReservations = resolve; });
-    },
-    listSyncEvents: async function () { return []; },
-    getReservation: async function () { return null; },
-  }, []);
+test("座席APIは保存済み予約の占有を出し、walk-in操作を維持する", async function (t) {
+  var relay = createTestRelay();
   t.after(function () { return relay.stop(); });
   relay.start();
   await events.once(relay.server, "listening");
 
-  assert.equal((await requestRaw(relay.server, "/api/seats")).status, 503);
-  resolveReservations([]);
-  await relay.whenInitialSync();
+  var soon = new Date(Date.now() + 10 * 60000).toISOString();
+  relay.reservations.save(todayReservation("r-soon", { startAt: soon, table: "7" }));
+  var fromStore = JSON.parse((await requestRaw(relay.server, "/api/seats")).text);
+  assert.equal(fromStore.some(function (seat) {
+    return seat.table === "7" && seat.source === "reservation" && seat.rid === "r-soon";
+  }), true, "予約ストアの卓番が占有ビューに出ていない");
 
   var created = await requestRaw(relay.server, "/api/seats", {
     method: "POST",
@@ -429,16 +381,8 @@ test("座席APIは初回同期前503で、同期後もwalk-in操作を維持す�
   }), true, "着席した予約が占有ビューに出ていない");
 });
 
-test("注文APIは投入・配信・再送・取消をこなし、予約同期の完了を待たない", async function (t) {
-  // 初回全件リシンクを保留したまま注文APIを叩き、予約同期に依存しないことを見る
-  var resolveReservations;
-  var relay = createTestRelay({
-    listReservations: function () {
-      return new Promise(function (resolve) { resolveReservations = resolve; });
-    },
-    listSyncEvents: async function () { return []; },
-    getReservation: async function () { return null; },
-  }, []);
+test("注文APIは投入・配信・再送・取消をこなす", async function (t) {
+  var relay = createTestRelay();
   t.after(function () { return relay.stop(); });
   relay.start();
   await events.once(relay.server, "listening");
@@ -450,8 +394,6 @@ test("注文APIは投入・配信・再送・取消をこなし、予約同期�
       headers: { "Content-Type": "application/json" },
     });
   }
-
-  assert.equal((await requestRaw(relay.server, "/api/stock")).status, 503);   // 予約側は未同期
 
   var created = await post({ orderId: "t12-1", table: "12", people: 3, items: [{ name: "土鍋御膳", qty: 2, note: "塩少なめ" }] });
   assert.equal(created.status, 201);
@@ -524,25 +466,14 @@ test("注文APIは投入・配信・再送・取消をこなし、予約同期�
   assert.equal(JSON.parse(recreated.text).order.table, "16");
 
   assert.equal((await requestRaw(relay.server, "/api/orders", { method: "PATCH" })).status, 405);
-
-  resolveReservations([]);          // 保留していた初回リシンクを解いて stop() を待てるようにする
-  await relay.whenInitialSync();
 });
 
 test("POST /api/print はプライベートIP検証・正規化を行い、送信結果をHTTPで返す(#144)", async function (t) {
   var sent = [];
   var relay = serverModule.createRelay({
     port: 0,
-    env: { MOCK: "1", POLL_MS: "3000", RESYNC_MS: "900000" },
-    source: {
-      listReservations: async function () { return []; },
-      listSyncEvents: async function () { return []; },
-      getReservation: async function () { return null; },
-    },
-    mockSource: {},
+    env: {},
     log: function () {},
-    setInterval: function () { return 1; },
-    clearInterval: function () {},
     printer: Object.assign({}, printerModule, {
       sendToPrinter: function (ip) {
         sent.push(ip);
@@ -553,7 +484,6 @@ test("POST /api/print はプライベートIP検証・正規化を行い、送�
   t.after(function () { return relay.stop(); });
   relay.start();
   await events.once(relay.server, "listening");
-  await relay.whenInitialSync();
 
   var badIp = await requestRaw(relay.server, "/api/print", {
     method: "POST",
@@ -589,18 +519,10 @@ test("GET/POST /api/slip-style はスタイルを保存・配信し、印刷のs
   var built = [];
   var relay = serverModule.createRelay({
     port: 0,
-    env: { MOCK: "1", POLL_MS: "3000", RESYNC_MS: "900000" },
+    env: {},
     slipStylePath: stylePath,
     printerIpPath: printerIpPath,
-    source: {
-      listReservations: async function () { return []; },
-      listSyncEvents: async function () { return []; },
-      getReservation: async function () { return null; },
-    },
-    mockSource: {},
     log: function () {},
-    setInterval: function () { return 1; },
-    clearInterval: function () {},
     printer: Object.assign({}, printerModule, {
       buildEscPos: function (job) { built.push(job); return Buffer.from("x"); },
       sendToPrinter: function () { return Promise.resolve(); },
@@ -613,7 +535,6 @@ test("GET/POST /api/slip-style はスタイルを保存・配信し、印刷のs
   });
   relay.start();
   await events.once(relay.server, "listening");
-  await relay.whenInitialSync();
 
   // 未設定時は空オブジェクト
   var empty = await requestRaw(relay.server, "/api/slip-style");
@@ -664,16 +585,11 @@ test("GET/POST /api/slip-style はスタイルを保存・配信し、印刷のs
   assert.equal(built.length, 2);
 });
 
-test("静的配信・demo・404・不正URLを維持する", async function (t) {
-  var relay = createTestRelay({
-    listReservations: async function () { return []; },
-    listSyncEvents: async function () { return []; },
-    getReservation: async function () { return null; },
-  }, []);
+test("静的配信・404・不正URLを維持し、撤去した /demo とモック予約APIは配信しない", async function (t) {
+  var relay = createTestRelay();
   t.after(function () { return relay.stop(); });
   relay.start();
   await events.once(relay.server, "listening");
-  await relay.whenInitialSync();
 
   var root = await requestRaw(relay.server, "/");
   assert.equal(root.status, 200);
@@ -683,120 +599,21 @@ test("静的配信・demo・404・不正URLを維持する", async function (t) 
   assert.equal(sound.status, 200);
   assert.equal(sound.headers["content-type"], "audio/ogg");
   assert.ok(sound.text && sound.text.length > 1000, "ししおどし音源が配信される");
-  assert.equal((await requestRaw(relay.server, "/demo")).status, 200);
+  assert.equal((await requestRaw(relay.server, "/demo")).status, 404);
+  assert.equal((await requestRaw(relay.server, "/api/mock/reservations")).status, 404);
   assert.equal((await requestRaw(relay.server, "/relay-server/not-found.js")).status, 404);
   assert.equal((await requestRaw(relay.server, "/%E0%A4%A")).status, 400);
   assert.equal((await requestRaw(relay.server, "/%2e%2e%5cissue-122-evil%5csecret.txt")).status, 403);
 });
 
-test("MOCK予約APIの作成・入力エラー・未存在・method拒否を扱う", async function (t) {
-  var db = {};
-  var queue = [];
-  var mockSource = {
-    listReservations: function () { return Object.keys(db).map(function (id) { return db[id]; }); },
-    listSyncEvents: function () { var current = queue; queue = []; return current; },
-    getReservation: function (id) { return db[id] || null; },
-    createReservation: function (body) {
-      var rec = rawReservation(body.id || "created");
-      db[rec.id] = rec;
-      queue.push({ syncable_type: "Reservation", syncable_id: rec.id });
-      return rec;
-    },
-    updateReservation: function () { return null; },
-    cancelReservation: function () { return null; },
-    seed: function () {},
-  };
+test("設定値はポート・ホスト・予約の保存先を反映する", function () {
   var relay = serverModule.createRelay({
-    port: 0,
-    env: { MOCK: "1" },
-    source: mockSource,
-    mockSource: mockSource,
-    log: function () {},
-    setInterval: function () { return 1; },
-    clearInterval: function () {},
+    env: { PORT: "8123", HOST: "192.168.1.10", RESERVATION_DB_FILE: "data/test-reservations.sqlite" },
+    reservations: { close: function () {} },
   });
-  t.after(function () { return relay.stop(); });
-  relay.start();
-  await events.once(relay.server, "listening");
-  await relay.whenInitialSync();
-
-  assert.deepEqual(JSON.parse((await requestRaw(relay.server, "/api/mock/reservations")).text), []);
-  var created = await requestRaw(relay.server, "/api/mock/reservations", {
-    method: "POST", body: JSON.stringify({ id: "r-created" }),
-    headers: { "Content-Type": "application/json" },
-  });
-  assert.equal(created.status, 200);
-  assert.equal(JSON.parse(created.text).reservation.id, "r-created");
-  assert.equal((await requestRaw(relay.server, "/api/mock/reservations", { method: "POST", body: "{" })).status, 400);
-  assert.equal((await requestRaw(relay.server, "/api/mock/reservations/missing", { method: "PATCH", body: "{}" })).status, 404);
-  assert.equal((await requestRaw(relay.server, "/api/mock/reservations/missing", { method: "DELETE" })).status, 404);
-  assert.equal((await requestRaw(relay.server, "/api/mock/reservations", { method: "PUT" })).status, 405);
-  assert.equal((await requestRaw(relay.server, "/api/mock/unknown")).status, 404);
-  assert.equal((await requestRaw(relay.server, "/api/mock/reservations/%E0%A4%A")).status, 400);
-});
-
-test("設定値はPOLL_MSとRESYNC_MSの下限を守る", function () {
-  var relay = serverModule.createRelay({
-    env: { POLL_MS: "1", RESYNC_MS: "1", PORT: "8123", HOST: "192.168.1.10" },
-    source: {
-      listReservations: async function () { return []; },
-      listSyncEvents: async function () { return []; },
-      getReservation: async function () { return null; },
-    },
-    mockSource: {},
-  });
-  assert.equal(relay.config.isMock, true, "MOCK は既定で有効");
-  assert.equal(relay.config.pollMs, 100);
-  assert.equal(relay.config.resyncMs, 1000);
   assert.equal(relay.config.port, 8123);
   assert.equal(relay.config.host, "192.168.1.10");
-});
-
-test("MOCK=0 は予約ソースなしで初回同期を完了し、モックAPIを閉じる", async function (t) {
-  var relay = serverModule.createRelay({
-    port: 0,
-    env: { MOCK: "0" },
-    mockSource: {},
-    log: function () {},
-    auditLog: { record: function () {} },
-    setInterval: function () { return 0; },
-    clearInterval: function () {},
-  });
-  t.after(function () { return relay.stop(); });
-  relay.start();
-  await events.once(relay.server, "listening");
-  await relay.whenInitialSync();
-
-  assert.equal(relay.config.isMock, false);
-  var health = await requestRaw(relay.server, "/api/health");
-  assert.equal(JSON.parse(health.text).mode, "none");
-  assert.equal(JSON.parse(health.text).ready, true);
-  var stock = await requestRaw(relay.server, "/api/stock");
-  assert.equal(stock.status, 200);
-  assert.deepEqual(JSON.parse(stock.text), []);
-  assert.equal((await requestRaw(relay.server, "/api/mock/reservations")).status, 403);
-});
-
-test("stopは進行中の初回同期が完了するまで解決しない", async function () {
-  var releaseReservations;
-  var relay = createTestRelay({
-    listReservations: function () {
-      return new Promise(function (resolve) { releaseReservations = resolve; });
-    },
-    listSyncEvents: async function () { return []; },
-    getReservation: async function () { return null; },
-  }, []);
-  relay.start();
-  await events.once(relay.server, "listening");
-
-  var stopped = false;
-  var stopPromise = relay.stop().then(function () { stopped = true; });
-  await new Promise(function (resolve) { setImmediate(resolve); });
-  assert.equal(stopped, false);
-
-  releaseReservations([]);
-  await stopPromise;
-  assert.equal(stopped, true);
+  assert.equal(relay.config.reservationDbFile, "data/test-reservations.sqlite");
 });
 
 test("自由配置レイアウトの保存とラスター印字(/api/slip-style, /api/print)", async function (t) {
@@ -807,18 +624,10 @@ test("自由配置レイアウトの保存とラスター印字(/api/slip-style,
   var textJobs = [];
   var relay = serverModule.createRelay({
     port: 0,
-    env: { MOCK: "1", POLL_MS: "3000", RESYNC_MS: "900000" },
+    env: {},
     slipStylePath: stylePath,
     printerIpPath: path2.join(os2.tmpdir(), "printer-ip-tpl-" + process.pid + "-" + Date.now() + ".json"),
-    source: {
-      listReservations: async function () { return []; },
-      listSyncEvents: async function () { return []; },
-      getReservation: async function () { return null; },
-    },
-    mockSource: {},
     log: function () {},
-    setInterval: function () { return 1; },
-    clearInterval: function () {},
     printer: Object.assign({}, printerModule, {
       buildRaster: function (raster, opts) { rasterJobs.push({ raster: raster, opts: opts }); return Buffer.from("r"); },
       buildEscPos: function (job) { textJobs.push(job); return Buffer.from("t"); },
@@ -831,7 +640,6 @@ test("自由配置レイアウトの保存とラスター印字(/api/slip-style,
   });
   relay.start();
   await events.once(relay.server, "listening");
-  await relay.whenInitialSync();
 
   // レイアウト(elements[])は丸めずそのまま預かる。描画はブラウザ側なのでサーバーは解釈しない
   var tpl = {
