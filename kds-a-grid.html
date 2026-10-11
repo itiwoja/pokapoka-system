@@ -3641,6 +3641,22 @@
     function loadServeLog() { return safeParse(localStorage.getItem(LS_SERVE), []) || []; }
     function saveServeLog(log) { return lsSet(LS_SERVE, JSON.stringify(log)); }
 
+    /* 完了を取り消した注文の当日ログを戻す。recordServe は当日1件だけ記録するので、
+       取り除くのも当日分の1件に限る。undo・poll・他タブ同期から重ねて呼ばれても、
+       POSの日次連番IDで同じIDを持つ前日以前の記録は消さない (#179 / #204)。 */
+    function removeLatestServeRecord(orderId) {
+      var log = loadServeLog();
+      var today = serveDayKey(Date.now());
+      for (var i = log.length - 1; i >= 0; i--) {
+        if (!log[i] || String(log[i].orderId) !== String(orderId)) continue;
+        if (serveRecordDay(log[i]) !== today) continue;
+        log.splice(i, 1);
+        saveServeLog(log);
+        return true;
+      }
+      return false;
+    }
+
     /* 保存済みログを保持方針まで切り詰める。減った場合だけ書き戻す (#179) */
     function pruneStoredServeLog() {
       var log = loadServeLog();
@@ -3774,6 +3790,7 @@
     function applyDoneToCard(entry, animateRemoval, broadcastHallReady) {
       if (!entry || !entry.el) return;
       var order = entry.order;
+      var wasAllDone = isAllDone(entry);
       var saved = doneMap[order.id] || [];
       var btns = entry.el.querySelectorAll(".item");
       for (var i = 0; i < btns.length; i++) {
@@ -3784,6 +3801,7 @@
         updateItemButtonDone(btns[i], count, qty);
       }
       if (!isAllDone(entry)) {
+        if (wasAllDone) removeLatestServeRecord(order.id);
         entry.el.classList.remove("all-done");   // 戻したら通常表示へ (#228)
         if (reconcileHallReadySnapshot(order, broadcastHallReady !== false)) renderHallViews();
         return;
@@ -3823,6 +3841,7 @@
       if (mode === "hall") return;   // ホールは読取専用 (#259): キーボード・レーン経路もここで止める
       var entry = cards[id];
       if (!entry) return;
+      var wasAllDone = isAllDone(entry);
       if (!doneMap[id]) doneMap[id] = entry.order.items.map(function (it) { return Number(it.doneCount) || 0; });
       var qty = Number(entry.order.items[index].qty) || 1;
       var cur = Number(doneMap[id][index]) || 0;
@@ -3843,6 +3862,8 @@
         // キッチンからは CSS で隠れるので、厨房から見た挙動は従来どおり。
         entry.el.classList.add("all-done");
         showUndoToast(entry.order, index);
+      } else if (wasAllDone) {
+        removeLatestServeRecord(id);
       }
       if (view === "lane") renderLanes();   // #13 レーンから完了品目を除く
     }
@@ -3852,6 +3873,7 @@
       if (mode === "hall") return;   // ホールは読取専用 (#259): キーボード・レーン経路もここで止める
       var entry = cards[id];
       if (!entry) return;
+      var wasAllDone = isAllDone(entry);
       var order = entry.order;
       var qty = Number(order.items[index].qty) || 1;
       if (!doneMap[id]) doneMap[id] = order.items.map(function (it) { return Number(it.doneCount) || 0; });
@@ -3864,6 +3886,7 @@
 
       order.items[index].doneCount = next;
       order.items[index].done = next >= qty;
+      if (wasAllDone && !isAllDone(entry)) removeLatestServeRecord(id);
       var btn = entry.el.querySelectorAll(".item")[index];
       if (btn) updateItemButtonDone(btn, next, qty);
       if (view === "lane") renderLanes();
@@ -3891,6 +3914,7 @@
       var cur = Number(doneMap[id][idx]) || 0;
       doneMap[id][idx] = Math.max(0, cur - 1);   // 最後の1個分だけ未完了へ戻す (#153)
       saveDone();
+      removeLatestServeRecord(id);
       broadcastToggle(id, idx, doneMap[id][idx]);
       poll();                            // 配膳カードを復帰させる
     }
@@ -4168,7 +4192,10 @@
       if (parts.length < 2) return Infinity;
       var d = new Date();
       d.setHours(Number(parts[0]) || 0, Number(parts[1]) || 0, 0, 0);
-      return Math.round((d.getTime() - Date.now()) / 60000);
+      var delta = (d.getTime() - Date.now()) / 60000;
+      // Math.round() だと 30分00秒より少し前の予約まで「30分以内」に入り、
+      // 境界の直前に炊飯cueが出る。未来は切り上げ、過去は切り下げる (#204)。
+      return delta >= 0 ? Math.ceil(delta) : Math.floor(delta);
     }
 
     function ensureRiceCue(reservation) {

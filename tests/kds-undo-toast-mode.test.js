@@ -31,6 +31,7 @@ function harness(mode) {
     doneMap: { o1: [1] }, grab: null, seatDialContext: "",
     LS_MODE: "mode", setTimeout, clearTimeout,
     saveDone() { calls.push("saveDone"); },
+    removeLatestServeRecord() { calls.push("removeLatestServeRecord"); },   // #204: undoComplete が呼ぶ
     broadcastToggle() { calls.push("broadcastToggle"); },
     poll() { calls.push("poll"); },
     saveHallReady() { calls.push("saveHallReady"); },
@@ -67,6 +68,7 @@ test("ホールでは厨房の完了undoを実行しない", () => {
   h.context.undoComplete();
   assert.equal(h.context.doneMap.o1[0], 1);
   assert.ok(!h.calls.includes("saveDone"));
+  assert.ok(!h.calls.includes("removeLatestServeRecord"));
   assert.equal(h.context.undoToastEl.classList.has("show"), false);
 });
 
@@ -75,6 +77,7 @@ test("厨房では完了undoが従来どおり実行される", () => {
   h.context.undoComplete();
   assert.equal(h.context.doneMap.o1[0], 0);
   assert.ok(h.calls.includes("saveDone"));
+  assert.ok(h.calls.includes("removeLatestServeRecord"));
   assert.ok(h.calls.includes("poll"));
 });
 
