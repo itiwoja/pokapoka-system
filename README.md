@@ -46,7 +46,6 @@ npm --prefix relay-server ci
 npm start
 # 起動ログに表示されたURLを開く（既定値は http://127.0.0.1:8000）
 # /          … KDS（デシャップ）
-# /demo      … 予約デモコンソール（モック予約）
 # /api/health … 中継サーバーの稼働確認
 ```
 
@@ -78,21 +77,21 @@ npm test
 > **2026-10-11: TableCheck API連携は行わないことになった。** 予約情報は店員の手入力で扱う方針とする（入力方法は未設計）。
 > TableCheck の実API取得処理・疎通確認・暫定契約の文書は [`archive/tablecheck/`](archive/tablecheck/README.md) へ退避した。
 
-`relay-server/` の店内中継サーバーは、予約（メニュー・人数等）を当日分だけ保持し、KDS の予約ストックへ流し込みます。予約の供給源は現在 MOCK（デモ予約）だけで、手入力は未設計です。**Node 18+**で動作します。
+`relay-server/` の店内中継サーバーは、予約（メニュー・人数等）を SQLite（`data/reservations.sqlite`）に保存し、当日分を KDS の予約ストックへ流し込みます。予約を入れる入口（画面・API）は手入力の設計後に作るため、現時点でサーバーの予約ストックは空です。TableCheck を模したモックと `/demo` は撤去しました。**Node 22.13+**（予約の保存に Node 標準の `node:sqlite` を使うため）で動作します。
 
 ```
-【予約の供給源】           【店内ミニPC = 中継サーバー】          【KDS端末】
-MOCK(デモ予約) ──▶ server.js ── /api/stock(JSON) ──▶ kds-bridge.js → 予約ストックへ
+【予約の入力】             【店内ミニPC = 中継サーバー】          【KDS端末】
+店員の手入力(未設計) ──▶ data/reservations.sqlite
+                         server.js ── /api/stock(当日分) ──▶ kds-bridge.js → 予約ストックへ
 ```
 
-- 既定の**モックモード**では、`/demo` の予約デモコンソールから予約の作成・人数変更・キャンセル → KDS 反映までを実機で確認できる。`MOCK=0` で起動すると予約は常に空になる
-- 予約の `questions[]` / `special_request` は、アレルギーとその他の要望に分けて予約ストック・厨房カードへ常時表示する
+- 予約のアレルギー（`allergies`）と要望（`request`）は、予約ストック・厨房カードへ常時表示する
 - デシャップモニター・注文端末の接続先（host/port）は **`config/config.json` に集約**（雛形: `config/config.example.json`。優先順位は 既定値 < config.json < 環境変数）
 - 起動方法・エンドポイント・LAN 配信時の注意（固定IP・ファイアウォール）は [relay-server/README.md](relay-server/README.md) を参照
 
-### データ保存方針: 何も保存しない
+### データ保存方針: 予約だけを保存する
 
-打合せ確定（2026-06-18 議事録）に基づき、**注文・予約はサーバーに保存しない**。中継サーバーは**当日分の予約のみメモリ保持**します。再起動時は予約の供給源（現在はモック）から当日全件を取り直します（初回リシンク成功まで `/api/stock` は 503 を返し、KDS 側は直前表示を保持）。永続 DB 設計は将来構想として `docs/db-design.md` に保留しています。
+2026-06-18 の打合せでは「注文・予約はサーバーに保存しない」と決めていました。予約の正本を TableCheck が持つ前提だったためです。TableCheck 連携の中止（2026-10-11）で予約を持つのがこのシステムだけになったため、**予約は中継サーバーの SQLite に保存**し、再起動しても残るようにしました。過ぎた日の予約は自動で削除します。ミニPCの故障に備え、`data/reservations.sqlite` を定期的に別媒体へバックアップしてください（手順は [relay-server/README.md](relay-server/README.md#予約の保存reservation-storejs)）。**注文は従来どおり保存せず**、当日メモリだけで扱います。
 
 ## 提供時間の自動計測（Issue #29）
 

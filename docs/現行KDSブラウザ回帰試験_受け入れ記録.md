@@ -16,7 +16,7 @@
 | 対象ソース | `kds-a-grid.html`。実施時点は commit `a818051`（ホールA/B/C、炊飯準備cue、厨房限定卓番上書き、提供準備完了cueを含む統合後の版）。なお、2026-09-03の判断により、現行版ではホールA/B/C比較prototypeは既定無効（`HALL_PROTO_ENABLED = false`）である。 |
 | 中継Server | `MOCK=1 node relay-server/server.js` |
 | KDS URL | `http://127.0.0.1:8000/`（loopbackのみ。店舗LANの合否ではない） |
-| 予約デモURL | `http://127.0.0.1:8000/demo` |
+| 予約デモURL | `http://127.0.0.1:8000/demo`（2026-10-11 に撤去。REG-01 など予約を作る項目は、予約の手入力が実装されるまで再実施できない） |
 | OS / Node.js | Windows / Node.js `v24.11.1` |
 | ブラウザ / バージョン | Codex In-app Browser（実行環境からバージョン表記を取得できず） |
 | 表示倍率・画面サイズ | ブラウザ既定値。固定値は取得できず |

@@ -25,14 +25,13 @@ POS 連携は**行わない**。売上・会計は別のレジで管理する（
   - 予約の受付は外部SaaS（テーブルチェック）で行う。TableCheck API連携は2026-10-11に中止したため、店内へは店員の手入力で取り込む方針（入力方法は未設計）。店内は当日分を一時的に持つだけ。
 - 結果として **RAID・バックアップ機器・UPS はいずれも不要**（データを保存しないため）。
 
-### 1.3 データ配置（保存しない構成）
+### 1.3 データ配置（予約だけを保存する構成）
 
-現在の KDS（`kds-a-grid.html`）は永続DBを持たない。店内システム全体でも、業務データを保存するデータベースは置かない。
+現在の KDS（`kds-a-grid.html`）は永続DBを持たない。店内システムで保存するのは予約だけで、中継サーバーの SQLite に置く（TableCheck 連携の中止で、予約の正本がこのシステムだけになったため）。注文などその他の業務データは保存しない。
 
 | データ | 正本／置き場 | 保持期間 | 備考 |
 |---|---|---|---|
-| 予約（メニュー・人数等） | **テーブルチェック**（クラウド） | 恒久（TableCheck側） | API連携は中止。店内へは店員の手入力で取り込む（入力方法は未設計） |
-| 予約の店内コピー | 中継サーバー（ミニPC）**メモリ** | 当日分のみ | `relay-server/` の連携コードは残置（MOCK のみ）。DBファイルは持たない |
+| 予約（メニュー・人数等） | 中継サーバー（ミニPC）**SQLite** `data/reservations.sqlite` | 当日以降（過ぎた日は自動削除） | 正本。店員が手入力する（入力の入口は未設計）。`relay-server/reservation-store.js`。故障に備えて定期的に別媒体へバックアップする |
 | 注文 | KDS `window.KDS_ORDERS`（メモリ） | セッション中（当日） | 使い捨て。`{id, table, type, start, people, items:[{name, qty, options, allergies, done}]}` |
 | 品目完了状態 | KDS `LocalStorage` `kds_done_v2` | 端末ローカル | 一時的な表示状態。orderId → doneCount(完了個数) 配列（#153） |
 | 予約ストック | KDS `LocalStorage` `kds_stock_v1` | 端末ローカル・当日分のみ | `[{rid, time, adults, kids, name, menu:[{name,qty}], seenAt}]` |
