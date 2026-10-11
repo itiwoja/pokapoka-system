@@ -22,4 +22,4 @@ node tests/browser/order-comm/run.js --root /tmp/oc/main --label main --out /tmp
 - `BASE_PORT` (既定 4410) から2ポートずつ、シナリオごとに使う。使用中でないことを確認する。
 - `ONLY=<正規表現>` で一部のシナリオだけ実行できる。
 - WSLでChromiumが `libnss3` `libnspr4` `libasound.so.2` 不足で起動しない場合は、`apt-get download` と `dpkg-deb -x` で取り出して `LD_LIBRARY_PATH` に加える。
-- 終了時にrelayプロセスは自動で止まる。TableCheck LIVEには接続しない (`TABLECHECK_API_KEY` を空にしてMOCKで起動)。
+- 終了時にrelayプロセスは自動で止まる。relayは `MOCK=1` で起動する。

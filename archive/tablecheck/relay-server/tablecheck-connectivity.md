@@ -1,5 +1,8 @@
 # TableCheck API モック疎通確認
 
+> **退避済み（2026-10-11 TableCheck API連携中止）。** 本書と `tests/tablecheck-connectivity.test.js` は `archive/tablecheck/` に移しており、
+> 下の `npm --prefix relay-server run check:tablecheck` は現在の relay-server では実行できない。復元手順は [退避の説明](../README.md) を参照。
+
 APIキーがない状態で、既存APIクライアントからローカルHTTPモックへの通信を確認する。
 **実TableCheckへの疎通成功や、本番・テスト環境のAPI利用権限を証明するものではない。**
 
@@ -43,7 +46,7 @@ npm --prefix relay-server run check:tablecheck
 | その他の要望 | `special_request` |
 
 データ形はリポジトリ内の既存実装と
-[既存のAPI調査記録](../knowledge/2026-07-15_テーブルチェックAPI連携_データ定義・裏どり結果.md)
+[既存のAPI調査記録](../../../knowledge/2026-07-15_テーブルチェックAPI連携_データ定義・裏どり結果.md)
 に基づくモック契約。店舗ごとの実応答との一致は未確認。
 注文明細IDとメニューマスターIDは別の可能性があり、ここでは注文明細の `orders[].id` を検査する。
 当日の範囲は既存実装と同じ実行端末のローカル日付で計算する。店舗での実行時は端末のタイムゾーンも確認する。

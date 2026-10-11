@@ -23,66 +23,6 @@ function localTime(now, hour, minute) {
   return value.toISOString();
 }
 
-test("Booking v1 の全ページを0起点・最大200件で取得する", async function () {
-  var now = new Date("2026-07-16T12:34:00+09:00");
-  var calls = [];
-  var pageBodies = [
-    { reservations: [{ id: "r1" }, { id: "r2" }], pagination: { page: 0, per_page: 2 } },
-    { reservations: [{ id: "r3" }], pagination: { page: 1, per_page: 2 } },
-  ];
-
-  var reservations = await booking.listAllReservations(async function (query) {
-    calls.push(Object.assign({}, query));
-    return pageBodies[query.page];
-  }, { now: now, shopId: "shop-1", perPage: 2 });
-
-  assert.deepEqual(reservations.map(function (r) { return r.id; }), ["r1", "r2", "r3"]);
-  assert.deepEqual(calls.map(function (q) { return q.page; }), [0, 1]);
-  assert.equal(calls[0].per_page, 2);
-  assert.equal(calls[0].shop_ids, "shop-1");
-
-  var start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  var end = new Date(start);
-  end.setDate(end.getDate() + 1);
-  assert.equal(calls[0].start_at_min, start.toISOString());
-  assert.equal(calls[0].start_at_max, end.toISOString());
-  assert.equal(calls[1].start_at_min, calls[0].start_at_min);
-  assert.equal(calls[1].start_at_max, calls[0].start_at_max);
-});
-
-test("200件ちょうどのページ後は空ページまで取得する", async function () {
-  var calls = [];
-  var reservations = await booking.listAllReservations(async function (query) {
-    calls.push(query.page);
-    return { reservations: query.page === 0 ? new Array(200).fill({ id: "r" }) : [] };
-  }, { now: new Date(), perPage: 200 });
-
-  assert.equal(reservations.length, 200);
-  assert.deepEqual(calls, [0, 1]);
-});
-
-test("不正レスポンスや途中ページ失敗を空一覧成功にしない", async function () {
-  await assert.rejects(
-    booking.listAllReservations(async function () { return {}; }, { now: new Date() }),
-    /reservations/
-  );
-
-  await assert.rejects(
-    booking.listAllReservations(async function (query) {
-      if (query.page === 0) return { reservations: new Array(200).fill({ id: "r" }) };
-      throw new Error("page 1 failed");
-    }, { now: new Date(), perPage: 200 }),
-    /page 1 failed/
-  );
-  await assert.rejects(
-    booking.listAllReservations(async function () {
-      return { reservations: [{}, {}, {}] };
-    }, { now: new Date(), perPage: 2 }),
-    /exceeded per_page/
-  );
-});
-
 test("初回全件リシンク成功までstockを503にし、消費済みイベントでも全件から復元する", async function () {
   var now = new Date();
   var all = [rawReservation("r1", localTime(now, 18, 30))];
@@ -238,12 +178,7 @@ test("snapshotは無効・別日・キャンセル予約を除外し、重複rid
 });
 
 test("入力境界を検証する", async function () {
-  assert.throws(function () { booking.localDayRange("invalid"); }, /invalid current time/);
   assert.throws(function () { booking.buildSnapshot({}, new Date()); }, /array/);
-  await assert.rejects(
-    booking.listAllReservations(async function () { return { reservations: [] }; }, { perPage: 201 }),
-    /between 1 and 200/
-  );
   assert.throws(function () { booking.createReservationSync({}); }, /listReservations/);
   assert.throws(function () {
     booking.createReservationSync({ listReservations: function () {} });

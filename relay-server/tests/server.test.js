@@ -664,114 +664,6 @@ test("GET/POST /api/slip-style はスタイルを保存・配信し、印刷のs
   assert.equal(built.length, 2);
 });
 
-test("LIVE adapterはBooking v1の全ページへshop_idsとBearerを付ける", async function () {
-  var calls = [];
-  var source = serverModule.createTableCheckSource({
-    isMock: false,
-    base: "https://api.tablecheck.test",
-    apiKey: "test-secret",
-    shopId: "shop-1",
-    fetch: async function (url, options) {
-      calls.push({ url: url, options: options });
-      var page = Number(new URL(url).searchParams.get("page"));
-      return {
-        ok: true,
-        status: 200,
-        json: async function () {
-          return { reservations: page === 0 ? new Array(200).fill({ id: "r" }) : [] };
-        },
-      };
-    },
-  });
-
-  var reservations = await source.listReservations(new Date());
-  assert.equal(reservations.length, 200);
-  assert.equal(calls.length, 2);
-  calls.forEach(function (call, page) {
-    var url = new URL(call.url);
-    assert.equal(url.pathname, "/api/booking/v1/reservations");
-    assert.equal(url.searchParams.get("page"), String(page));
-    assert.equal(url.searchParams.get("per_page"), "200");
-    assert.equal(url.searchParams.get("shop_ids"), "shop-1");
-    assert.equal(call.options.headers.Authorization, "Bearer test-secret");
-  });
-});
-
-test("LIVE adapterは差分一覧・個別404・APIエラーを扱う", async function () {
-  var responseQueue = [
-    { ok: true, status: 200, body: { sync_events: [{ id: "e1" }] } },
-    { ok: true, status: 404, body: {} },
-    { ok: false, status: 429, body: {} },
-    { ok: false, status: 500, body: {} },
-  ];
-  var source = serverModule.createTableCheckSource({
-    isMock: false,
-    base: "https://api.tablecheck.test",
-    apiKey: "secret",
-    shopId: "shop / 1",
-    fetch: async function () {
-      var response = responseQueue.shift();
-      return {
-        ok: response.ok,
-        status: response.status,
-        json: async function () { return response.body; },
-      };
-    },
-  });
-
-  assert.deepEqual(await source.listSyncEvents(), [{ id: "e1" }]);
-  assert.equal(await source.getReservation("missing"), null);
-  await assert.rejects(source.getReservation("rate-limited"), /429/);
-  await assert.rejects(source.getReservation("broken"), /TableCheck 500/);
-  assert.throws(function () {
-    serverModule.createTableCheckSource({ isMock: false });
-  }, /fetch is required/);
-});
-
-test("LIVE adapterは外部fetch停滞をタイムアウトする", async function () {
-  var source = serverModule.createTableCheckSource({
-    isMock: false,
-    base: "https://api.tablecheck.test",
-    apiKey: "secret",
-    shopId: "shop-1",
-    requestTimeoutMs: 5,
-    fetch: function (url, options) {
-      return new Promise(function (resolve, reject) {
-        options.signal.addEventListener("abort", function () {
-          var err = new Error("aborted");
-          err.name = "AbortError";
-          reject(err);
-        });
-      });
-    },
-  });
-  await assert.rejects(source.getReservation("slow"), /timed out/);
-
-  var bodySource = serverModule.createTableCheckSource({
-    isMock: false,
-    base: "https://api.tablecheck.test",
-    apiKey: "secret",
-    shopId: "shop-1",
-    requestTimeoutMs: 5,
-    fetch: async function (url, options) {
-      return {
-        ok: true,
-        status: 200,
-        json: function () {
-          return new Promise(function (resolve, reject) {
-            options.signal.addEventListener("abort", function () {
-              var err = new Error("aborted body");
-              err.name = "AbortError";
-              reject(err);
-            });
-          });
-        },
-      };
-    },
-  });
-  await assert.rejects(bodySource.listSyncEvents(), /timed out/);
-});
-
 test("静的配信・demo・404・不正URLを維持する", async function (t) {
   var relay = createTestRelay({
     listReservations: async function () { return []; },
@@ -843,18 +735,9 @@ test("MOCK予約APIの作成・入力エラー・未存在・method拒否を扱�
   assert.equal((await requestRaw(relay.server, "/api/mock/reservations/%E0%A4%A")).status, 400);
 });
 
-test("設定値はLIVEの30秒下限とRESYNC_MS下限を守る", function () {
+test("設定値はPOLL_MSとRESYNC_MSの下限を守る", function () {
   var relay = serverModule.createRelay({
-    env: {
-      TABLECHECK_API_KEY: "secret",
-      POLL_MS: "1",
-      RESYNC_MS: "1",
-      PORT: "8123",
-      HOST: "192.168.1.10",
-      SHOP_ID: "shop",
-      TABLECHECK_BASE: "https://example.test",
-      TABLECHECK_ALLOW_CUSTOM_BASE: "1",
-    },
+    env: { POLL_MS: "1", RESYNC_MS: "1", PORT: "8123", HOST: "192.168.1.10" },
     source: {
       listReservations: async function () { return []; },
       listSyncEvents: async function () { return []; },
@@ -862,35 +745,36 @@ test("設定値はLIVEの30秒下限とRESYNC_MS下限を守る", function () {
     },
     mockSource: {},
   });
-  assert.equal(relay.config.isMock, false);
-  assert.equal(relay.config.pollMs, 30000);
-  assert.equal(relay.config.resyncMs, 60000);
+  assert.equal(relay.config.isMock, true, "MOCK は既定で有効");
+  assert.equal(relay.config.pollMs, 100);
+  assert.equal(relay.config.resyncMs, 1000);
   assert.equal(relay.config.port, 8123);
   assert.equal(relay.config.host, "192.168.1.10");
-  assert.equal(relay.config.shopId, "shop");
-  assert.equal(relay.config.base, "https://example.test");
 });
 
-test("LIVEはSHOP_ID必須かつTABLECHECK_BASEをHTTPSに限定する", function () {
-  var source = {
-    listReservations: async function () { return []; },
-    listSyncEvents: async function () { return []; },
-    getReservation: async function () { return null; },
-  };
-  assert.throws(function () {
-    serverModule.createRelay({
-      env: { TABLECHECK_API_KEY: "secret" }, source: source, mockSource: {},
-    });
-  }, /SHOP_ID/);
-  assert.throws(function () {
-    serverModule.createRelay({
-      env: {
-        TABLECHECK_API_KEY: "secret", SHOP_ID: "shop", TABLECHECK_BASE: "http://api.tablecheck.test",
-      },
-      source: source,
-      mockSource: {},
-    });
-  }, /HTTPS/);
+test("MOCK=0 は予約ソースなしで初回同期を完了し、モックAPIを閉じる", async function (t) {
+  var relay = serverModule.createRelay({
+    port: 0,
+    env: { MOCK: "0" },
+    mockSource: {},
+    log: function () {},
+    auditLog: { record: function () {} },
+    setInterval: function () { return 0; },
+    clearInterval: function () {},
+  });
+  t.after(function () { return relay.stop(); });
+  relay.start();
+  await events.once(relay.server, "listening");
+  await relay.whenInitialSync();
+
+  assert.equal(relay.config.isMock, false);
+  var health = await requestRaw(relay.server, "/api/health");
+  assert.equal(JSON.parse(health.text).mode, "none");
+  assert.equal(JSON.parse(health.text).ready, true);
+  var stock = await requestRaw(relay.server, "/api/stock");
+  assert.equal(stock.status, 200);
+  assert.deepEqual(JSON.parse(stock.text), []);
+  assert.equal((await requestRaw(relay.server, "/api/mock/reservations")).status, 403);
 });
 
 test("stopは進行中の初回同期が完了するまで解決しない", async function () {

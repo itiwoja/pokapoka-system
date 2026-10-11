@@ -1,6 +1,5 @@
 {
   "_readme": "このファイルを同じディレクトリに config.json としてコピーし、店舗の実値へ書き換える。config.json は .gitignore 済み(環境ごとに違う値のため)。優先順位は 既定値 < config.json < 環境変数。",
-  "_secret": "TABLECHECK_API_KEY はここに書かない。環境変数で渡すこと(書いてあると起動時にエラーで止まる)。",
 
   "server": {
     "_host": "中継サーバー(ミニPC)が待ち受けるIP。デシャップモニターと注文端末は、このアドレスへWiFi経由で接続する。127.0.0.1 のままだとミニPC自身からしか到達できず、他端末から繋がらない。\"auto\" にすると起動時に今のLAN IPv4を自動検出して使う(Wi-Fiが変わってもconfigの書き換え不要。QRページ /qr も自動で追従)。固定IPで運用するならそのIPを直接書く(DHCP予約 or 静的IP)。0.0.0.0(全IF)は使わない。",
@@ -11,13 +10,10 @@
     "tlsKey": ""
   },
 
-  "tablecheck": {
-    "_note": "唯一の外部接続。店内→TableCheck の外向きpullのみで、Webhookは使わない。",
-    "base": "https://api.tablecheck.com",
-    "shopId": "",
-    "pollMs": 30000,
-    "resyncMs": 900000,
-    "timeoutMs": 15000
+  "reservation": {
+    "_note": "予約ストアの差分取込間隔(pollMs)と全件再構築間隔(resyncMs)。TableCheck API連携は2026-10-11に中止したため、今の供給源はMOCKのデモ予約だけ(環境変数 MOCK=0 で予約ソースなし)。旧雛形の tablecheck セクションが残っていても読み飛ばす。",
+    "pollMs": 3000,
+    "resyncMs": 900000
   },
 
   "seat": {
@@ -36,7 +32,7 @@
   "order": {
     "_note": "注文端末から受けた注文(/api/orders)を何分保持するか。保存はせずメモリのみなので、日跨ぎで前日の注文が残らないよう上限を置く(1〜1440分)。",
     "ttlMin": 720,
-    "_mockScenario": "MOCKモード専用。trueにすると起動直後にmock-001/002を保持し、5秒後に追加・10秒後に更新・15秒後に取消してWebSocket配信を目視確認できる(配信仕様書 §17)。LIVEモードでtrueにすると起動エラー。",
+    "_mockScenario": "MOCKモード専用。trueにすると起動直後にmock-001/002を保持し、5秒後に追加・10秒後に更新・15秒後に取消してWebSocket配信を目視確認できる(配信仕様書 §17)。MOCK=0 でtrueにすると起動エラー。",
     "mockScenario": false
   },
 

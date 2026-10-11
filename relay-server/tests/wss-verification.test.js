@@ -61,10 +61,10 @@ test("TLS証明書を渡すとHTTPSで画面を配信し、WSSでスナップシ
   assert.equal(health.body.ordersStream.clients, 1);
 });
 
-test("TLS証明書と秘密鍵の片方だけ、LIVEでのモックシナリオは起動エラー", () => {
+test("TLS証明書と秘密鍵の片方だけ、MOCK=0でのモックシナリオは起動エラー", () => {
   const options = { port: 0, log() {}, auditLog: { record() {} }, source: SOURCE };
   assert.throws(() => createRelay(Object.assign({ env: { MOCK: "1", TLS_CERT_FILE: "cert.pem" } }, options)), /tlsKey/);
-  assert.throws(() => createRelay(Object.assign({ env: { TABLECHECK_API_KEY: "k", SHOP_ID: "s", MOCK_ORDER_SCENARIO: "1" } }, options)),
+  assert.throws(() => createRelay(Object.assign({ env: { MOCK: "0", MOCK_ORDER_SCENARIO: "1" } }, options)),
     /MOCK モードでのみ/);
 });
 

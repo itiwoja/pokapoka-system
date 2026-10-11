@@ -3,9 +3,7 @@
  *
  * 設定の優先順位は「既定値 < config/config.json < 環境変数」。
  * ファイルの値を env 形のオーバーレイに直してから relay-config.js の createConfig() へ渡すので、
- * 下限クランプ・HTTPS検証といった既存の検証ロジックはファイル経由の値にもそのまま効く。
- *
- * APIキーはこのファイルでは扱わない (環境変数のみ)。理由は KEY_TO_ENV の直下を参照。
+ * 下限クランプといった既存の検証ロジックはファイル経由の値にもそのまま効く。
  */
 "use strict";
 
@@ -22,30 +20,24 @@ var KEY_TO_ENV = {
   // 実機WSS検証でNode自身にTLSを終端させる場合の証明書と秘密鍵のパス (リポジトリ直下からの相対可)
   "server.tlsCert": "TLS_CERT_FILE",
   "server.tlsKey": "TLS_KEY_FILE",
-  "tablecheck.base": "TABLECHECK_BASE",
-  "tablecheck.shopId": "SHOP_ID",
-  "tablecheck.pollMs": "POLL_MS",
-  "tablecheck.resyncMs": "RESYNC_MS",
-  "tablecheck.timeoutMs": "TABLECHECK_TIMEOUT_MS",
-  "tablecheck.allowCustomBase": "TABLECHECK_ALLOW_CUSTOM_BASE",
+  "reservation.pollMs": "POLL_MS",
+  "reservation.resyncMs": "RESYNC_MS",
   "seat.beforeMin": "SEAT_BEFORE_MIN",
   "seat.afterMin": "SEAT_AFTER_MIN",
   "seat.walkinTtlMin": "SEAT_WALKIN_TTL_MIN",
   "kitchen.ttlMin": "KITCHEN_TTL_MIN",
   "order.ttlMin": "ORDER_TTL_MIN",
   "order.mockScenario": "MOCK_ORDER_SCENARIO",
-  // 店内LAN内でだけ使う共有トークン。クラウドのAPIキーと違い店ごとに書き換える設定値なので
+  // 店内LAN内でだけ使う共有トークン。店ごとに書き換える設定値なので
   // config.json に置く (このファイル自体が .gitignore 済み) #174
   "auth.token": "RELAY_TOKEN",
   "auth.trustLoopback": "RELAY_TRUST_LOOPBACK",
   "auth.cookieSecure": "RELAY_COOKIE_SECURE",
 };
 
-// 秘密情報は config.json に置かせない。黙って無視すると「キーを書いたのに MOCK のまま」という
-// 分かりにくい失敗になるため、見つけたら起動を止めて環境変数へ誘導する。
-var SECRET_KEYS = {
-  "tablecheck.apiKey": "TABLECHECK_API_KEY",
-};
+// TableCheck API 連携の中止 (2026-10-11) で使わなくなったセクション。
+// 店舗の config.json に旧雛形の値が残っていても起動を止めないよう、中身ごと読み飛ばす。
+var RETIRED_SECTIONS = { tablecheck: true };
 
 /**
  * 設定ファイルを env 形のオーバーレイへ変換して返す。
@@ -73,18 +65,13 @@ function load(filePath) {
 function toOverlay(json, file) {
   var overlay = {};
   Object.keys(json).forEach(function (section) {
-    if (isComment(section)) return;
+    if (isComment(section) || RETIRED_SECTIONS[section]) return;
     var body = json[section];
     if (!isPlainObject(body)) throw new Error(reject(file, section, "セクションはオブジェクトである必要がある"));
 
     Object.keys(body).forEach(function (key) {
       if (isComment(key)) return;
       var dotted = section + "." + key;
-
-      if (SECRET_KEYS[dotted]) {
-        throw new Error(reject(file, dotted,
-          "秘密情報は設定ファイルに置かない。環境変数 " + SECRET_KEYS[dotted] + " で渡すこと"));
-      }
       var envKey = KEY_TO_ENV[dotted];
       if (!envKey) throw new Error(reject(file, dotted, "未知のキー。指定できるのは " + Object.keys(KEY_TO_ENV).join(", ")));
 

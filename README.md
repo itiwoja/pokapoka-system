@@ -11,7 +11,7 @@
 | パス | 内容 |
 |---|---|
 | `kds-a-grid.html` | **KDS（デシャップ）画面本体**。単一HTMLで自己完結 |
-| `relay-server/` | **店内中継サーバー**。注文の受付と KDS の Web 配信（[詳細 README](relay-server/README.md)）。TableCheck 予約連携は中止（コードは残置） |
+| `relay-server/` | **店内中継サーバー**。注文の受付と KDS の Web 配信（[詳細 README](relay-server/README.md)）。TableCheck 予約連携は中止（実API取得処理は [`archive/tablecheck/`](archive/tablecheck/README.md) へ退避） |
 | `order-client.js` | 注文端末の送信・端末保存・受付確認・再送（[組み込み手順](docs/注文端末_通信モジュール組み込み.md)） |
 | `order-terminal/` | 別リポジトリの注文画面と商品マスター付き注文サーバー。`git submodule update --init order-terminal` で取得 |
 | `config/config.example.json` | 端末接続先などの設定雛形（実体 `config/config.json` は .gitignore 済み） |
@@ -46,7 +46,7 @@ npm --prefix relay-server ci
 npm start
 # 起動ログに表示されたURLを開く（既定値は http://127.0.0.1:8000）
 # /          … KDS（デシャップ）
-# /demo      … 予約デモコンソール（TableCheck モック。連携は中止済み）
+# /demo      … 予約デモコンソール（モック予約）
 # /api/health … 中継サーバーの稼働確認
 ```
 
@@ -59,7 +59,7 @@ npm start
 
 GitHub Actions は Pull Request と `main` への push で Node.js 22 を使用し、
 中継サーバーとルートの KDS 関連テストを実行します。店舗の設定ファイル、認証情報、
-TableCheck などの実 API は不要です。ローカルでもリポジトリ直下から同じテストを再現できます。
+外部 API は不要です。ローカルでもリポジトリ直下から同じテストを再現できます。
 
 ```sh
 npm --prefix relay-server ci
@@ -73,26 +73,26 @@ npm test
 
 `window.KDS_ORDERS` に注文データ（`{id, table, type, start, people, items:[{name, qty, options, allergies, done}]}`）を投入すると表示されます。アレルギー情報は `allergies`（`allergy` / `allergyInfo`・配列も可）で受け取り、品目直下に「アレルギー: …」として常時表示します。空の場合は「デモデータを投入」ボタンでサンプルを表示できます（中継サーバー配信時は自動デモを抑止）。
 
-## TableCheck 予約連携（中止・コード残置）
+## 予約ストック（TableCheck 連携は中止）
 
 > **2026-10-11: TableCheck API連携は行わないことになった。** 予約情報は店員の手入力で扱う方針とする（入力方法は未設計）。
-> 以下は実装済みの連携コードの説明として残す。`relay-server/` の連携コード・モック・テストは現時点では削除していない。
+> TableCheck の実API取得処理・疎通確認・暫定契約の文書は [`archive/tablecheck/`](archive/tablecheck/README.md) へ退避した。
 
-`relay-server/` の店内中継サーバーが TableCheck から予約（メニュー・人数等）を **30秒間隔の差分 pull**＋**15分ごとの当日全件リシンク**で取得し、KDS の予約ストックへ流し込みます。**Node 18+**で動作します。
+`relay-server/` の店内中継サーバーは、予約（メニュー・人数等）を当日分だけ保持し、KDS の予約ストックへ流し込みます。予約の供給源は現在 MOCK（デモ予約）だけで、手入力は未設計です。**Node 18+**で動作します。
 
 ```
-【クラウド】               【店内ミニPC = 中継サーバー】          【KDS端末】
-TableCheck ◀── 外向きpull ── server.js ── /api/stock(JSON) ──▶ kds-bridge.js → 予約ストックへ
+【予約の供給源】           【店内ミニPC = 中継サーバー】          【KDS端末】
+MOCK(デモ予約) ──▶ server.js ── /api/stock(JSON) ──▶ kds-bridge.js → 予約ストックへ
 ```
 
-- API 契約前でも**モックモード**で動作し、`/demo` の予約デモコンソールから予約の作成・人数変更・キャンセル → KDS 反映までを実機で確認できる
-- TableCheck の `questions[]` / `special_request` は、アレルギーとその他の要望に分けて予約ストック・厨房カードへ常時表示する
-- デシャップモニター・注文端末の接続先（host/port）は **`config/config.json` に集約**（雛形: `config/config.example.json`。優先順位は 既定値 < config.json < 環境変数。**API キーは環境変数のみ**）
+- 既定の**モックモード**では、`/demo` の予約デモコンソールから予約の作成・人数変更・キャンセル → KDS 反映までを実機で確認できる。`MOCK=0` で起動すると予約は常に空になる
+- 予約の `questions[]` / `special_request` は、アレルギーとその他の要望に分けて予約ストック・厨房カードへ常時表示する
+- デシャップモニター・注文端末の接続先（host/port）は **`config/config.json` に集約**（雛形: `config/config.example.json`。優先順位は 既定値 < config.json < 環境変数）
 - 起動方法・エンドポイント・LAN 配信時の注意（固定IP・ファイアウォール）は [relay-server/README.md](relay-server/README.md) を参照
 
 ### データ保存方針: 何も保存しない
 
-打合せ確定（2026-06-18 議事録）に基づき、**注文・予約はサーバーに保存しない**。中継サーバーは**当日分の予約のみメモリ保持**します。残置している連携コードは、再起動時に TableCheck（MOCK 時はモック）から当日全件を取り直します（初回リシンク成功まで `/api/stock` は 503 を返し、KDS 側は直前表示を保持）。永続 DB 設計は将来構想として `docs/db-design.md` に保留しています。
+打合せ確定（2026-06-18 議事録）に基づき、**注文・予約はサーバーに保存しない**。中継サーバーは**当日分の予約のみメモリ保持**します。再起動時は予約の供給源（現在はモック）から当日全件を取り直します（初回リシンク成功まで `/api/stock` は 503 を返し、KDS 側は直前表示を保持）。永続 DB 設計は将来構想として `docs/db-design.md` に保留しています。
 
 ## 提供時間の自動計測（Issue #29）
 

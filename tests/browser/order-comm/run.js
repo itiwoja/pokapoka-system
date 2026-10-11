@@ -32,8 +32,8 @@ function httpJson(port, p, headers) {
 async function startEnv(opts) {
   opts = opts || {};
   var proxyPort = BASE + 2 * (portSeq++), relayPort = proxyPort + 1;  // シナリオごとに別ポート (4410〜)
-  var env = Object.assign({}, process.env, { HOST: "127.0.0.1", PORT: String(relayPort), MOCK: "1", TABLECHECK_API_KEY: "" });
-  delete env.TABLECHECK_API_KEY; delete env.MOCK_ORDER_SCENARIO;
+  var env = Object.assign({}, process.env, { HOST: "127.0.0.1", PORT: String(relayPort), MOCK: "1" });
+  delete env.MOCK_ORDER_SCENARIO;
   if (opts.token) { env.RELAY_TOKEN = opts.token; env.RELAY_TRUST_LOOPBACK = "0"; }
   var relay = cp.spawn(process.execPath, ["relay-server/server.js"], { cwd: ROOT, env: env, stdio: "ignore" });
   var up = false;
