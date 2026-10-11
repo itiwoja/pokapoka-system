@@ -1,4 +1,7 @@
-# relay-server — 店内中継サーバー(TableCheck取込 + Web配信)
+# relay-server — 店内中継サーバー(Web配信。TableCheck取込は中止・コード残置)
+
+> **2026-10-11: TableCheck API連携は行わないことになった。** 予約情報は店員の手入力で扱う方針とする（入力方法は未設計）。
+> 本書の TableCheck 取込・モック・デモコンソールの記述は、残置している実装の説明として残す。コード・テストは現時点では削除していない。
 
 TableCheck の予約(メニュー・人数等)を取得し、KDS の予約ストックに流し込むためのサーバー。
 6/18 議事録の「ファイルを置くだけの見かけ上のサーバー」役と、TableCheck 取込役の2役を1プロセスで担う。
@@ -135,7 +138,9 @@ cp config/config.example.json config/config.json
 | **(不可)** | `TABLECHECK_API_KEY` | — | secret_key。**環境変数のみ**。未設定ならモック |
 | **(不可)** | `MOCK` | — | `1` でモック強制 |
 
-### 本番(API契約後・店内LANの端末へ配信)
+### 本番(店内LANの端末へ配信)
+
+> TableCheck連携の中止により、`TABLECHECK_API_KEY` を設定して LIVE 取込を行う運用は予定していない。下のコマンドは残置コードの起動方法として残す。
 
 ```sh
 TABLECHECK_API_KEY=<secret_key> node relay-server/server.js   # host/shopId は config.json
@@ -483,20 +488,20 @@ upsert/404削除/当日パージ/KDS形式変換に加え、全件ページン�
 下限クランプ・HTTPS検証が効くこと、APIキー混入・キー名typo・不正JSONを起動時に弾くことを
 カバーする。テストは `configFile` を注入する形なので、各自の `config/config.json` に左右されない。
 
-## ⚠️ 暫定契約・実環境確認待ち(Issue #74)
+## TableCheck 連携の中止(Issue #74)
 
-TableCheck 連携は、`docs/テーブルチェックAPI.md` に記載した暫定契約を前提に実装する。
+2026-10-11、TableCheck API連携は行わないことになった。以下は中止時点の実装と、確定させずに終わった事項の記録である。
+
+TableCheck 連携は、`docs/テーブルチェックAPI.md` に記載した暫定契約を前提に実装した。
 現在の正規化処理は、Booking v1 の `orders[]`、`pax_adult` / `pax_child`、
 `questions[]`、`special_request` を受け取り、予約ストックへ変換する。
 旧モックとの互換性のため、候補キーと memo パーサーもフォールバックとして残している。
 
-実環境で確認が必要なものは次のとおり:
+実環境で確認する予定だったもの（連携中止により確認不要）:
 
 1. APIキー・Shop IDの発行と、本番／テスト環境の利用権限
 2. 認証方法・認証ヘッダーの最終仕様（現実装は Bearer）
 3. API連携の料金と、予約通知メール（Messaging v1）の契約可否
-
-料金・通知メールは現行KDSの必須経路に含めず、契約確定後に別途反映する。
 
 関連資料: [docs/テーブルチェックAPI.md](../docs/テーブルチェックAPI.md) ／
 [knowledge/2026-07-15_テーブルチェックAPI連携_データ定義・裏どり結果.md](../knowledge/2026-07-15_テーブルチェックAPI連携_データ定義・裏どり結果.md)
