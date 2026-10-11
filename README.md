@@ -77,7 +77,7 @@ npm test
 > **2026-10-11: TableCheck API連携は行わないことになった。** 予約情報は店員の手入力で扱う方針とする（入力方法は未設計）。
 > TableCheck の実API取得処理・疎通確認・暫定契約の文書は [`archive/tablecheck/`](archive/tablecheck/README.md) へ退避した。
 
-`relay-server/` の店内中継サーバーは、予約（メニュー・人数等）を SQLite（`data/reservations.sqlite`）に保存し、当日分を KDS の予約ストックへ流し込みます。予約を入れる入口（画面・API）は手入力の設計後に作るため、現時点でサーバーの予約ストックは空です。TableCheck を模したモックと `/demo` は撤去しました。**Node 22.13+**（予約の保存に Node 標準の `node:sqlite` を使うため）で動作します。
+`relay-server/` の店内中継サーバーは、予約（メニュー・人数等）を SQLite（`data/reservations.sqlite`）に保存し、当日分を KDS の予約ストックへ流し込みます。予約を入れる入口（画面・API）は手入力の設計後に作るため、現時点でサーバーの予約ストックは空です。TableCheck を模したモックと `/demo` を含め、TableCheck 用のコードはすべて [`archive/tablecheck/`](archive/tablecheck/README.md) へ退避しました。**Node 22.13+**（予約の保存に Node 標準の `node:sqlite` を使うため）で動作します。
 
 ```
 【予約の入力】             【店内ミニPC = 中継サーバー】          【KDS端末】

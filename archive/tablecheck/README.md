@@ -19,23 +19,33 @@
 あわせて、relay-server から次の部分を取り除いた。
 
 - `TABLECHECK_API_KEY` の有無で選んでいた LIVE モードと、`TABLECHECK_BASE` / `SHOP_ID` / `TABLECHECK_TIMEOUT_MS` / `TABLECHECK_ALLOW_CUSTOM_BASE` の設定、接続先のHTTPS検証、30秒のポーリング下限
-- `config/config.json` の `tablecheck` セクション（旧雛形の値が残っていても読み飛ばす）。差分取込・全件再構築の間隔は `reservation.pollMs` / `reservation.resyncMs` へ移した
+- `config/config.json` の `tablecheck` セクション（旧雛形の値が残っていても読み飛ばす）
 - 上記に対応するテスト（LIVEアダプター、Booking v1 ページング、LIVE設定の検証）
 
-## relay-server に残したもの
+### 2回目の退避（予約の SQLite 化、PR #278）
 
-予約ストック → KDS（`/api/stock`）と座席占有（`/api/seats`）は、予約の手入力でも使う想定のため残している。
+最初の退避では、予約ストック → KDS の経路を手入力でも使う想定で、次のファイルを relay-server に残していた。
+予約の正本を SQLite（`relay-server/reservation-store.js`）へ移したときに、これらも退避した。
 
-- `booking-resync.js`: 予約ストアの全件同期・差分同期の状態管理
-- `tablecheck-sync.js`: 予約データの正規化（TableCheck の予約スキーマ形を受ける）
-- `mock-tablecheck.js`・`tablecheck-demo.html`（`/demo`）・`routes/mock.js`: デモ予約の供給源と操作コンソール
-- `reservation-source.js`: 予約の供給源の切替（既定は MOCK、`MOCK=0` で予約ソースなし）
+| 退避先 | 元の場所 | 内容 |
+|---|---|---|
+| `relay-server/tablecheck-sync.js` | 同じ | TableCheck 予約スキーマの正規化（status 変換・`orders[]`・`questions[]`・memo パーサー） |
+| `relay-server/booking-resync.js` | 同じ | 予約ストアの全件同期・差分同期（初回同期までの 503 ゲート） |
+| `relay-server/reservation-source.js` | 同じ | 予約の供給源の切替（MOCK／予約ソースなし） |
+| `relay-server/mock-tablecheck.js` | 同じ | TableCheck 形式のデモ予約の供給源 |
+| `relay-server/tablecheck-demo.html` | 同じ | 予約デモコンソール（`/demo`） |
+| `relay-server/routes/mock.js` | 同じ | `/api/mock/reservations` |
+| `relay-server/tests/tablecheck-sync.test.js`・`tests/booking-resync.test.js` | 同じ | 上記のテスト |
 
-ファイル名に `tablecheck` が残っているものは、手入力の設計にあわせて改名・整理する。
+あわせて、設定の `reservation.pollMs` / `reservation.resyncMs` と環境変数 `MOCK` を廃止し、KDS が予約から引き継いでいた
+`questions[]`（TableCheck の設問回答。表示には使っていなかった）を外した。
+relay-server に TableCheck 用のコードは残っていない。旧 `config.json` の `tablecheck` セクションと
+取込間隔のキーを読み飛ばす処理（`load-config.js`）だけは、店舗の設定ファイルで起動が止まらないように残している。
 
 ## 復元する場合
 
-退避直前の、連携コードがすべて動いていた状態は `main` のコミット `d4008b2`（PR #274 のマージ）である。
+連携コードがすべて動いていた状態は `main` のコミット `d4008b2`（PR #274 のマージ）である。
+モック・`/demo` で予約ストックまで動いていた最後の状態は `383d231`（PR #278 の直前）である。
 
 ```sh
 git show d4008b2:relay-server/server.js

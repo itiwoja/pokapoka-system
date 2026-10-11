@@ -3,7 +3,7 @@
 > **2026-10-11: TableCheck API連携は行わないことになった。** 予約情報は店員の手入力で扱う方針とする（入力方法は未設計）。
 > TableCheck の実API取得処理・疎通確認・暫定契約の文書は [`archive/tablecheck/`](../archive/tablecheck/README.md) へ退避した。
 > 予約を持っているのはこのシステムだけになったため、予約は SQLite(`data/reservations.sqlite`)に保存する。
-> TableCheck を模したモックとデモコンソール(`/demo`)は撤去した。予約を入れる入口(画面・API)は手入力の設計後に作る。
+> TableCheck を模したモックとデモコンソール(`/demo`)を含め、TableCheck 用のコードはすべて `archive/tablecheck/` へ退避した。予約を入れる入口(画面・API)は手入力の設計後に作る。
 
 予約(メニュー・人数等)を保存し、当日分を KDS の予約ストックに流し込むサーバー。
 6/18 議事録の「ファイルを置くだけの見かけ上のサーバー」役と、予約ストック役の2役を1プロセスで担う。
@@ -451,8 +451,9 @@ Node.js 22 を使用する GitHub Actions と同じく、`npm ci` は lockfile �
 暫定契約の文書は [`archive/tablecheck/`](../archive/tablecheck/README.md) へ退避した。
 その後、予約の正本を SQLite へ移す際に、TableCheck 形式の正規化(`tablecheck-sync.js`)、
 差分取込・全件再構築(`booking-resync.js`)、供給源の切替(`reservation-source.js`)、
-モック(`mock-tablecheck.js`)とデモコンソール(`tablecheck-demo.html`・`/api/mock/*`)を削除した。
-必要になった場合は git の履歴から参照する。
+モック(`mock-tablecheck.js`)とデモコンソール(`tablecheck-demo.html`・`/api/mock/*`)も
+[`archive/tablecheck/`](../archive/tablecheck/README.md) へ退避した。relay-server に TableCheck 用のコードは残っていない
+(旧 `config.json` の `tablecheck` セクションを読み飛ばす処理だけは、起動を止めないために残している)。
 
 実環境で確認する予定だったもの（連携中止により確認不要）:
 

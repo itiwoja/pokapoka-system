@@ -2422,7 +2422,7 @@
       return notes.join(" / ");
     }
 
-    /* 予約の questions[] / special_request を中継サーバーが分離した形と、
+    /* 予約のアレルギー・要望を中継サーバーが分離した形と、
        旧形式の memo/specialRequest の両方を受け、厨房カードへ安全に表示する。 */
     function reservationNotesSignature(record) {
       if (!record) return "";
@@ -4731,7 +4731,6 @@
         allergies: r.allergies || null,
         request: r.request || null,
         memo: r.memo || null,
-        questions: Array.isArray(r.questions) ? r.questions : [],
         items: (r.menu || []).map(function (m) {
           return {
             name: m.name,
