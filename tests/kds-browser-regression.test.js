@@ -39,7 +39,7 @@ test("炊飯cueの30分境界は境界直前を含めず、境界時刻と超過
   assert.equal(context.minutesUntil("12:30"), -1);
 });
 
-test("完了取消は同一注文の最新提供時間記録だけを取り除く", () => {
+test("完了取消は同一注文の当日の提供時間記録だけを取り除く", () => {
   let log = [
     { orderId: "daily-1", day: "2026-09-07" },
     { orderId: "daily-1", day: "2026-09-08" },
@@ -47,13 +47,21 @@ test("完了取消は同一注文の最新提供時間記録だけを取り除�
   ];
   let saved = null;
   const context = vm.createContext({
+    Date: fixedDate(new Date(2026, 8, 8, 12, 0, 0, 0)),
+    pad2: (n) => (n < 10 ? "0" + n : "" + n),
     loadServeLog: () => log.slice(),
     saveServeLog: (next) => { saved = next.slice(); log = next.slice(); return true; },
   });
-  vm.runInContext(source("removeLatestServeRecord"), context);
+  vm.runInContext(["serveDayKey", "serveRecordDay", "removeLatestServeRecord"].map(source).join("\n"), context);
 
   assert.equal(context.removeLatestServeRecord("daily-1"), true);
   assert.deepEqual(saved, [
+    { orderId: "daily-1", day: "2026-09-07" },
+    { orderId: "other", day: "2026-09-08" },
+  ]);
+  // undo・poll・他タブ同期で重ねて呼ばれても、日次連番IDの前日記録は残す (#179)
+  assert.equal(context.removeLatestServeRecord("daily-1"), false);
+  assert.deepEqual(log, [
     { orderId: "daily-1", day: "2026-09-07" },
     { orderId: "other", day: "2026-09-08" },
   ]);

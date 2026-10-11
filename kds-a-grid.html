@@ -3641,12 +3641,15 @@
     function loadServeLog() { return safeParse(localStorage.getItem(LS_SERVE), []) || []; }
     function saveServeLog(log) { return lsSet(LS_SERVE, JSON.stringify(log)); }
 
-    /* 完了を取り消した注文の最新ログを戻す。完了undoは数秒の猶予内だけで成立するため、
-       同じ注文IDの古い営業日の記録まで消さず、直近の完了イベント1件だけを取り除く。 */
+    /* 完了を取り消した注文の当日ログを戻す。recordServe は当日1件だけ記録するので、
+       取り除くのも当日分の1件に限る。undo・poll・他タブ同期から重ねて呼ばれても、
+       POSの日次連番IDで同じIDを持つ前日以前の記録は消さない (#179 / #204)。 */
     function removeLatestServeRecord(orderId) {
       var log = loadServeLog();
+      var today = serveDayKey(Date.now());
       for (var i = log.length - 1; i >= 0; i--) {
         if (!log[i] || String(log[i].orderId) !== String(orderId)) continue;
+        if (serveRecordDay(log[i]) !== today) continue;
         log.splice(i, 1);
         saveServeLog(log);
         return true;
@@ -5464,9 +5467,6 @@
         b.setAttribute("aria-pressed", b.getAttribute("data-mode") === mode ? "true" : "false");
       });
       if (mode === "hall") renderHallViews();
-      // 予約ストック内の炊飯cueはモードで操作可否が変わるため、切替直後に
-      // キッチン用の「確認」ボタンを残さない (#204)。
-      renderStock();
       // 提供cueはモードで操作可否が変わるため、切り替えたら貼り直す
       Object.keys(cards).forEach(function (id) { applyServeCueToCard(id); });
     }
