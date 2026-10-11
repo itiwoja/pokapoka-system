@@ -12,27 +12,20 @@ var loadConfig = require("./load-config");
 
 function createConfig(env, options) {
   // 既定値 < config/config.json < 環境変数。ファイル由来の値も env と同じ経路を通るので、
-  // 下限クランプや HTTPS 検証はどちらから来た値にも等しく効く。
+  // 下限クランプなどの検証はどちらから来た値にも等しく効く。
   var src = loadConfig.mergeEnv(options.configFile || {}, env);
-  var apiKey = src.TABLECHECK_API_KEY || "";
-  var isMock = src.MOCK === "1" || !apiKey;
-  var shopId = src.SHOP_ID || "";
-  var base = src.TABLECHECK_BASE || "https://api.tablecheck.com";
-  if (!isMock && !shopId) throw new Error("SHOP_ID is required in LIVE mode");
-  if (!isMock) validateTableCheckBase(base, src.TABLECHECK_ALLOW_CUSTOM_BASE === "1");
-  var pollMs = normalizeInterval(src.POLL_MS, isMock ? 3000 : 30000, isMock ? 100 : 30000);
-  var resyncMs = normalizeInterval(src.RESYNC_MS, 900000, isMock ? 1000 : 60000);
+  // TableCheck API 連携は中止 (2026-10-11)。以前は TABLECHECK_API_KEY の有無で LIVE を選んでいたが、
+  // 今は MOCK (デモ予約) が既定で、MOCK=0 のときは予約ソースなし (予約は常に空) で動く
+  var isMock = src.MOCK !== "0";
+  var pollMs = normalizeInterval(src.POLL_MS, 3000, 100);
+  var resyncMs = normalizeInterval(src.RESYNC_MS, 900000, 1000);
   var tls = normalizeTlsFiles(src.TLS_CERT_FILE, src.TLS_KEY_FILE);
   return {
     port: options.port !== undefined ? options.port : (Number(src.PORT) || 8000),
     host: resolveHost(src.HOST),
-    apiKey: apiKey,
-    shopId: shopId,
-    base: base,
     isMock: isMock,
     pollMs: pollMs,
     resyncMs: resyncMs,
-    requestTimeoutMs: normalizeInterval(src.TABLECHECK_TIMEOUT_MS, 15000, 1000, 120000),
     seatBeforeMin: Math.max(Number(src.SEAT_BEFORE_MIN) || 30, 0),
     seatAfterMin: Math.max(Number(src.SEAT_AFTER_MIN) || 120, 0),
     // ローカル登録した占有をいつ諦めるか。POS連携が無く「退店した」というイベントが
@@ -112,18 +105,6 @@ function normalizeInterval(value, fallback, minimum, maximum) {
   if (!Number.isFinite(number) || number <= 0) number = fallback;
   number = Math.round(number);
   return Math.min(Math.max(number, minimum), maximum || 2147483647);
-}
-
-function validateTableCheckBase(base, allowCustom) {
-  var url;
-  try { url = new URL(base); }
-  catch (err) { throw new Error("TABLECHECK_BASE must be a valid HTTPS URL"); }
-  if (url.protocol !== "https:" || url.username || url.password) {
-    throw new Error("TABLECHECK_BASE must be a valid HTTPS URL without credentials");
-  }
-  if (url.hostname !== "api.tablecheck.com" && !allowCustom) {
-    throw new Error("custom TABLECHECK_BASE requires TABLECHECK_ALLOW_CUSTOM_BASE=1");
-  }
 }
 
 module.exports = {

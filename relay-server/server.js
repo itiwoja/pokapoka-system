@@ -3,8 +3,8 @@
  *
  * 役割:
  *   1. リポジトリ直下の静的ファイルを配信
- *   2. Sync v1 を30秒間隔で取得し、予約変更を即時反映
- *   3. Booking v1 を起動時+15分間隔で全件取得し、当日storeを自己修復
+ *   2. 予約の供給源から差分を短い間隔で取得し、予約変更を反映 (TableCheck連携は2026-10-11中止。今はMOCKのみ)
+ *   3. 起動時+15分間隔で全件取得し、当日storeを自己修復
  *   4. 初回全件取得が成功するまで /api/stock を503にしてKDSの誤削除を防止
  *   5. POST /api/print でチビ伝を実機プリンターへ中継(ブラウザは生ソケットを開けないため #144)
  *
@@ -14,11 +14,10 @@
  * 設定:
  *   接続先は config/config.json (config.example.json をコピーして作る)。
  *   優先順位は「既定値 < config/config.json < 環境変数」。
- *   APIキーだけは設定ファイルに置かず TABLECHECK_API_KEY で渡す。
  *
  * 起動:
- *   本番:   TABLECHECK_API_KEY=xxx node relay-server/server.js   (host/shopId は config.json)
- *   モック: MOCK=1 node relay-server/server.js
+ *   既定:   node relay-server/server.js           (MOCK — /demo からデモ予約を作れる)
+ *   予約なし: MOCK=0 node relay-server/server.js   (予約ソースなし。予約の手入力は未設計)
  *   WSS検証: TLS_CERT_FILE=cert.pem TLS_KEY_FILE=key.pem MOCK=1 MOCK_ORDER_SCENARIO=1 node relay-server/server.js
  */
 "use strict";
@@ -33,7 +32,7 @@ var audit = require("./audit-log");
 var booking = require("./booking-resync");
 var loadConfig = require("./load-config");
 var printer = require("./printer");
-var createTableCheckSource = require("./tablecheck-source").createTableCheckSource;
+var createReservationSource = require("./reservation-source").createReservationSource;
 var printerSettings = require("./printer-settings");
 var attachOrdersWebSocket = require("./orders-websocket").attachOrdersWebSocket;
 var createConfig = require("./relay-config").createConfig;
@@ -58,7 +57,6 @@ function createRelay(options) {
   var printerModule = options.printer || printer;
   var log = options.log || defaultLog;
   var now = options.now || function () { return new Date(); };
-  var fetchFn = options.fetch || globalThis.fetch;
   var setIntervalFn = options.setInterval || setInterval;
   var clearIntervalFn = options.clearInterval || clearInterval;
   var root = path.resolve(__dirname, "..");
@@ -85,22 +83,14 @@ function createRelay(options) {
   var slipStyle = printerSettings.createSlipStyleStore(options.slipStylePath || path.join(root, "config", "slip-style.json"), printerModule, log);
   var printerIp = printerSettings.createPrinterIpStore(options.printerIpPath || path.join(root, "config", "printer-ip.json"), printerModule, log);
 
-  var tableCheckSource = options.source || createTableCheckSource({
-    apiKey: config.apiKey,
-    base: config.base,
-    shopId: config.shopId,
-    isMock: config.isMock,
-    mock: mock,
-    fetch: fetchFn,
-    requestTimeoutMs: config.requestTimeoutMs,
-  });
+  var reservationSource = options.source || createReservationSource({ isMock: config.isMock, mock: mock });
 
   var reservationSync = booking.createReservationSync({
     now: now,
     log: log,
-    listReservations: tableCheckSource.listReservations,
-    listSyncEvents: tableCheckSource.listSyncEvents,
-    getReservation: tableCheckSource.getReservation,
+    listReservations: reservationSource.listReservations,
+    listSyncEvents: reservationSource.listSyncEvents,
+    getReservation: reservationSource.getReservation,
   });
 
   // TLS証明書を渡したときだけNode自身がHTTPS/WSSで待ち受ける (実機WSS検証用)。
@@ -170,7 +160,7 @@ function createRelay(options) {
     }
     if (pathname === "/api/health") {
       return json(res, Object.assign({
-        mode: config.isMock ? "mock" : "live",
+        mode: config.isMock ? "mock" : "none",
         pollMs: config.pollMs,
         resyncMs: config.resyncMs,
         ordersStream: orderStream.stats(),
@@ -202,7 +192,7 @@ function createRelay(options) {
     if (pathname === "/api/slip-style") return printRoutes.handleSlipStyle(req, res, printContext);
 
     if (pathname.indexOf("/api/mock/") === 0) {
-      if (!config.isMock) return httpUtil.text(res, 403, "mock endpoints are disabled in LIVE mode");
+      if (!config.isMock) return httpUtil.text(res, 403, "mock endpoints are disabled when MOCK=0");
       return handleMock(req, res, url, mock, reservationSync);
     }
     if (pathname === "/demo") return httpUtil.serveFile(res, path.join(__dirname, "tablecheck-demo.html"));
@@ -235,7 +225,7 @@ function createRelay(options) {
       var listenPort = address && address.port || config.port;
       var baseUrl = (tlsOptions ? "https://" : "http://") + (config.host.includes(":") ? "[" + config.host + "]" : config.host) + ":" + listenPort;
       log("起動: " + baseUrl + "  (モード: " +
-        (config.isMock ? "MOCK — デモ予約を配信" : "LIVE — TableCheck へ " + config.pollMs / 1000 + "秒間隔で pull") + ")");
+        (config.isMock ? "MOCK — デモ予約を配信" : "予約ソースなし — 予約は空のまま (MOCK=0)") + ")");
       if (config.isMock) {
         if (env.SEED === "1") { mock.seed(); log("SEED=1: デモ予約を1件シード"); }
         log("デモ操作コンソール: " + baseUrl + "/demo");
@@ -324,5 +314,4 @@ if (require.main === module) {
 
 module.exports = {
   createRelay: createRelay,
-  createTableCheckSource: createTableCheckSource,
 };

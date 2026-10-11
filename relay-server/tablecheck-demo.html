@@ -267,7 +267,7 @@
   }
   function updateMode(){
     api("GET","/api/health").then(function(hh){
-      el("mode").textContent=(hh.mode==="mock"?"MOCK モード":"LIVE モード")+" · 保持 "+(hh.store||0)+"件";
+      el("mode").textContent=(hh.mode==="mock"?"MOCK モード":"予約ソースなし")+" · 保持 "+(hh.store||0)+"件";
     }).catch(function(){el("mode").textContent="サーバー未接続";});
   }
 

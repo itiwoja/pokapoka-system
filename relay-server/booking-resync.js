@@ -1,57 +1,14 @@
 /**
- * booking-resync.js — Booking v1 全件同期と Sync v1 差分同期の状態管理
+ * booking-resync.js — 予約の全件同期と差分同期の状態管理
  *
- * 全ページを取得し終えるまで公開中の store には触れず、成功時だけ新しい Map へ
- * 差し替える。これにより途中ページの失敗やプロセス起動直後の空配信を防ぐ。
+ * 全件を取得し終えるまで公開中の store には触れず、成功時だけ新しい Map へ
+ * 差し替える。これにより取得途中の失敗やプロセス起動直後の空配信を防ぐ。
+ * 取得の契約 (全件・差分イベント・個別取得) は TableCheck の Booking v1 / Sync v1 に
+ * 合わせて作ったもの。TableCheck 連携は 2026-10-11 に中止し、今の供給源はモックだけ。
  */
 "use strict";
 
 var sync = require("./tablecheck-sync");
-
-var DEFAULT_PER_PAGE = 200;
-var MAX_PAGES = 1000;
-
-function localDayRange(now) {
-  var start = new Date(now);
-  if (isNaN(start)) throw new Error("invalid current time");
-  start.setHours(0, 0, 0, 0);
-  var end = new Date(start);
-  end.setDate(end.getDate() + 1);
-  return { startAtMin: start.toISOString(), startAtMax: end.toISOString() };
-}
-
-async function listAllReservations(fetchPage, options) {
-  options = options || {};
-  if (typeof fetchPage !== "function") throw new Error("fetchPage is required");
-  var perPage = Number(options.perPage) || DEFAULT_PER_PAGE;
-  if (perPage < 1 || perPage > DEFAULT_PER_PAGE) throw new Error("perPage must be between 1 and 200");
-  var range = localDayRange(options.now || new Date());
-  var reservations = [];
-
-  for (var page = 0; page < MAX_PAGES; page++) {
-    var query = {
-      start_at_min: range.startAtMin,
-      start_at_max: range.startAtMax,
-      page: page,
-      per_page: perPage,
-      sort: "start_at",
-      sort_order: "asc",
-    };
-    if (options.shopId) query.shop_ids = String(options.shopId);
-
-    var body = await fetchPage(query);
-    if (!body || !Array.isArray(body.reservations)) {
-      throw new Error("Booking v1 response must contain reservations array");
-    }
-    if (body.reservations.length > perPage) {
-      throw new Error("Booking v1 response exceeded per_page");
-    }
-    reservations = reservations.concat(body.reservations);
-    if (body.reservations.length < perPage) return reservations;
-  }
-
-  throw new Error("Booking v1 pagination exceeded " + MAX_PAGES + " pages");
-}
 
 function buildSnapshot(rawReservations, now) {
   if (!Array.isArray(rawReservations)) throw new Error("reservations must be an array");
@@ -194,9 +151,6 @@ function copyObject(value) { return Object.assign({}, value); }
 function errorMessage(err) { return String(err && err.message || err); }
 
 module.exports = {
-  DEFAULT_PER_PAGE: DEFAULT_PER_PAGE,
-  localDayRange: localDayRange,
-  listAllReservations: listAllReservations,
   buildSnapshot: buildSnapshot,
   createReservationSync: createReservationSync,
 };
