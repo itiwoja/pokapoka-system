@@ -1,6 +1,9 @@
 {
   "name": "pokapoka-relay-server",
   "private": true,
+  "engines": {
+    "node": ">=22.13"
+  },
   "description": "店内中継サーバー。wsで注文を即時配信。印刷にはiconv-liteとqrcodeを使用。依存未導入時はHTTP注文取得を継続。",
   "scripts": {
     "preflight": "node preflight.js",

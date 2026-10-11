@@ -11,9 +11,8 @@
   },
 
   "reservation": {
-    "_note": "予約ストアの差分取込間隔(pollMs)と全件再構築間隔(resyncMs)。TableCheck API連携は2026-10-11に中止したため、今の供給源はMOCKのデモ予約だけ(環境変数 MOCK=0 で予約ソースなし)。旧雛形の tablecheck セクションが残っていても読み飛ばす。",
-    "pollMs": 3000,
-    "resyncMs": 900000
+    "_note": "予約を保存するSQLiteファイル(リポジトリ直下からの相対可)。空なら data/reservations.sqlite。予約の正本はこのファイルだけなので、定期的に別媒体へバックアップする。TableCheck API連携は2026-10-11に中止した。旧雛形の tablecheck セクションと pollMs / resyncMs が残っていても読み飛ばす。",
+    "dbFile": ""
   },
 
   "seat": {
@@ -32,7 +31,7 @@
   "order": {
     "_note": "注文端末から受けた注文(/api/orders)を何分保持するか。保存はせずメモリのみなので、日跨ぎで前日の注文が残らないよう上限を置く(1〜1440分)。",
     "ttlMin": 720,
-    "_mockScenario": "MOCKモード専用。trueにすると起動直後にmock-001/002を保持し、5秒後に追加・10秒後に更新・15秒後に取消してWebSocket配信を目視確認できる(配信仕様書 §17)。MOCK=0 でtrueにすると起動エラー。",
+    "_mockScenario": "検証専用。trueにすると起動直後にmock-001/002を保持し、5秒後に追加・10秒後に更新・15秒後に取消してWebSocket配信を目視確認できる(配信仕様書 §17)。実注文に模擬注文が混ざるため、店舗運用ではfalseのままにする。",
     "mockScenario": false
   },
 

@@ -21,7 +21,7 @@ function writeConfig(contents) {
 test("config.json を環境変数形のオーバーレイへ変換する", function () {
   var file = writeConfig({
     server: { host: "192.168.1.10", port: 8000 },
-    reservation: { pollMs: 3000, resyncMs: 900000 },
+    reservation: { dbFile: "data/reservations.sqlite" },
     seat: { beforeMin: 30, afterMin: 120 },
     order: { mockScenario: false },
   });
@@ -29,8 +29,7 @@ test("config.json を環境変数形のオーバーレイへ変換する", funct
   assert.deepEqual(loadConfig.load(file), {
     HOST: "192.168.1.10",
     PORT: "8000",
-    POLL_MS: "3000",
-    RESYNC_MS: "900000",
+    RESERVATION_DB_FILE: "data/reservations.sqlite",
     MOCK_ORDER_SCENARIO: "0",
     SEAT_BEFORE_MIN: "30",
     SEAT_AFTER_MIN: "120",
@@ -44,13 +43,11 @@ test("auth.cookieSecureを環境変数形へ変換し、環境変数で上書き
 
   var relay = serverModule.createRelay({
     configFile: overlay,
-    env: { MOCK: "1" },
-    source: { listReservations: async function () { return []; }, listSyncEvents: async function () { return []; }, getReservation: async function () { return null; } },
-    mockSource: {},
+    env: {},
   });
   assert.equal(relay.config.authCookieSecure, "1");
   assert.throws(function () {
-    serverModule.createRelay({ env: { MOCK: "1", RELAY_COOKIE_SECURE: "yes" }, mockSource: {} });
+    serverModule.createRelay({ env: { RELAY_COOKIE_SECURE: "yes" } });
   }, /auto \/ 1 \/ 0/);
 });
 
@@ -72,9 +69,10 @@ test("null は未設定扱いで既定値へ委ねる", function () {
   assert.deepEqual(loadConfig.load(file), { PORT: "8000" });
 });
 
-test("連携中止した tablecheck セクションは旧雛形の値ごと読み飛ばす", function () {
+test("連携中止した tablecheck セクションと取込間隔のキーは旧雛形の値ごと読み飛ばす", function () {
   var file = writeConfig({
     server: { host: "192.168.1.10" },
+    reservation: { pollMs: 3000, resyncMs: 900000 },
     tablecheck: { base: "https://api.tablecheck.com", shopId: "shop-1", pollMs: 30000, apiKey: "secret_key" },
   });
   assert.deepEqual(loadConfig.load(file), { HOST: "192.168.1.10" });
@@ -100,52 +98,41 @@ test("環境変数が config.json より優先される(空文字は未設定扱
 });
 
 test("config.json の値が relay の設定として実際に効き、環境変数で上書きできる", function () {
-  var source = {
-    listReservations: async function () { return []; },
-    listSyncEvents: async function () { return []; },
-    getReservation: async function () { return null; },
-  };
   var configFile = loadConfig.load(writeConfig({
     server: { host: "192.168.1.10", port: 8123 },
-    reservation: { pollMs: 60000 },
+    reservation: { dbFile: "data/store-a.sqlite" },
     seat: { beforeMin: 15, afterMin: 90 },
   }));
 
   var fromFile = serverModule.createRelay({
     configFile: configFile,
     env: {},
-    source: source, mockSource: {},
+    reservations: { close: function () {} },
   });
   assert.equal(fromFile.config.host, "192.168.1.10");
   assert.equal(fromFile.config.port, 8123);
-  assert.equal(fromFile.config.pollMs, 60000);
+  assert.equal(fromFile.config.reservationDbFile, "data/store-a.sqlite");
   assert.equal(fromFile.config.seatBeforeMin, 15);
   assert.equal(fromFile.config.seatAfterMin, 90);
 
   var overridden = serverModule.createRelay({
     configFile: configFile,
-    env: { HOST: "192.168.1.99", POLL_MS: "5000" },
-    source: source, mockSource: {},
+    env: { HOST: "192.168.1.99", RESERVATION_DB_FILE: "data/store-b.sqlite" },
+    reservations: { close: function () {} },
   });
   assert.equal(overridden.config.host, "192.168.1.99");
-  assert.equal(overridden.config.pollMs, 5000);
+  assert.equal(overridden.config.reservationDbFile, "data/store-b.sqlite");
   assert.equal(overridden.config.port, 8123, "上書きしていない値はファイルのまま残る");
 });
 
 test("ファイル由来の値にも下限クランプが効く", function () {
-  var source = {
-    listReservations: async function () { return []; },
-    listSyncEvents: async function () { return []; },
-    getReservation: async function () { return null; },
-  };
   // 下限は env 経由と同じくファイル経由の値にも適用される
   var clamped = serverModule.createRelay({
-    configFile: loadConfig.load(writeConfig({ reservation: { pollMs: 1, resyncMs: 1 } })),
+    configFile: loadConfig.load(writeConfig({ seat: { walkinTtlMin: 0 }, kitchen: { ttlMin: 99999 } })),
     env: {},
-    source: source, mockSource: {},
   });
-  assert.equal(clamped.config.pollMs, 100);
-  assert.equal(clamped.config.resyncMs, 1000);
+  assert.equal(clamped.config.seatWalkinTtlMs, 120 * 60000, "0以下は既定値");
+  assert.equal(clamped.config.kitchenTtlMs, 1440 * 60000, "上限で頭打ち");
 });
 
 test("同梱の config.example.json は雛形として読み込める", function () {
@@ -153,7 +140,7 @@ test("同梱の config.example.json は雛形として読み込める", function
   var overlay = loadConfig.load(example);
   assert.equal(overlay.HOST, "auto");   // 起動時にLAN IPv4を自動検出 (#144追補)
   assert.equal(overlay.PORT, "8000");
-  assert.equal(overlay.POLL_MS, "3000");
+  assert.equal(overlay.POLL_MS, undefined, "取込間隔は廃止");
   assert.equal(overlay.RELAY_COOKIE_SECURE, "auto");
 });
 

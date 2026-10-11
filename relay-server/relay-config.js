@@ -14,18 +14,13 @@ function createConfig(env, options) {
   // 既定値 < config/config.json < 環境変数。ファイル由来の値も env と同じ経路を通るので、
   // 下限クランプなどの検証はどちらから来た値にも等しく効く。
   var src = loadConfig.mergeEnv(options.configFile || {}, env);
-  // TableCheck API 連携は中止 (2026-10-11)。以前は TABLECHECK_API_KEY の有無で LIVE を選んでいたが、
-  // 今は MOCK (デモ予約) が既定で、MOCK=0 のときは予約ソースなし (予約は常に空) で動く
-  var isMock = src.MOCK !== "0";
-  var pollMs = normalizeInterval(src.POLL_MS, 3000, 100);
-  var resyncMs = normalizeInterval(src.RESYNC_MS, 900000, 1000);
   var tls = normalizeTlsFiles(src.TLS_CERT_FILE, src.TLS_KEY_FILE);
   return {
     port: options.port !== undefined ? options.port : (Number(src.PORT) || 8000),
     host: resolveHost(src.HOST),
-    isMock: isMock,
-    pollMs: pollMs,
-    resyncMs: resyncMs,
+    // 予約を保存する SQLite ファイル (リポジトリ直下からの相対可)。空なら起動スクリプトの既定
+    // (data/reservations.sqlite) を使う。TableCheck 連携の中止 (2026-10-11) で予約の正本になった
+    reservationDbFile: src.RESERVATION_DB_FILE ? String(src.RESERVATION_DB_FILE) : null,
     seatBeforeMin: Math.max(Number(src.SEAT_BEFORE_MIN) || 30, 0),
     seatAfterMin: Math.max(Number(src.SEAT_AFTER_MIN) || 120, 0),
     // ローカル登録した占有をいつ諦めるか。POS連携が無く「退店した」というイベントが
@@ -46,8 +41,8 @@ function createConfig(env, options) {
     authCookieSecure: normalizeCookieSecure(src.RELAY_COOKIE_SECURE),
     tlsCertFile: tls.cert,
     tlsKeyFile: tls.key,
-    // 仕様書 §17 の時間差モック注文。実注文と混ざらないよう MOCK モードでのみ許可する
-    mockOrderScenario: normalizeMockOrderScenario(src.MOCK_ORDER_SCENARIO, isMock),
+    // 仕様書 §17 の時間差モック注文。実注文と混ざるため、店舗運用では有効にしない
+    mockOrderScenario: normalizeMockOrderScenario(src.MOCK_ORDER_SCENARIO),
   };
 }
 
@@ -58,10 +53,9 @@ function normalizeTlsFiles(cert, key) {
   return { cert: cert || null, key: key || null };
 }
 
-function normalizeMockOrderScenario(value, isMock) {
+function normalizeMockOrderScenario(value) {
   if (value === undefined || value === null || value === "" || value === "0") return false;
   if (value !== "1") throw new Error("order.mockScenario は true / false (環境変数は 1 / 0) のいずれかにする");
-  if (!isMock) throw new Error("MOCK_ORDER_SCENARIO は MOCK モードでのみ使える (実注文に模擬注文を混ぜない)");
   return true;
 }
 

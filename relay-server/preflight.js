@@ -118,6 +118,10 @@ function httpGet(host, port, pathname, timeoutMs) {
 /* ===================== 1. 設定 ===================== */
 function checkConfig() {
   heading("1. 設定 (config/config.json)");
+  // 予約の保存に node:sqlite を使う。22.13 未満はフラグが要るか、モジュール自体が無い
+  var v = process.versions.node.split(".").map(Number);
+  if (v[0] > 22 || (v[0] === 22 && v[1] >= 13)) ok("Node.js " + process.versions.node);
+  else ng("Node.js " + process.versions.node + " — 予約の保存 (node:sqlite) に 22.13 以上が必要");
   var file;
   try { file = loadConfig.load(); }
   catch (err) {
@@ -310,7 +314,7 @@ function manualChecklist(config, target) {
   heading("7. ここから先は人の目で確認する");
   var base = "http://" + (target || "<ミニPCのIP>") + ":" + config.port;
   note("1. 別端末のブラウザで " + base + "/ を開き、KDS が表示されるか");
-  note("2. 予約が KDS の予約ストックに出るか (MOCKなら " + base + "/demo から作れる)");
+  note("2. 予約が KDS の予約ストックに出るか (予約の手入力は未実装のため、実装までは確認できない)");
   note("3. 実機2台で厨房状態 (コンロ・完了) が同期するか — #132");
   note("4. 注文端末から POST /api/orders が通るか — #139");
   note("5. 来客用WiFiからは到達しないこと (客のスマホで開いて繋がらないのを確認) — #174");

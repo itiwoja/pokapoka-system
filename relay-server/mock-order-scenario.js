@@ -1,5 +1,5 @@
 /**
- * mock-order-scenario.js — WebSocket配信の目視確認用モック注文シナリオ (MOCKモード専用・依存ゼロ)
+ * mock-order-scenario.js — WebSocket配信の目視確認用モック注文シナリオ (検証専用・依存ゼロ)
  *
  * 配信仕様書 §17 の時間差シナリオを中継サーバー内で再生する。
  *   起動直後: mock-001, mock-002 を保持

@@ -42,25 +42,16 @@ test("重要操作と認証拒否を秘匿済み監査ログへ残し、認証�
   };
   var relay = serverModule.createRelay({
     port: 0,
-    env: { MOCK: "1", RELAY_TOKEN: TOKEN, RELAY_TRUST_LOOPBACK: "0" },
-    source: {
-      listReservations: async function () { return []; },
-      listSyncEvents: async function () { return []; },
-      getReservation: async function () { return null; },
-    },
-    mockSource: {},
+    env: { RELAY_TOKEN: TOKEN, RELAY_TRUST_LOOPBACK: "0" },
     printer: fakePrinter,
     auditLogPath: path.join(dir, "audit.jsonl"),
     printerIpPath: path.join(dir, "printer.json"),
     slipStylePath: path.join(dir, "style.json"),
     log: function () {},
-    setInterval: function () { return 0; },
-    clearInterval: function () {},
   });
   t.after(function () { return relay.stop(); });
   relay.start();
   await events.once(relay.server, "listening");
-  await relay.whenInitialSync();
 
   var invalid = "not-the-real-secret";
   assert.equal((await request(relay.server, "/api/orders?token=" + invalid)).status, 401);
