@@ -54,6 +54,18 @@ function serveFile(res, file) {
 }
 
 function readJson(req, res, cb) {
+  readBuffer(req, res, function (buffer) {
+    var raw = buffer.toString("utf8").trim();
+    if (!raw) return cb({});
+    var body;
+    try { body = JSON.parse(raw); }
+    catch (err) { return json(res, { ok: false, error: "invalid JSON" }, 400); }
+    cb(body);
+  });
+}
+
+/** 本文をバイト列のまま読む。文字コードが UTF-8 とは限らない CSV・メールの受け取りに使う */
+function readBuffer(req, res, cb) {
   var chunks = [], size = 0, ended = false;
   req.on("data", function (chunk) {
     if (ended) return;
@@ -68,10 +80,7 @@ function readJson(req, res, cb) {
   req.on("end", function () {
     if (ended) return;
     ended = true;
-    var raw = Buffer.concat(chunks).toString("utf8").trim();
-    if (!raw) return cb({});
-    try { cb(JSON.parse(raw)); }
-    catch (err) { json(res, { ok: false, error: "invalid JSON" }, 400); }
+    cb(Buffer.concat(chunks));
   });
   req.on("error", function () {
     if (!ended) { ended = true; json(res, { ok: false, error: "read error" }, 400); }
@@ -91,5 +100,6 @@ module.exports = {
   noContent: noContent,
   serveFile: serveFile,
   readJson: readJson,
+  readBuffer: readBuffer,
   pathParam: pathParam,
 };

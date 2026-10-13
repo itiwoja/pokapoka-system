@@ -5,20 +5,26 @@ var path = require("path");
 var httpUtil = require("../http-util");
 
 var KDS_PAGE = "kds-a-grid.html";
+var RESERVATION_PAGE = "reservation-entry.html";
 
 /* リポジトリ直下から配信してよいファイル。ここに無いパスは存在しても 404 にする */
 var ALLOWED_STATIC_FILES = [
   KDS_PAGE,
+  RESERVATION_PAGE,             // 予約入力画面 (/reservations)。手入力・CSV・貼り付け・メールの入口
   "slip-style-designer.html",   // 印刷スタイル設定ツール。KDSと同一オリジンで配信しlocalStorageを共有する
   "slip-renderer.js",           // 伝票レイアウトの描画エンジン。フォーマッターとKDSで同じ絵を出すため共有する
   path.join("assets", "sounds", "shishiodoshi.ogg"), // 新規注文通知音。出典は assets/sounds/README.md
   path.join("relay-server", "kds-bridge.js"),
 ];
 
-/** root (リポジトリ直下) 配下の許可済みファイルを配信する。"/" と "/kds" は KDS 画面 */
+/** root (リポジトリ直下) 配下の許可済みファイルを配信する。"/" と "/kds" は KDS 画面、"/reservations" は予約入力画面 */
 function serveStatic(res, url, root) {
   var rel;
-  try { rel = (url.pathname === "/" || url.pathname === "/kds") ? "/" + KDS_PAGE : decodeURIComponent(url.pathname); }
+  try {
+    rel = (url.pathname === "/" || url.pathname === "/kds") ? "/" + KDS_PAGE
+      : url.pathname === "/reservations" ? "/" + RESERVATION_PAGE
+      : decodeURIComponent(url.pathname);
+  }
   catch (err) { return httpUtil.text(res, 400, "bad request"); }
   // URL内のWindows/POSIX両方の区切りを同じものとして扱い、実行OSに関係なく
   // エンコードされたパストラバーサルをallowlist判定より先に拒否する。

@@ -42,8 +42,30 @@
   先の日付の予約は保存したまま、その日になったら配信する。
 - 過ぎた日の予約は読み出しのたびに削除する(履歴は持たない)。
 - 起動直後から `/api/stock` は 200 を返す(TableCheck の初回取得を待つための 503 は不要になった)。
-- 予約を入れる入口(画面・API)は未設計。`reservation-store.js` の `save` / `cancel` を、手入力の設計後に
-  画面・APIへつなぐ。それまでは `/api/stock` は常に空で、KDS の「＋追加」ボタン(端末ローカル)だけが予約を作れる。
+- 予約は予約入力画面 `/reservations` から入れる(→「予約の入口」)。KDS の「＋追加」ボタンは従来どおり
+  端末ローカルで、サーバーには保存しない。
+
+### 予約の入口(試作・4方式)
+
+TableCheck と連携せずに予約を持ち込む方法を比べるため、4つの入口を `/reservations` の画面に並べている。
+どれも最後は同じ `reservation-store.js` の `save` に入る。取り込むのは来店日時・人数・予約者名・事前メニュー・
+アレルギー・要望・メモ・卓番だけで、電話番号などの連絡先は取り込まない。
+
+| 方式 | 使い方 | 保存のタイミング |
+|---|---|---|
+| A. 手入力 | フォームから1件ずつ入れる | 登録ボタンを押したとき |
+| B. CSV取込 | 管理画面から出した CSV を選ぶ。1行目の列名から項目を判別する | 「内容を確認する」(保存しない)で確かめてから「取り込む」を押したとき |
+| C. 貼り付け | 予約詳細の文面を貼る。「項目名: 値」の行を読んでフォームへ入れる | フォームを確かめて登録ボタンを押したとき |
+| D. メール | 取込フォルダ(既定 `data/mail-inbox`、`reservation.mailDir` で変更)に置いた `.eml` / `.txt` が候補に並ぶ。1通ずつ選ぶ・貼ることもできる | 候補をフォームへ入れ、確かめて登録ボタンを押したとき |
+
+- **B・C・D の読み取りは、TableCheck の実物の CSV・画面・メールで確かめていない。** 列名やラベルの表記ゆれを
+  広く受けるように作ってあるが、実物で読めるかは未確認。読み取れなかった項目は画面に警告を出す。
+- C と D は自動では保存しない。読み違えたアレルギーが厨房へ出ないよう、必ず人が確かめてから登録する。
+- D はメールサーバーへ接続しない(メールの認証情報をミニPCに置かないため)。取込フォルダへ保存するまでは
+  メールソフト側の自動保存か手作業で行う。登録または破棄した候補は `processed/` へ移す(削除はしない)。
+- 予約番号の無い予約には、来店日時と名前から決まる rid を付ける。同じ CSV・メールを取り込み直しても
+  二重登録にならず、件名に「キャンセル」とあるメールは同じ予約を取消として上書きできる。
+- 解析は `reservation-import.js`、API は `routes/reservations.js`、取込フォルダは `mail-inbox.js`。
 
 **バックアップ**: 予約の正本はこのファイルだけなので、ミニPCの故障に備えて
 `data/reservations.sqlite` を定期的に別媒体へコピーする(方法と頻度は運用で決める)。
@@ -190,6 +212,15 @@ cd relay-server && npm run preflight
 |---|---|
 | `/` , `/kds-a-grid.html` | KDS 本体(配信時にブリッジを1行注入) |
 | `/api/stock` | KDS 予約ストック形式 `[{rid,time,adults,kids,name,menu[],allergies?,request?,seenAt}]`。`allergies` はアレルギー、`request` は要望の注記。当日の `booked` だけで、メニュー無し(席だけ)予約は含まない |
+| `/reservations` | 予約入力画面(`reservation-entry.html`)。→「予約の入口」 |
+| `GET /api/reservations?date=YYYY-MM-DD` | 指定日(省略時は当日)の予約一覧 `{date,reservations[]}`。取消済みも含む |
+| `POST /api/reservations` | 予約の登録 `{startAt,name,adults,kids,table?,menu:[{name,qty}],allergies?,request?,memo?,rid?,status?}`。`rid` が既にあれば上書き。`mailId` を付けると、登録後に取込フォルダのそのメールを片づける |
+| `GET` / `PUT` / `DELETE /api/reservations/{rid}` | 1件の取得・変更・取消(取消は行を残して status を `canceled` にする) |
+| `POST /api/reservations/import/csv` | CSV(本文にファイルの中身。UTF-8 か Shift_JIS)の取込。`?dryRun=1` なら保存せず読み取り結果だけ返す |
+| `POST /api/reservations/import/text` | `{text}` を読み取り、下書き `{draft,warnings}` を返す(保存しない) |
+| `POST /api/reservations/import/mail` | メール1通(本文に `.eml` の中身。`?text=1` なら貼り付けたテキスト)を読み取り、下書きを返す(保存しない) |
+| `GET /api/reservations/inbox` | メールの取込フォルダの候補 `{enabled,items:[{id,receivedAt,subject,draft,warnings}]}` |
+| `DELETE /api/reservations/inbox/{id}` | 候補を登録せず片づける(`processed/` へ移す) |
 | `/api/health` | ready状態・予約の保存件数(`reservations`)・注文配信の状況(`ordersStream`) |
 | `GET /api/kitchen-state` | 厨房状態の共有スナップショット `{sessionId,rev,updatedAt,konro,done,locked,seq,deleted}`。→「厨房状態の端末間同期」 |
 | `POST /api/kitchen-state` | 厨房状態の変更イベント投入 `{events:[...]}`。応答は `{ok,rev,sessionId}` |

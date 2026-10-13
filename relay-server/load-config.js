@@ -21,6 +21,7 @@ var KEY_TO_ENV = {
   "server.tlsCert": "TLS_CERT_FILE",
   "server.tlsKey": "TLS_KEY_FILE",
   "reservation.dbFile": "RESERVATION_DB_FILE",
+  "reservation.mailDir": "RESERVATION_MAIL_DIR",
   "seat.beforeMin": "SEAT_BEFORE_MIN",
   "seat.afterMin": "SEAT_AFTER_MIN",
   "seat.walkinTtlMin": "SEAT_WALKIN_TTL_MIN",

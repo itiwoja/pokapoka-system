@@ -4,7 +4,7 @@
  * 役割:
  *   1. リポジトリ直下の静的ファイルを配信
  *   2. 予約を SQLite (既定 data/reservations.sqlite) に保存し、当日分を /api/stock でKDSへ配信
- *      (TableCheck連携は2026-10-11中止。予約は店員の手入力で扱うが、入力の入口は未設計)
+ *      (TableCheck連携は2026-10-11中止。予約は /reservations の画面から手入力・CSV・貼り付け・メールで持ち込む)
  *   3. 注文端末からの注文受付と WebSocket 配信
  *   4. POST /api/print でチビ伝を実機プリンターへ中継(ブラウザは生ソケットを開けないため #144)
  *
@@ -41,6 +41,8 @@ var handleKitchenState = require("./routes/kitchen").handleKitchenState;
 var handleOrders = require("./routes/orders").handleOrders;
 var printRoutes = require("./routes/print");
 var handleQrPage = require("./routes/qr-page").handleQrPage;
+var handleReservations = require("./routes/reservations").handleReservations;
+var createMailInbox = require("./mail-inbox").createMailInbox;
 var handleSeats = require("./routes/seats").handleSeats;
 var serveStatic = require("./routes/static").serveStatic;
 
@@ -78,6 +80,9 @@ function createRelay(options) {
   var reservationDbPath = config.reservationDbFile ? path.resolve(root, config.reservationDbFile)
     : options.reservationDbPath || ":memory:";
   var reservations = options.reservations || openReservationStore(reservationDbPath, { now: now });
+  // 予約メールの取込フォルダ。config の reservation.mailDir > 起動スクリプトの既定 > 無効 (テストで店舗の data/ を読まない)
+  var mailInbox = createMailInbox(config.reservationMailDir ? path.resolve(root, config.reservationMailDir)
+    : options.mailInboxPath || null, { now: now });
 
   // TLS証明書を渡したときだけNode自身がHTTPS/WSSで待ち受ける (実機WSS検証用)。
   // 本番の推奨構成はリバースプロキシでの終端のまま。読めない証明書は起動前に止める
@@ -173,6 +178,11 @@ function createRelay(options) {
         audit: auditContext,
       });
     }
+    if (pathname === "/api/reservations" || pathname.indexOf("/api/reservations/") === 0) {
+      return handleReservations(req, res, url, {
+        reservations: reservations, mailInbox: mailInbox, now: now, log: log, audit: auditContext,
+      });
+    }
     if (pathname === "/api/kitchen-state") {
       return handleKitchenState(req, res, { state: kitchenState, ttlMs: config.kitchenTtlMs, audit: auditContext });
     }
@@ -204,6 +214,8 @@ function createRelay(options) {
         });
       }
       log("KDS(デシャップ): " + baseUrl + "/  / 予約: /api/stock / 注文: /api/orders / 状態: /api/health");
+      log("予約入力: " + baseUrl + "/reservations" +
+        (mailInbox.enabled ? "  (メールの取込フォルダ: " + mailInbox.dir + ")" : ""));
       if (config.authToken) {
         log("認証: 有効 (他端末は /qr のQR経由で開く。ミニPC自身は" +
           (config.authTrustLoopback ? "認証なしで開ける" : "トークンが必要") + ")");
@@ -268,6 +280,7 @@ if (require.main === module) {
   createRelay({
     configFile: configFile,
     reservationDbPath: path.join(__dirname, "..", "data", "reservations.sqlite"),
+    mailInboxPath: path.join(__dirname, "..", "data", "mail-inbox"),
   }).start();
 }
 

@@ -12,7 +12,9 @@
 
   "reservation": {
     "_note": "予約を保存するSQLiteファイル(リポジトリ直下からの相対可)。空なら data/reservations.sqlite。予約の正本はこのファイルだけなので、定期的に別媒体へバックアップする。TableCheck API連携は2026-10-11に中止した。旧雛形の tablecheck セクションと pollMs / resyncMs が残っていても読み飛ばす。",
-    "dbFile": ""
+    "dbFile": "",
+    "_mailDir": "予約の通知メール(.eml / .txt)を置く取込フォルダ(リポジトリ直下からの相対可)。空なら data/mail-inbox。ここに置いたメールが予約入力画面 /reservations の取込候補に並ぶ。中継サーバーはメールサーバーへ接続しないので、フォルダへ保存するまではメールソフト側で行う。",
+    "mailDir": ""
   },
 
   "seat": {
