@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "start": "node relay-server/server.js",
+    "reservation:samples": "node scripts/reservation-samples.js",
     "test": "npm run test:kds && npm run test:relay",
     "test:kds": "node --test tests/*.test.js",
     "test:relay": "npm --prefix relay-server test"

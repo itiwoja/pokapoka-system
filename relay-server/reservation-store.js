@@ -101,6 +101,17 @@ function openReservationStore(filename, options) {
     return snapshot;
   }
 
+  /**
+   * 指定日 (サーバーのローカル時刻の "YYYY-MM-DD"。省略時は当日) の予約を、取消済みも含めて時刻順に返す。
+   * 予約入力画面の一覧用。読み出すだけで、過ぎた日の削除はしない
+   */
+  function list(dateStr) {
+    var day = dateStr == null || dateStr === "" ? new Date(now()) : parseLocalDate(dateStr);
+    if (!day) throw new Error("date は YYYY-MM-DD");
+    var range = dayRange(day);
+    return selectRange.all(range.start, range.end).map(fromRow);
+  }
+
   /** GET /api/stock の本体。当日の booked かつメニューありの予約を KDS 予約ストック形式で返す */
   function stock(seenAt) {
     return toKdsStock(todaySnapshot(), seenAt == null ? Date.now() : seenAt);
@@ -116,6 +127,7 @@ function openReservationStore(filename, options) {
     cancel: cancel,
     get: get,
     todaySnapshot: todaySnapshot,
+    list: list,
     stock: stock,
     health: health,
     file: filename === ":memory:" ? ":memory:" : path.resolve(filename),
@@ -233,10 +245,19 @@ function dayRange(now) {
   return { start: start.getTime(), end: end.getTime() };
 }
 
+/** "YYYY-MM-DD" → その日の0時 (ローカル時刻) の Date。実在しない日付は null */
+function parseLocalDate(value) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value));
+  if (!m) return null;
+  var d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d.getMonth() === Number(m[2]) - 1 && d.getDate() === Number(m[3]) ? d : null;
+}
+
 function pad2(n) { return (n < 10 ? "0" : "") + n; }
 
 module.exports = {
   STATUSES: STATUSES,
   openReservationStore: openReservationStore,
+  validate: validate,
   toKdsStock: toKdsStock,
 };

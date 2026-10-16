@@ -21,6 +21,8 @@ function createConfig(env, options) {
     // 予約を保存する SQLite ファイル (リポジトリ直下からの相対可)。空なら起動スクリプトの既定
     // (data/reservations.sqlite) を使う。TableCheck 連携の中止 (2026-10-11) で予約の正本になった
     reservationDbFile: src.RESERVATION_DB_FILE ? String(src.RESERVATION_DB_FILE) : null,
+    // 予約メール (.eml / .txt) を置く取込フォルダ。空なら起動スクリプトの既定 (data/mail-inbox)
+    reservationMailDir: src.RESERVATION_MAIL_DIR ? String(src.RESERVATION_MAIL_DIR) : null,
     seatBeforeMin: Math.max(Number(src.SEAT_BEFORE_MIN) || 30, 0),
     seatAfterMin: Math.max(Number(src.SEAT_AFTER_MIN) || 120, 0),
     // ローカル登録した占有をいつ諦めるか。POS連携が無く「退店した」というイベントが
