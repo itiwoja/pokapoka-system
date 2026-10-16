@@ -1726,6 +1726,427 @@
   .table-override-confirm p { margin: 0 0 16px; line-height: 1.6; font-weight: 700; }
   .hall-ready-toast { z-index: 12; }
 
+  /* ============================================================
+     Java Swing (Metal / Ocean テーマ) 風スキン
+     上の産業用KDSの部品構成・寸法はそのままに、見た目だけを Swing の
+     既定ルック&フィール (Java 5 以降の Metal + Ocean) に寄せる上書き層。
+       - 地      = コントロール色 #EEEEEE の JPanel
+       - ボタン  = Ocean のグラデーション (#DDE8F3→#FFF→#DDE8F3→#B8CFE5) + 1px #7A8A99 枠
+       - 見出し  = JInternalFrame のタイトルバー。余白は Metal の「バンプ」(点々) で埋める
+       - 入力欄  = Flush3D 枠 (暗線 + 1px ずらした白線)
+       - 文字    = Java の論理フォント Dialog が Windows で割り当てる Arial + MS UI Gothic
+     色の意味 (緊急度=緑→琥珀→赤 / 種別=淡青・淡金 / 主要CTA=オレンジ) は変えない。
+     厨房の距離から状態を読む KDS の要件は Swing らしさより優先する。
+     タップ下限 44px (#58) などの寸法は上の各定義のまま。
+     ============================================================ */
+  :root {
+    /* Ocean テーマのパレット (javax.swing.plaf.metal.OceanTheme) */
+    --sw-p1: #6382BF;            /* primary1 */
+    --sw-p2: #A3B8CC;            /* primary2 */
+    --sw-p3: #B8CFE5;            /* primary3 */
+    --sw-s1: #7A8A99;            /* secondary1 = controlDarkShadow */
+    --sw-control: #EEEEEE;       /* secondary3 = control */
+    --sw-select: #B8CFE5;        /* List.selectionBackground */
+    --sw-hover: #DDE8F3;
+    --sw-grad:   linear-gradient(to bottom, #DDE8F3 0%, #FFFFFF 30%, #DDE8F3 60%, #B8CFE5 100%);
+    --sw-grad-h: linear-gradient(to right,  #DDE8F3 0%, #FFFFFF 30%, #DDE8F3 60%, #B8CFE5 100%);
+    --sw-grad-pressed: linear-gradient(to bottom, #A3B8CC 0%, #B8CFE5 100%);
+    --sw-menubar: linear-gradient(to bottom, #FFFFFF 0%, #DAE5F1 100%);
+    /* 緊急度の帯 (背景色) に重ねる光沢。background-color は残すので 10分超の明滅もそのまま効く */
+    --sw-gloss: linear-gradient(to bottom, rgba(255,255,255,.26) 0%, rgba(255,255,255,.08) 40%, rgba(255,255,255,0) 60%, rgba(0,0,0,.12) 100%);
+    /* Metal のバンプ: 4px 周期で (0,0)(2,2)=明 / (1,1)(3,3)=暗 */
+    --sw-bumps: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Cpath d='M0 0h1v1H0zM2 2h1v1H2z' fill='%23fff'/%3E%3Cpath d='M1 1h1v1H1zM3 3h1v1H3z' fill='%236382BF'/%3E%3C/svg%3E");
+    --sw-bumps-tint: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Cpath d='M0 0h1v1H0zM2 2h1v1H2z' fill='%23fff' fill-opacity='.55'/%3E%3Cpath d='M1 1h1v1H1zM3 3h1v1H3z' fill='%23000' fill-opacity='.3'/%3E%3C/svg%3E");
+    /* 主要CTA。オレンジは保ったまま Metal ボタンの立体感だけ与える (中央部は #C25200 で白文字AA) */
+    --sw-cta-grad: linear-gradient(to bottom, #D9661A 0%, #C25200 45%, #AE4900 100%);
+    --sw-cta-grad-pressed: linear-gradient(to bottom, #A84800 0%, #C25200 100%);
+    --sw-cta-edge: #7A3300;
+
+    /* 既存トークンを Swing 側へ寄せる */
+    --bg-board:  #EEEEEE;
+    --bg-raise:  #F5F7FA;
+    --bg-inset:  #DDE3EA;
+    --border:        #7A8A99;
+    --border-strong: #7A8A99;
+    --border-soft:   #C9D5E1;
+    --border-hair:   #E1E7EE;
+    --r-card: 0; --r-chip: 0; --r-box: 0;
+    --sh-card:   none;
+    --sh-pop:    3px 3px 8px rgba(0,0,0,.35);
+    --sh-chrome: none;
+    --focus: #6382BF;
+    --font-ui:  Arial, "MS UI Gothic", "Hiragino Kaku Gothic ProN", "Noto Sans CJK JP", "Noto Sans", sans-serif;
+    --font-num: Arial, "MS UI Gothic", "Hiragino Kaku Gothic ProN", "Noto Sans CJK JP", "Noto Sans", sans-serif;
+  }
+
+  /* Metal のフォーカス枠はボタンの内側に描く細い矩形 */
+  :focus-visible { outline: 2px solid var(--sw-p1); outline-offset: -4px; }
+
+  /* ---------- スクロールバー (Metal: 17px・バンプ付きつまみ・黒三角の矢印) ---------- */
+  ::-webkit-scrollbar { width: 17px; height: 17px; background: var(--sw-control); }
+  ::-webkit-scrollbar-track { background: var(--sw-control); box-shadow: inset 1px 1px 0 var(--sw-p3); }
+  ::-webkit-scrollbar-thumb {
+    border: 1px solid var(--sw-s1);
+    box-shadow: inset 1px 1px 0 #FFFFFF;
+    background: var(--sw-bumps) 3px 3px / 4px 4px repeat, var(--sw-grad-h);
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:horizontal { background: var(--sw-bumps) 3px 3px / 4px 4px repeat, var(--sw-grad); }
+  ::-webkit-scrollbar-corner { background: var(--sw-control); }
+  ::-webkit-scrollbar-button:single-button {
+    display: block; width: 17px; height: 17px;
+    border: 1px solid var(--sw-s1);
+    box-shadow: inset 1px 1px 0 #FFFFFF;
+    background-color: #E6EEF7;
+    background-repeat: no-repeat;
+    background-position: center;
+  }
+  ::-webkit-scrollbar-button:single-button:vertical:decrement   { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='5'%3E%3Cpath d='M0 5h9L4.5 0z'/%3E%3C/svg%3E"); }
+  ::-webkit-scrollbar-button:single-button:vertical:increment   { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='5'%3E%3Cpath d='M0 0h9L4.5 5z'/%3E%3C/svg%3E"); }
+  ::-webkit-scrollbar-button:single-button:horizontal:decrement { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='5' height='9'%3E%3Cpath d='M5 0v9L0 4.5z'/%3E%3C/svg%3E"); }
+  ::-webkit-scrollbar-button:single-button:horizontal:increment { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='5' height='9'%3E%3Cpath d='M0 0v9L5 4.5z'/%3E%3C/svg%3E"); }
+  ::-webkit-scrollbar-button:single-button:active { background-color: var(--sw-p3); }
+
+  /* ---------- Metal ボタン (JButton / JToggleButton) ---------- */
+  .mode-btn, .order-sound-btn, .head-toggle, .hall-proto-btn,
+  .slip-btn, .lock-btn, .table-override-btn, .konro-toggle, .konro-btn,
+  .reorder-bar button, .toast .undo-btn, .res-seat, .res-del, .btn-cancel,
+  .seat-dial-btn, .hall-stock-add, .hall-ready-actions button, .delete-btn {
+    border: 1px solid var(--sw-s1);
+    border-radius: 0;
+    background: var(--sw-grad);
+    box-shadow: inset 1px 1px 0 #FFFFFF;
+    color: #000000;
+    opacity: 1;
+    font-family: var(--font-ui);
+    letter-spacing: 0;
+    transition: none;
+  }
+  .mode-btn:hover, .order-sound-btn:hover, .head-toggle:hover, .hall-proto-btn:hover,
+  .slip-btn:hover, .lock-btn:not([aria-pressed="true"]):hover,
+  .table-override-btn:not([data-overridden="true"]):hover, .konro-toggle:hover,
+  .reorder-bar button:hover, .toast .undo-btn:hover, .res-seat:hover, .btn-cancel:hover,
+  .seat-dial-btn:not(.active):hover, .hall-stock-add:hover, .hall-ready-actions button:hover,
+  .delete-btn:not(.armed):hover {
+    border-color: var(--sw-p1);
+    background: var(--sw-grad);
+    color: #000000;
+    opacity: 1;
+  }
+  /* コンロの使用中(黒)/タイマー(赤)は塗りが意味を持つので、ホバーでは枠だけ変える */
+  .konro-btn:hover { border-color: var(--sw-p1); }
+  .mode-btn:active, .order-sound-btn:active, .head-toggle:active, .hall-proto-btn:active,
+  .slip-btn:active, .lock-btn:active, .table-override-btn:active, .konro-toggle:active,
+  .konro-btn[data-state="skeleton"]:not([data-locked="true"]):active,
+  .reorder-bar button:active, .toast .undo-btn:active, .res-seat:active, .res-del:active,
+  .btn-cancel:active, .seat-dial-btn:active, .hall-stock-add:active,
+  .hall-ready-actions button:active, .delete-btn:active, .modal-actions button:active {
+    background: var(--sw-grad-pressed);
+    box-shadow: inset 1px 1px 1px rgba(0,0,0,.18);
+    transform: none;
+  }
+  .konro-btn:active { transform: none; }
+  /* 選択中のトグル = 押し込まれた Ocean の青 */
+  .mode-btn[aria-pressed="true"], .order-sound-btn[aria-pressed="true"],
+  .hall-proto-btn[aria-pressed="true"], .seat-dial-zone.active {
+    border-color: #4A6491;
+    background: var(--sw-grad-pressed);
+    box-shadow: inset 1px 1px 2px rgba(0,0,0,.28);
+    color: #000000;
+  }
+  .order-sound-btn:disabled { opacity: .55; }
+
+  /* ---------- 主要CTA (オレンジのまま Metal ボタン化) ---------- */
+  .empty .demo-btn, .stock-add, .res-go, .btn-save, .serve-cue button, .hall-cue button {
+    border: 1px solid var(--sw-cta-edge);
+    border-radius: 0;
+    background: var(--sw-cta-grad);
+    box-shadow: inset 1px 1px 0 rgba(255,255,255,.35);
+    color: #FFFFFF;
+    font-family: var(--font-ui);
+    transition: none;
+  }
+  .empty .demo-btn:hover, .stock-add:hover, .res-go:hover, .btn-save:hover,
+  .serve-cue button:not(.armed):hover, .hall-cue button:hover {
+    background: var(--sw-cta-grad);
+    border-color: #4D2000;
+  }
+  .empty .demo-btn:active, .stock-add:active, .res-go:active, .btn-save:active,
+  .serve-cue button:active, .hall-cue button:active {
+    background: var(--sw-cta-grad-pressed);
+    box-shadow: inset 1px 1px 2px rgba(0,0,0,.3);
+    transform: none;
+  }
+  /* 提供済み・取消待ちは従来の淡い表示を保つ (上の .served / .armed 定義を活かす) */
+  .serve-cue.served button { background: var(--sw-grad); border-color: var(--sw-s1); color: var(--text-secondary); box-shadow: inset 1px 1px 0 #FFFFFF; }
+  .serve-cue button.armed { background: var(--cta-soft); border-color: var(--cta); color: var(--cta); }
+
+  /* ---------- ヘッダー = JMenuBar 風の帯 + 左端にツールバーのつまみ ---------- */
+  header {
+    background: var(--sw-menubar);
+    color: #000000;
+    border-bottom: 1px solid var(--sw-s1);
+    box-shadow: 0 1px 0 #FFFFFF;
+    gap: 12px;
+  }
+  header::before {
+    content: "";
+    order: -2;
+    flex: 0 0 8px;
+    align-self: stretch;
+    margin: 10px -2px 10px -4px;
+    background: var(--sw-bumps) 0 0 / 4px 4px repeat;
+  }
+  .clock { color: #000000; font-weight: 700; }
+  .clock .sec { color: var(--text-secondary); }
+  .brand .mark { color: #1A1A1A; }
+  .mode-switch, .hall-proto-switch {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    overflow: visible;
+  }
+  .mode-btn { color: #000000; font-weight: 700; }
+  .mode-btn + .mode-btn, .hall-proto-btn + .hall-proto-btn { border-left: 1px solid var(--sw-s1); margin-left: -1px; }
+  .hall-proto-btn:first-child { border-left: 1px solid var(--sw-s1); }
+  .order-sound-btn, .head-toggle { border-radius: 0; font-weight: 700; }
+  .storage-warn { border: 1px solid #8E1D17; }
+
+  /* ---------- HUD・同期状態 = ツールバー + 窪んだ表示枠 ---------- */
+  .hud, .sync-status {
+    background: var(--sw-control);
+    border-bottom: 1px solid var(--sw-s1);
+    box-shadow: 0 1px 0 #FFFFFF;
+  }
+  .hud-stat, .sync-status-main, .sync-route, .lane-count, .hall-panel-head .count {
+    border: 1px solid var(--sw-s1);
+    border-radius: 0;
+    box-shadow: inset 1px 1px 0 var(--sw-p3), 1px 1px 0 #FFFFFF;
+  }
+  .hud-stat .k, .konro-hud .kh-label, .konro-label {
+    letter-spacing: 0;
+    text-transform: none;
+    color: #333333;
+    font-weight: 700;
+  }
+  .hud-stat.alert-on, .hud-stat.warn-on { box-shadow: inset 1px 1px 0 rgba(255,255,255,.35); }
+  .hud-sep { width: 2px; background: none; border-left: 1px solid var(--sw-s1); border-right: 1px solid #FFFFFF; }
+  .kh-cell {
+    border: 1px solid var(--sw-s1);
+    border-radius: 0;
+    background: var(--sw-grad);
+    box-shadow: inset 1px 1px 0 #FFFFFF;
+    color: #333333;
+  }
+  .kh-cell[data-state="white"] { background: var(--text-primary); box-shadow: none; }
+  .kh-cell[data-state="red"]   { background: var(--u-alert); box-shadow: none; }
+  .kh-cell[data-owner]::after { border-radius: 0; }
+  .sync-status-indicator { border-radius: 0; border: 1px solid rgba(0,0,0,.45); }
+  .sync-route[data-state="normal"], .sync-route[data-state="delayed"], .sync-route[data-state="offline"] { border-left-width: 4px; }
+
+  /* ---------- 盤面とカード = JDesktopPane 上の JInternalFrame ---------- */
+  main { background: var(--sw-control); }
+  .card {
+    border: 3px solid var(--sw-p3);
+    outline: 1px solid var(--sw-p1);
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .card.grabbed { box-shadow: 6px 6px 0 rgba(0,0,0,.25); }
+  .card.drop-target { outline: 3px solid var(--elapsed-ok); outline-offset: 2px; }
+  .card-banner {
+    background-image: var(--sw-gloss);
+    border-bottom: 1px solid rgba(0,0,0,.35);
+  }
+  /* タイトルバー: 卓番 → バンプ → 経過・人数・閉じるボタン (Metal の内部フレームと同じ並び) */
+  .card-banner .table-no { order: -1; margin-right: 0; }
+  .card-banner::before {
+    content: "";
+    flex: 1 1 auto;
+    min-width: 12px;
+    align-self: stretch;
+    margin: 6px 0;
+    background: var(--sw-bumps-tint) 0 0 / 4px 4px repeat;
+  }
+  .delete-btn { align-self: center; min-width: 44px; font-size: 18px; }
+  .delete-btn.armed { border-color: var(--u-alert); box-shadow: none; }
+  .type-underline { height: 5px; }
+  .card-sub { border-bottom: 1px solid var(--border-soft); box-shadow: 0 1px 0 rgba(255,255,255,.7); }
+  .badge-type { font-family: var(--font-ui); font-weight: 700; }
+  .card.new .badge-type { border-radius: 0; }
+  .slip-btn, .lock-btn, .table-override-btn { font-weight: 700; padding: 0 8px; }
+  .slip-btn.printed { border-color: var(--cta); color: var(--cta); }
+  .lock-btn[aria-pressed="true"] { background: var(--elapsed-warn); color: var(--on-u-warn); border-color: #8A5C00; box-shadow: inset 1px 1px 2px rgba(0,0,0,.25); }
+  .table-override-btn[data-overridden="true"] { background: var(--cta-soft); border-color: var(--cta); color: var(--cta); }
+
+  /* 品目 = JList の行 + JCheckBox */
+  .item { transition: none; }
+  .item:hover  { background: var(--sw-hover); }
+  .item:active { background: var(--sw-select); transform: none; }
+  .check {
+    border: 1px solid var(--sw-s1);
+    border-radius: 0;
+    background: var(--sw-grad);
+    box-shadow: inset 1px 1px 0 #FFFFFF;
+  }
+  .item.done .check {
+    background: var(--sw-grad);
+    border-color: var(--sw-s1);
+    color: #000000;
+  }
+  .item-qty { border-radius: 0; }
+
+  /* コンロ */
+  .konro { border-top: 1px solid var(--border-soft); }
+  .konro-toggle { border-style: solid; font-weight: 700; }
+  .konro.expanded .konro-toggle { background: var(--sw-grad-pressed); box-shadow: inset 1px 1px 2px rgba(0,0,0,.25); }
+  .konro-btn { color: #333333; }
+  .konro-btn[data-state="white"] { background: var(--text-primary); border-color: #000000; box-shadow: none; color: #FFFFFF; }
+  .konro-btn[data-state="red"]   { background: var(--u-alert); border-color: #8E1D17; box-shadow: none; color: #FFFFFF; }
+  .konro-btn[data-locked="true"] {
+    background: repeating-linear-gradient(-45deg, var(--bg-inset) 0 5px, var(--bg-raise) 5px 10px);
+    box-shadow: none;
+    color: var(--text-muted);
+  }
+  .konro-btn[data-locked="true"]::after, .konro-btn[data-taken]::after { border-radius: 0; }
+
+  /* 空状態 */
+  .empty .big { font-weight: 700; }
+
+  /* ---------- レーン表示 = タイトル付きパネル ---------- */
+  .lane { border: 1px solid var(--sw-s1); box-shadow: inset 1px 1px 0 #FFFFFF; background: var(--sw-control); }
+  .lane-head { border-bottom: 1px solid var(--sw-s1); background-image: var(--sw-gloss); font-weight: 700; }
+  .lane-count { background: #FFFFFF; }
+  .lane-item { border: 1px solid var(--sw-s1); border-left-width: 6px; transition: none; }
+  .lane-item:hover  { box-shadow: none; border-color: var(--sw-p1); background-image: linear-gradient(rgba(221,232,243,.6), rgba(221,232,243,.6)); }
+  .lane-item:active { transform: none; background-image: linear-gradient(rgba(184,207,229,.7), rgba(184,207,229,.7)); }
+  .lane-item.lvl-warn  { border-left-color: var(--elapsed-warn); }
+  .lane-item.lvl-alert { border-left-color: var(--elapsed-alert); }
+  .lane-table { border: 1px solid var(--sw-s1); background: #FFFFFF; }
+
+  /* ---------- 予約ストック = 右に並ぶ内部フレーム ---------- */
+  .stock { background: var(--sw-control); border-left: 1px solid var(--sw-s1); box-shadow: inset 1px 0 0 #FFFFFF; }
+  .stock-head, .hall-panel-head {
+    background: var(--sw-grad);
+    color: #000000;
+    border-bottom: 1px solid var(--sw-s1);
+  }
+  .stock-head::after, .hall-panel-head::after {
+    content: "";
+    order: 1;
+    flex: 1 1 auto;
+    min-width: 12px;
+    align-self: stretch;
+    margin: 14px 0;
+    background: var(--sw-bumps) 0 0 / 4px 4px repeat;
+  }
+  .hall-panel-head::after { margin: 10px 0; }
+  .stock-head .title, .hall-panel-head { color: #000000; font-weight: 700; }
+  .stock-head .count { color: #000000; border: 1px solid #7A5A12; border-radius: 0; }
+  .stock-add, .hall-stock-add { order: 2; margin-left: 0; }
+  .hall-panel-head .count { order: 2; margin-left: 0; background: #FFFFFF; color: #000000; }
+  .res-card {
+    border: 1px solid var(--sw-s1);
+    border-left: 5px solid var(--type-reserved-edge);
+    border-radius: 0;
+    box-shadow: inset 1px 1px 0 rgba(255,255,255,.8);
+  }
+  .res-card.soon { border-left-color: var(--u-warn); }
+  .res-card.late { border-left-color: var(--u-alert); }
+  .res-soon-badge { border-radius: 0; border: 1px solid rgba(0,0,0,.3); }
+  .res-menu { border-top: 1px solid var(--border-soft); }
+  .reservation-note, .order-note { border-radius: 0; }
+  /* 卓番ボタン = JComboBox (右端に ▼ の矢印ボタン) */
+  .res-seat { position: relative; padding-left: 6px; padding-right: 28px; white-space: nowrap; font-weight: 700; }
+  .res-seat::after {
+    content: "\25BC";
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    width: 22px;
+    display: grid; place-items: center;
+    border-left: 1px solid var(--sw-s1);
+    font-size: 11px;
+    color: #000000;
+  }
+  /* 予約ストックが 280px に縮む中幅では卓番ボタンが約60pxしかなく、矢印を出すと「卓番」と重なる */
+  @media (min-width: 761px) and (max-width: 1100px) {
+    .res-seat { padding-left: 4px; padding-right: 4px; }
+    .res-seat::after { display: none; }
+  }
+  .res-del:hover { color: #FFFFFF; background: var(--u-alert); border-color: #8E1D17; box-shadow: none; }
+
+  /* ---------- 並べ替えバー・トースト ---------- */
+  .reorder-bar {
+    border: 1px solid var(--sw-s1);
+    border-radius: 0;
+    background: var(--sw-menubar);
+    box-shadow: var(--sh-pop);
+  }
+  .reorder-bar .msg { font-weight: 700; }
+  .reorder-bar button.confirm { border-color: var(--u-ok); color: var(--u-ok); }
+  /* トースト = JToolTip (Ocean: primary3 地 + primary1 枠) */
+  .toast {
+    background: var(--sw-p3);
+    color: #000000;
+    border: 1px solid var(--sw-p1);
+    border-radius: 0;
+    box-shadow: var(--sh-pop);
+    font-weight: 700;
+  }
+  .toast .undo-btn { border-width: 1px; font-weight: 700; }
+
+  /* ---------- ダイアログ = JDialog (枠 + タイトルバー) ---------- */
+  .modal-backdrop, .slip-backdrop, .seat-backdrop, .table-override-confirm-backdrop { background: rgba(40,48,58,.45); }
+  .modal, .seat-dial, .table-override-confirm {
+    border: 4px solid var(--sw-p3);
+    outline: 1px solid var(--sw-p1);
+    border-radius: 0;
+    background: var(--sw-control);
+    box-shadow: var(--sh-pop);
+    padding: 0 16px 16px;
+  }
+  .modal h2, .table-override-confirm h2, .seat-dial::before {
+    display: block;
+    margin: 0 -16px 14px;
+    padding: 8px 12px;
+    /* 左半分 = 題名の地 / 右半分 = バンプ (内側余白の中だけに敷く) / 全体 = Ocean グラデーション */
+    background-image: var(--sw-grad), var(--sw-bumps), var(--sw-grad);
+    background-size: 55% 100%, 4px 4px, 100% 100%;
+    background-repeat: no-repeat, repeat, no-repeat;
+    background-position: 0 0, 0 0, 0 0;
+    background-origin: border-box, content-box, border-box;
+    background-clip: border-box, content-box, border-box;
+    border-bottom: 1px solid var(--sw-s1);
+    color: #000000;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .seat-dial::before { content: "卓番を選択"; }
+  .table-override-confirm { border-color: var(--u-warn); }
+  .table-override-confirm p { font-weight: 400; }
+  .field label { letter-spacing: 0; text-transform: none; color: #000000; font-size: 14px; font-weight: 400; }
+  /* JTextField = Flush3D 枠 */
+  .field input[type="time"], .field input[type="text"], .field input[type="number"],
+  .menu-pick .row input[type="number"], .seat-dial-display {
+    border: 1px solid var(--sw-s1);
+    border-radius: 0;
+    background: #FFFFFF;
+    box-shadow: inset 1px 1px 0 var(--sw-p3), 1px 1px 0 #FFFFFF;
+    font-weight: 400;
+  }
+  .seat-dial-display { font-weight: 700; }
+  .menu-pick { border: 1px solid var(--sw-s1); background: #FFFFFF; box-shadow: 1px 1px 0 #FFFFFF; }
+  .menu-pick .row:hover { background: var(--sw-hover); }
+  .menu-pick .row label { font-weight: 400; }
+  .menu-pick .row input[type="checkbox"] { accent-color: var(--sw-p1); }
+  .modal-actions button { font-weight: 700; }
+  .seat-dial-btn { font-weight: 700; }
+
+  /* ---------- ホール表示案 (#155) のパネル ---------- */
+  .hall-panel { border: 1px solid var(--sw-s1); box-shadow: inset 1px 1px 0 #FFFFFF; background: var(--sw-control); }
+  .hall-order-card, .hall-ready-card, .hall-stock-card { border-color: var(--sw-s1); }
+  .hall-cue, .serve-cue { border-radius: 0; }
+
 </style>
 </head>
 <body class="is-empty">
