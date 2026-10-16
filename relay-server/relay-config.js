@@ -45,6 +45,8 @@ function createConfig(env, options) {
     tlsKeyFile: tls.key,
     // 仕様書 §17 の時間差モック注文。実注文と混ざるため、店舗運用では有効にしない
     mockOrderScenario: normalizeMockOrderScenario(src.MOCK_ORDER_SCENARIO),
+    // 通信フロー・シミュレーター (/sim)。環境変数 SIMULATOR=1 のときだけ有効。config.json のキーは設けない
+    simulator: src.SIMULATOR === "1",
   };
 }
 

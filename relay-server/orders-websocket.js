@@ -5,7 +5,12 @@ const auth = require("./auth");
 const intake = require("./order-intake");
 
 // HTTP と同じメモリ状態を配信する。履歴は保持せず再接続時に全件を渡す。
-function attachOrdersWebSocket(server, orders, config, log) {
+// hooks はシミュレーター用の任意の通知口 (open/send/recv/close)。未指定なら従来どおり何もしない。
+function attachOrdersWebSocket(server, orders, config, log, hooks) {
+  function notify(name, ...args) {
+    if (!hooks || typeof hooks[name] !== "function") return;
+    try { hooks[name](...args); } catch (_) {}
+  }
   let WebSocketServer;
   try { WebSocketServer = require("ws").WebSocketServer; }
   catch (err) {
@@ -35,6 +40,7 @@ function attachOrdersWebSocket(server, orders, config, log) {
     sequence++;
     const data = message(type, body);
     wss.clients.forEach(client => send(client, data));
+    notify("send", type, data, wss.clients.size);
   }
   function refresh() {
     const feed = intake.toFeed(orders, Date.now(), config.orderTtlMs);
@@ -66,6 +72,9 @@ function attachOrdersWebSocket(server, orders, config, log) {
     wss.handleUpgrade(req, socket, head, client => {
       client.on("error", () => client.terminate());
       client.alive = true;
+      client.simOrigin = origin.host;
+      notify("open", client.simOrigin);
+      client.on("close", () => notify("close", client.simOrigin));
       client.on("pong", () => { client.alive = true; });
       // この経路は配信専用。注文の書込みは検証済みHTTP APIに限定し、受け付けるのは受信確認だけ。
       // ACKは再送に使わず、/api/health で端末の追従状況を確認するためだけに記録する (仕様書 §15)。
@@ -76,8 +85,11 @@ function attachOrdersWebSocket(server, orders, config, log) {
             !Number.isSafeInteger(ack.sequence) || ack.sequence < 0 || ack.sequence > sequence) return;
         if (client.ackSequence === undefined || ack.sequence > client.ackSequence) client.ackSequence = ack.sequence;
         client.ackAt = new Date().toISOString();
+        notify("recv", ack, client.simOrigin);
       });
-      send(client, message("orders.snapshot", { orders: feed.map(wire) }));
+      const snapshot = message("orders.snapshot", { orders: feed.map(wire) });
+      send(client, snapshot);
+      notify("send", "orders.snapshot", snapshot, 1, client.simOrigin);
     });
   }
   server.on("upgrade", upgrade);

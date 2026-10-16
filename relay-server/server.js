@@ -45,6 +45,16 @@ var handleReservations = require("./routes/reservations").handleReservations;
 var createMailInbox = require("./mail-inbox").createMailInbox;
 var handleSeats = require("./routes/seats").handleSeats;
 var serveStatic = require("./routes/static").serveStatic;
+var orderIntake = require("./order-intake");
+var seatOccupancy = require("./seat-occupancy");
+var createSimTap = require("./sim-tap").createSimTap;
+
+// シミュレーター有効時だけ配信する画面 (リポジトリ直下)
+var SIMULATOR_PAGES = {
+  "/sim": "simulator.html",
+  "/sim/order": "sim-order-terminal.html",
+  "/order-client.js": "order-client.js",
+};
 
 var json = httpUtil.json;
 
@@ -98,10 +108,36 @@ function createRelay(options) {
     catch (err) { return httpUtil.text(res, 400, "bad request"); }
 
     var auditContext = authorize(req, res, url);
-    if (auditContext) route(req, res, url, auditContext);
+    if (!auditContext) return;
+    if (simTap) {
+      if (simTap.handle(req, res, url)) return;
+      simTap.wrap(req, res, url);
+    }
+    route(req, res, url, auditContext);
   });
 
-  var orderStream = attachOrdersWebSocket(server, orders, config, log);
+  // 通信フロー・シミュレーター。SIMULATOR=1 のときだけ作る (無効時は tap も /sim* も存在しない)
+  var simTap = config.simulator ? createSimTap({ log: log, state: simState }) : null;
+
+  var orderStream = attachOrdersWebSocket(server, orders, config, log, simTap ? simTap.wsHooks : undefined);
+
+  /** GET /sim/state の中身。各 GET API と同じ値を読めなければ null で返す */
+  function simState() {
+    var stock = null, seatList = null;
+    try { stock = reservations.stock(Date.now()); } catch (err) { stock = null; }
+    try {
+      seatList = seatOccupancy.toOccupiedSeats(reservations.todaySnapshot(), walkins, Date.now(),
+        config.seatBeforeMin, config.seatAfterMin, config.seatWalkinTtlMs);
+    } catch (err) { seatList = null; }
+    kitchen.purgeStale(kitchenState, Date.now(), config.kitchenTtlMs);
+    return {
+      orders: orderIntake.toFeed(orders, Date.now(), config.orderTtlMs),
+      kitchen: kitchen.snapshot(kitchenState),
+      stock: stock,
+      ordersStream: orderStream.stats(),
+      seats: seatList,
+    };
+  }
 
   /**
    * 共有トークン認証 (#174)。未設定なら素通し = 従来どおりの挙動。
@@ -197,7 +233,7 @@ function createRelay(options) {
 
     if (pathname === "/qr") return handleQrPage(res, config, req.headers && req.headers.host);
 
-    return serveStatic(res, url, root);
+    return serveStatic(res, url, root, simTap ? { extraPages: SIMULATOR_PAGES } : undefined);
   }
 
   function start() {
@@ -216,6 +252,7 @@ function createRelay(options) {
       log("KDS(デシャップ): " + baseUrl + "/  / 予約: /api/stock / 注文: /api/orders / 状態: /api/health");
       log("予約入力: " + baseUrl + "/reservations" +
         (mailInbox.enabled ? "  (メールの取込フォルダ: " + mailInbox.dir + ")" : ""));
+      if (config.simulator) log("シミュレーター: " + baseUrl + "/sim");
       if (config.authToken) {
         log("認証: 有効 (他端末は /qr のQR経由で開く。ミニPC自身は" +
           (config.authTrustLoopback ? "認証なしで開ける" : "トークンが必要") + ")");
@@ -237,6 +274,7 @@ function createRelay(options) {
   function stop() {
     if (mockOrderScenario) mockOrderScenario.stop();
     mockOrderScenario = null;
+    if (simTap) simTap.close();
     orderStream.close();
     started = false;
     return new Promise(function (resolve, reject) {
