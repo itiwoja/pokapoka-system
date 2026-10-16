@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>注文端末（シミュレーター用）</title>
+<style>
+  :root {
+    --bg-board:#E9ECEF; --bg-raise:#F4F5F7; --bg-inset:#DFE3E7;
+    --chrome:#1A1A1A; --chrome-2:#2A2E33; --on-chrome:#FFF; --on-chrome-dim:#B8BDC4;
+    --card:#FFF; --card-new:#DDECFA; --card-reserved:#FBECC0;
+    --text:#14161A; --text-2:#565B61; --text-muted:#868C94;
+    --border:#C2C7CD; --border-strong:#9098A0; --border-soft:#E2E5E9;
+    --ok:#1F7A3E; --warn:#B26A00; --ng:#C0392B; --accent:#2B6CB0;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; }
+  body { background:var(--bg-board); color:var(--text); font:14px/1.4 "Yu Gothic UI","Hiragino Sans","Meiryo",sans-serif; }
+  header { background:var(--chrome); color:var(--on-chrome); padding:8px 12px; position:sticky; top:0; z-index:5; }
+  header h1 { margin:0; font-size:15px; }
+  header small { color:var(--on-chrome-dim); font-size:11px; }
+  #lastComm { background:var(--chrome-2); color:var(--on-chrome); font:11px/1.3 ui-monospace,Consolas,monospace; padding:4px 12px; min-height:22px; word-break:break-all; }
+  main { padding:8px; display:flex; flex-direction:column; gap:8px; }
+  section { background:var(--card); border:1px solid var(--border); border-radius:6px; padding:8px; }
+  h2 { margin:0 0 6px; font-size:13px; color:var(--text-2); }
+  .row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  label { font-size:12px; color:var(--text-2); }
+  select,input[type=number],input[type=text] { font:inherit; padding:5px 6px; border:1px solid var(--border-strong); border-radius:4px; background:#fff; min-width:0; }
+  button { font:inherit; padding:6px 10px; border:1px solid var(--border-strong); border-radius:4px; background:var(--bg-raise); cursor:pointer; }
+  button:active { background:var(--bg-inset); }
+  button.primary { background:var(--chrome); color:#fff; border-color:var(--chrome); font-weight:bold; }
+  button.danger { color:var(--ng); border-color:var(--ng); }
+  button.sm { padding:2px 8px; font-size:12px; }
+  button:disabled { opacity:.45; cursor:default; }
+  #menu { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  #menu button { text-align:left; padding:8px; background:var(--card-new); border-color:#9FC0E0; min-height:44px; }
+  #menu button b { float:right; background:var(--chrome); color:#fff; border-radius:9px; padding:0 6px; font-size:11px; }
+  .cartline { border-top:1px solid var(--border-soft); padding:6px 0; }
+  .cartline:first-child { border-top:0; }
+  .cartline .nm { font-weight:bold; flex:1; }
+  .cartline input[type=text] { flex:1; font-size:12px; }
+  .qty { min-width:22px; text-align:center; font-weight:bold; }
+  .empty { color:var(--text-muted); font-size:12px; }
+  .order { border:1px solid var(--border); border-radius:5px; padding:6px; margin-bottom:6px; background:var(--bg-raise); }
+  .order.cancelled { opacity:.6; }
+  .oid { font:11px ui-monospace,Consolas,monospace; color:var(--text-2); word-break:break-all; }
+  .badge { display:inline-block; padding:0 7px; border-radius:9px; font-size:11px; font-weight:bold; color:#fff; }
+  .st-sending { background:var(--accent); } .st-sent { background:var(--ok); }
+  .st-pending { background:var(--warn); } .st-failed,.st-needs_review { background:var(--ng); }
+  .st-cancelled { background:var(--text-muted); }
+  .resp { font-size:11px; color:var(--text-2); }
+  .items { font-size:12px; margin:4px 0; }
+  .err { color:var(--ng); font-size:11px; }
+  .note { font-size:11px; color:var(--text-muted); margin:4px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>注文端末 <small>シミュレーター用の簡易版（通信は本物の order-client.js）</small></h1>
+</header>
+<div id="lastComm">（通信待ち）</div>
+<main>
+  <section>
+    <h2>卓・人数</h2>
+    <div class="row">
+      <label>卓番 <select id="table"></select></label>
+      <label>人数 <input id="people" type="number" min="0" max="99" value="2" style="width:60px"></label>
+    </div>
+  </section>
+
+  <section>
+    <h2>メニュー（タップで +1）</h2>
+    <div id="menu"></div>
+  </section>
+
+  <section>
+    <h2>カート</h2>
+    <div id="cart"></div>
+    <div class="row" style="margin-top:6px">
+      <button id="send" class="primary">送信</button>
+      <button id="clear">カートを空にする</button>
+    </div>
+    <div id="cartErr" class="err"></div>
+  </section>
+
+  <section>
+    <h2>送信済みの注文</h2>
+    <div id="orders"><span class="empty">まだ注文はありません</span></div>
+    <p class="note">「更新」は order-client が同じ orderId の内容変更を許さないため、fetch で直接 POST /api/orders します（サーバーは order.updated を配信）。</p>
+  </section>
+
+  <section>
+    <h2>不正な注文を送る（サーバーの 400 を見る）</h2>
+    <div class="row">
+      <select id="badKind">
+        <option value="noItems">品目が空</option>
+        <option value="badQty">数量が 0</option>
+        <option value="bigQty">数量が 100</option>
+        <option value="longTable">卓番が長すぎる（7文字）</option>
+        <option value="noName">品名が空</option>
+        <option value="longNote">メモが 201 文字</option>
+        <option value="badPeople">人数が 100</option>
+        <option value="badDate">orderedAt が不正</option>
+      </select>
+      <button id="sendBad" class="danger">不正注文を送る</button>
+    </div>
+    <div id="badResult" class="resp" style="margin-top:4px"></div>
+  </section>
+</main>
+
+<script src="/order-client.js"></script>
+<script>
+(function () {
+  "use strict";
+  var MENU = ["土鍋御膳", "うなぎ土鍋御膳", "山城牛の焼きすき土鍋御膳", "海老天ぷら", "山城牛のとろ煮",
+              "卵かけご飯セット", "ウーロン茶", "生ビール", "レモンサワー", "ハイボール（角）", "サイダー", "出汁米1合"];
+  var cart = [];            // {name, qty, note, allergies}
+  var ui = {};              // orderId -> {payload, serverStatus, cancelled, editing, msg}
+  var lastStatus = {};      // orderId -> 直近の HTTP ステータス（fetch ラッパーで記録）
+  var $ = function (id) { return document.getElementById(id); };
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function showComm(text) { $("lastComm").textContent = text; }
+  function clampInt(v, lo, hi, d) { v = parseInt(v, 10); return isNaN(v) ? d : Math.max(lo, Math.min(hi, v)); }
+
+  /* 本物の order-client の fetch を包み、HTTP ステータス(201/200)を画面に出す。order-client 本体は無改造 */
+  function tappedFetch(url, init) {
+    var oid = null;
+    try { oid = JSON.parse(init.body).orderId; } catch (_) {}
+    return fetch(url, init).then(function (res) {
+      if (oid) { lastStatus[oid] = res.status; }
+      showComm(init.method + " /api/orders → " + res.status + (oid ? "  (" + oid + ")" : ""));
+      return res;
+    }, function (err) {
+      showComm(init.method + " /api/orders → 通信失敗 (" + err.message + ")");
+      throw err;
+    });
+  }
+
+  var client = window.OrderClient.create({
+    endpoint: "/api/orders",
+    fetch: tappedFetch,
+    onChange: onRecord,
+    onError: function (e) { showComm("order-client エラー: " + e.message); }
+  });
+
+  function onRecord(rec) {
+    var u = ui[rec.orderId] || (ui[rec.orderId] = { payload: rec.payload });
+    u.rec = rec;
+    if (!u.editing) u.payload = u.payload || rec.payload;
+    if (lastStatus[rec.orderId] != null) u.serverStatus = lastStatus[rec.orderId];
+    renderOrders();
+  }
+
+  /* ---- 卓・メニュー ---- */
+  (function init() {
+    var sel = $("table"), html = "";
+    for (var i = 1; i <= 16; i++) html += '<option value="' + i + '">' + i + "</option>";
+    sel.innerHTML = html;
+    $("menu").innerHTML = MENU.map(function (n, i) {
+      return '<button data-menu="' + i + '">' + esc(n) + '<b data-badge="' + i + '" hidden></b></button>';
+    }).join("");
+    renderCart();
+  })();
+
+  $("menu").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-menu]"); if (!b) return;
+    addToCart(MENU[+b.getAttribute("data-menu")]);
+  });
+  function addToCart(name) {
+    var line = cart.filter(function (l) { return l.name === name; })[0];
+    if (line) line.qty = Math.min(99, line.qty + 1);
+    else cart.push({ name: name, qty: 1, note: "", allergies: "" });
+    renderCart();
+  }
+
+  function renderCart() {
+    $("cart").innerHTML = cart.length ? cart.map(function (l, i) {
+      return '<div class="cartline"><div class="row"><span class="nm">' + esc(l.name) + "</span>" +
+        '<button class="sm" data-dec="' + i + '">−</button><span class="qty">' + l.qty + "</span>" +
+        '<button class="sm" data-inc="' + i + '">＋</button></div>' +
+        '<div class="row" style="margin-top:4px"><input type="text" maxlength="200" placeholder="メモ" data-note="' + i + '" value="' + esc(l.note) + '">' +
+        '<input type="text" maxlength="200" placeholder="アレルギー" data-alg="' + i + '" value="' + esc(l.allergies) + '"></div></div>';
+    }).join("") : '<span class="empty">メニューをタップして追加</span>';
+    document.querySelectorAll("[data-badge]").forEach(function (el) {
+      var l = cart.filter(function (c) { return c.name === MENU[+el.getAttribute("data-badge")]; })[0];
+      el.hidden = !l; el.textContent = l ? l.qty : "";
+    });
+  }
+  $("cart").addEventListener("click", function (e) {
+    var t = e.target;
+    if (t.hasAttribute("data-inc")) { var l = cart[+t.getAttribute("data-inc")]; l.qty = Math.min(99, l.qty + 1); }
+    else if (t.hasAttribute("data-dec")) { var i = +t.getAttribute("data-dec"); if (--cart[i].qty < 1) cart.splice(i, 1); }
+    else return;
+    renderCart();
+  });
+  $("cart").addEventListener("input", function (e) {
+    var t = e.target;
+    if (t.hasAttribute("data-note")) cart[+t.getAttribute("data-note")].note = t.value;
+    else if (t.hasAttribute("data-alg")) cart[+t.getAttribute("data-alg")].allergies = t.value;
+  });
+  $("clear").addEventListener("click", function () { cart = []; $("cartErr").textContent = ""; renderCart(); });
+
+  function itemsPayload(lines) {
+    return lines.map(function (l) {
+      var it = { name: l.name, qty: l.qty };
+      if (l.note && l.note.trim()) it.note = l.note.trim().slice(0, 200);
+      if (l.allergies && l.allergies.trim()) it.allergies = l.allergies.trim().slice(0, 200);
+      return it;
+    });
+  }
+
+  /* ---- 送信（order-client 経由） ---- */
+  $("send").addEventListener("click", function () {
+    $("cartErr").textContent = "";
+    if (!cart.length) { $("cartErr").textContent = "カートが空です"; return; }
+    var table = $("table").value;
+    var payload = {
+      orderId: "T" + table + "-" + Date.now().toString(36),
+      table: table,
+      people: clampInt($("people").value, 0, 99, 0),
+      items: itemsPayload(cart)
+    };
+    client.submit(payload).then(function (id) {
+      ui[id] = ui[id] || {}; ui[id].payload = payload;
+      cart = []; renderCart();
+      showComm("order-client.submit → 送信キューに追加 (" + id + ")");
+    }, function (e) { $("cartErr").textContent = e.message; });
+  });
+
+  /* ---- 送信済み一覧 ---- */
+  var STATUS = { pending: "再送待ち", sending: "送信中", sent: "受付済み", failed: "失敗", needs_review: "要確認" };
+  function respLabel(code) {
+    if (code === 201) return "201 新規";
+    if (code === 200) return "200 重複・更新";
+    return code == null ? "—" : String(code);
+  }
+  function renderOrders() {
+    var ids = Object.keys(ui).filter(function (id) { return ui[id].rec; });
+    ids.sort(function (a, b) { return ui[b].rec.createdAt - ui[a].rec.createdAt; });
+    if (!ids.length) { $("orders").innerHTML = '<span class="empty">まだ注文はありません</span>'; return; }
+    $("orders").innerHTML = ids.map(function (id) {
+      var u = ui[id], r = u.rec, p = u.payload || r.payload;
+      var st = u.cancelled ? "cancelled" : r.status;
+      var label = u.cancelled ? "取消済み" : (STATUS[r.status] || r.status);
+      var html = '<div class="order' + (u.cancelled ? " cancelled" : "") + '"><div class="row">' +
+        '<span class="badge st-' + esc(st) + '">' + esc(label) + "</span><b>卓 " + esc(p.table) + "</b>" +
+        '<span class="resp">' + esc(p.people) + "名 / 応答 " + esc(respLabel(u.serverStatus)) + "</span></div>" +
+        '<div class="oid">' + esc(id) + "</div>";
+      if (r.retryCount) html += '<div class="resp">再送回数 ' + esc(r.retryCount) + "</div>";
+      if (r.error) html += '<div class="err">' + esc(r.error) + "</div>";
+      if (u.msg) html += '<div class="resp">' + esc(u.msg) + "</div>";
+      if (u.editing) {
+        html += u.editing.map(function (l, i) {
+          return '<div class="row items"><span style="flex:1">' + esc(l.name) + "</span>" +
+            '<button class="sm" data-edec="' + esc(id) + "|" + i + '">−</button><span class="qty">' + l.qty + "</span>" +
+            '<button class="sm" data-einc="' + esc(id) + "|" + i + '">＋</button></div>';
+        }).join("") +
+          '<div class="row"><button class="primary sm" data-doupd="' + esc(id) + '">更新を送信</button>' +
+          '<button class="sm" data-canceledit="' + esc(id) + '">やめる</button></div>';
+      } else {
+        html += '<div class="items">' + p.items.map(function (l) {
+          return esc(l.name) + " ×" + esc(l.qty) + (l.note ? "（" + esc(l.note) + "）" : "") +
+            (l.allergies ? " ⚠" + esc(l.allergies) : "");
+        }).join("<br>") + "</div>";
+        var canAct = !u.cancelled && r.status !== "pending" && r.status !== "sending";
+        html += '<div class="row"><button class="sm" data-edit="' + esc(id) + '"' + (canAct ? "" : " disabled") + ">数量を変えて更新</button>" +
+          '<button class="sm danger" data-cancel="' + esc(id) + '"' + (canAct ? "" : " disabled") + ">取消</button></div>";
+      }
+      return html + "</div>";
+    }).join("");
+  }
+
+  $("orders").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    var a = function (n) { return b.getAttribute(n); };
+    var id, u;
+    if ((id = a("data-edit"))) {
+      u = ui[id]; u.editing = JSON.parse(JSON.stringify(u.payload.items)); u.msg = ""; renderOrders();
+    } else if ((id = a("data-canceledit"))) {
+      ui[id].editing = null; renderOrders();
+    } else if (a("data-einc") || a("data-edec")) {
+      var v = (a("data-einc") || a("data-edec")).split("|"), line = ui[v[0]].editing[+v[1]];
+      line.qty = a("data-einc") ? Math.min(99, line.qty + 1) : Math.max(1, line.qty - 1);
+      renderOrders();
+    } else if ((id = a("data-doupd"))) {
+      doUpdate(id);
+    } else if ((id = a("data-cancel"))) {
+      doCancel(id);
+    }
+  });
+
+  function doUpdate(id) {
+    var u = ui[id], payload = JSON.parse(JSON.stringify(u.payload));
+    payload.items = u.editing;
+    fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+      .then(function (res) {
+        showComm("POST /api/orders → " + res.status + "  (更新 " + id + ")");
+        u.serverStatus = res.status;
+        if (res.status === 200 || res.status === 201) { u.payload = payload; u.msg = "更新を送信しました"; }
+        else u.msg = "更新に失敗 (HTTP " + res.status + ")";
+        u.editing = null; renderOrders();
+      }, function (err) {
+        showComm("POST /api/orders → 通信失敗 (" + err.message + ")");
+        u.msg = "更新の通信に失敗: " + err.message; renderOrders();
+      });
+  }
+
+  function doCancel(id) {
+    var u = ui[id];
+    fetch("/api/orders/" + encodeURIComponent(id), { method: "DELETE" }).then(function (res) {
+      showComm("DELETE /api/orders/" + id + " → " + res.status);
+      u.serverStatus = res.status;
+      if (res.ok) { u.cancelled = true; u.msg = "取消しました"; }
+      else u.msg = "取消に失敗 (HTTP " + res.status + ")";
+      renderOrders();
+    }, function (err) {
+      showComm("DELETE /api/orders/" + id + " → 通信失敗 (" + err.message + ")");
+      u.msg = "取消の通信に失敗: " + err.message; renderOrders();
+    });
+  }
+
+  /* ---- 不正な注文（わざと範囲外を直接 fetch。order-client は経由しない） ---- */
+  $("sendBad").addEventListener("click", function () {
+    var kind = $("badKind").value;
+    var p = { orderId: "BAD-" + Date.now().toString(36), table: "1", people: 2, items: [{ name: "土鍋御膳", qty: 1 }] };
+    if (kind === "noItems") p.items = [];
+    else if (kind === "badQty") p.items[0].qty = 0;
+    else if (kind === "bigQty") p.items[0].qty = 100;
+    else if (kind === "longTable") p.table = "1234567";
+    else if (kind === "noName") p.items[0].name = "";
+    else if (kind === "longNote") p.items[0].note = new Array(202).join("あ");
+    else if (kind === "badPeople") p.people = 100;
+    else if (kind === "badDate") p.orderedAt = "いつか";
+    fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) })
+      .then(function (res) {
+        return res.text().then(function (t) {
+          showComm("POST /api/orders → " + res.status + "  (不正注文)");
+          $("badResult").textContent = "HTTP " + res.status + " " + t.slice(0, 300);
+        });
+      }, function (err) { $("badResult").textContent = "通信失敗: " + err.message; });
+  });
+
+  client.start();
+  client.list().then(function (recs) {
+    recs.forEach(function (r) { if (!ui[r.orderId]) onRecord(r); });
+  }).catch(function (e) { showComm("保存領域を読めません: " + e.message); });
+})();
+</script>
+</body>
+</html>

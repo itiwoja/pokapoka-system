@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>通信フロー・シミュレーター</title>
+<style>
+:root {
+  --bg-board:#E9ECEF; --bg-raise:#F4F5F7; --bg-inset:#DFE3E7;
+  --chrome:#1A1A1A; --chrome-line:#3A3F45; --on-chrome:#fff; --on-chrome-dim:#B8BDC4;
+  --card:#fff; --text:#14161A; --text-2:#565B61; --text-3:#868C94;
+  --border:#C2C7CD; --border-soft:#E2E5E9;
+  --c-order:#2A6A8C; --c-kitchen:#C25200; --c-reserve:#6E5300; --c-other:#868C94; --c-ws:#178235;
+  --ok:#178235; --warn:#F2A100; --alert:#D62F26;
+  --flash:#FFE9A8;
+  --font:"Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo","Noto Sans CJK JP",system-ui,sans-serif;
+  --mono:ui-monospace,Consolas,"SFMono-Regular",Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:var(--font);background:var(--bg-board);color:var(--text);font-size:13px;display:flex;flex-direction:column;overflow:hidden}
+header{background:var(--chrome);color:var(--on-chrome);display:flex;align-items:center;gap:14px;padding:6px 12px;flex-wrap:wrap;box-shadow:0 2px 0 rgba(0,0,0,.35)}
+header h1{font-size:15px;margin:0;font-weight:700}
+header label{font-size:12px;color:var(--on-chrome-dim);display:flex;align-items:center;gap:4px;cursor:pointer}
+header .note{font-size:11px;color:var(--on-chrome-dim)}
+.sse{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:2px 8px;border-radius:10px;background:#2b2f34}
+.sse i{width:9px;height:9px;border-radius:50%;background:var(--warn);display:inline-block}
+.sse.on i{background:#3ec46d}.sse.off i{background:var(--alert)}
+.spacer{flex:1}
+details.hint{background:var(--bg-raise);border-bottom:1px solid var(--border);padding:3px 12px;font-size:12px}
+details.hint summary{cursor:pointer;color:var(--text-2)}
+details.hint ol{margin:4px 0 2px 18px;padding:0;line-height:1.6}
+main{flex:1;min-height:0;position:relative;display:grid;grid-template-columns:minmax(240px,300px) minmax(360px,1fr) minmax(380px,1.35fr);gap:8px;padding:8px}
+.lane{background:var(--card);border:1px solid var(--border);border-radius:6px;display:flex;flex-direction:column;min-height:0;min-width:0;box-shadow:0 1px 2px rgba(16,18,22,.1)}
+.lane>h2{margin:0;font-size:12px;padding:5px 8px;background:var(--bg-raise);border-bottom:1px solid var(--border-soft);border-radius:6px 6px 0 0;display:flex;align-items:center;gap:6px;color:var(--text-2)}
+.lane>h2 b{color:var(--text);font-size:13px}
+.frame-box{flex:1;min-height:0;position:relative;overflow:hidden;background:var(--bg-inset)}
+.frame-box iframe{position:absolute;left:0;top:0;border:0;background:#fff;transform-origin:0 0}
+#order-box iframe{width:100%;height:100%}
+.mock-ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-3);font-size:12px;text-align:center;padding:10px}
+#kds-col{display:flex;flex-direction:column;gap:8px;min-height:0;min-width:0}
+#kds-col .lane{flex:1}
+#kds2-lane{display:none}
+body.two #kds2-lane{display:flex}
+.disabled-msg{font-size:11px;color:var(--text-2);padding:4px 8px;background:var(--cta-soft,#FDE9D6)}
+/* server column */
+#server-col{display:flex;flex-direction:column;gap:8px;min-height:0;min-width:0}
+#state-lane{flex:0 0 auto;max-height:38%}
+#state-body{padding:6px 8px;overflow:auto;display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px}
+#state-body section{min-width:0}
+#state-body h3{margin:0 0 2px;font-size:11px;color:var(--text-2)}
+#state-body ul{margin:0;padding:0;list-style:none;max-height:90px;overflow:auto}
+#state-body li{padding:1px 3px;border-radius:3px}
+.kv{display:flex;justify-content:space-between;gap:6px;padding:1px 3px;border-radius:3px}
+.kv b{font-variant-numeric:tabular-nums}
+.flash{animation:flash 1.2s ease-out}
+@keyframes flash{from{background:var(--flash)}to{background:transparent}}
+#log-lane{flex:1}
+.log-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:4px 8px;border-bottom:1px solid var(--border-soft);font-size:11px}
+.log-bar select,.log-bar button{font:inherit;font-size:11px;padding:1px 4px}
+.log-bar label{display:flex;align-items:center;gap:3px;cursor:pointer}
+button{cursor:pointer}
+#omitted{font-size:11px;color:var(--text-3);padding:2px 8px}
+#log{flex:1;min-height:0;overflow:auto;font-size:12px}
+.row{display:grid;grid-template-columns:62px 150px 1fr;gap:2px 6px;padding:3px 8px 3px 6px;border-bottom:1px solid var(--border-hair,#ECEEF1);cursor:pointer;border-left:4px solid var(--c-other);align-items:baseline}
+.row:hover{background:var(--bg-raise)}
+.row.sel{background:#FFF4D6}
+.row.new{animation:flash 1.2s ease-out}
+.row .t{color:var(--text-3);font-variant-numeric:tabular-nums}
+.row .dir{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-2)}
+.row .mp{font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .sm{grid-column:2/4;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st{display:inline-block;padding:0 5px;border-radius:8px;font-size:11px;background:var(--bg-inset);margin-left:6px}
+.st.bad{background:var(--alert);color:#fff}
+.k-order{border-left-color:var(--c-order)}.k-kitchen{border-left-color:var(--c-kitchen)}.k-reserve{border-left-color:var(--c-reserve)}.k-other{border-left-color:var(--c-other)}
+#detail{flex:0 0 auto;height:34%;min-height:90px;border-top:2px solid var(--border);display:none;flex-direction:column}
+#detail.open{display:flex}
+#detail .dh{display:flex;gap:8px;align-items:center;padding:3px 8px;background:var(--bg-raise);font-size:11px}
+#detail .db{flex:1;overflow:auto;display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px 8px}
+#detail pre{margin:0;font-family:var(--mono);font-size:11px;white-space:pre-wrap;word-break:break-all;background:var(--bg-raise);padding:4px;border-radius:4px}
+#detail h4{margin:0 0 2px;font-size:11px;color:var(--text-2)}
+/* packet overlay */
+#overlay{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:50}
+.pk{position:absolute;left:0;top:0;padding:1px 6px;border-radius:9px;color:#fff;font-size:11px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.3);will-change:transform}
+.pk.resp{opacity:.85;border:2px dashed rgba(255,255,255,.8)}
+.legend{display:flex;gap:8px;font-size:11px;color:var(--on-chrome-dim)}
+.legend span::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3px;background:var(--c)}
+@media (prefers-reduced-motion:reduce){.flash,.row.new{animation:none}.row.new{background:var(--flash)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>通信フロー・シミュレーター</h1>
+  <span class="sse" id="sse"><i></i><span id="sse-t">接続中</span></span>
+  <span class="legend">
+    <span style="--c:var(--c-order)">注文</span><span style="--c:var(--c-kitchen)">厨房操作</span><span style="--c:var(--c-reserve)">予約</span><span style="--c:var(--c-other)">死活/その他</span>
+  </span>
+  <span class="spacer"></span>
+  <label><input type="checkbox" id="poll-show">ポーリングを表示</label>
+  <label><input type="checkbox" id="kds2-toggle">2台目KDSを追加</label>
+  <span class="note" id="kds2-note">2台目は別オリジン(localhost/127.0.0.1)で開き、本当に別端末としてサーバー経由で同期させます。</span>
+</header>
+<details class="hint">
+  <summary>使い方ヒント</summary>
+  <ol>
+    <li>注文端末で注文を送る → POST /api/orders を中央のサーバーが受け、WebSocket(/ws/orders)でデシャップへ配信（order.created）。</li>
+    <li>デシャップで品目をタップ → POST /api/kitchen-state。サーバーの厨房状態の rev が進む。</li>
+    <li>他の KDS は GET /api/kitchen-state（1.5秒毎）のポーリングで取り込む。注文は GET /api/orders（2秒毎）、予約ストックは /api/stock（5秒毎）。</li>
+    <li>KDS は配信を受けるたび WS で orders.ack を返す。状態パネルの「最新まで受信確認した端末数」で確認できる。</li>
+    <li>変化のないポーリングは既定で省略。「ポーリングを表示」で全て見える。</li>
+  </ol>
+</details>
+<main id="main">
+  <section class="lane" data-lane="order" id="order-lane">
+    <h2><b>注文端末</b> <span>/sim/order</span></h2>
+    <div class="frame-box" id="order-box"></div>
+  </section>
+  <div id="server-col">
+    <section class="lane" data-lane="server" id="state-lane">
+      <h2><b>中継サーバー</b> <span>メモリ上の状態</span></h2>
+      <div id="state-body"><span style="color:var(--text-3)">状態を取得中…</span></div>
+    </section>
+    <section class="lane" id="log-lane">
+      <h2><b>通信ログ</b> <span id="log-count"></span></h2>
+      <div class="log-bar">
+        <label>端末 <select id="f-dev"><option value="">すべて</option><option value="order">注文端末</option><option value="deshap">デシャップ</option><option value="kds2">2台目</option></select></label>
+        <label>種類 <select id="f-kind"><option value="">すべて</option><option value="order">注文</option><option value="kitchen">厨房操作</option><option value="reserve">予約</option><option value="ws">WS</option><option value="other">その他</option></select></label>
+        <button id="b-pause">一時停止</button>
+        <button id="b-clear">クリア</button>
+      </div>
+      <div id="omitted"></div>
+      <div id="log"></div>
+      <div id="detail">
+        <div class="dh"><b id="d-title"></b><span class="spacer"></span><button id="d-copy">コピー</button><button id="d-close">閉じる</button></div>
+        <div class="db"><div><h4>request</h4><pre id="d-req"></pre></div><div><h4>response</h4><pre id="d-res"></pre></div></div>
+      </div>
+    </section>
+  </div>
+  <div id="kds-col">
+    <section class="lane" data-lane="deshap" id="deshap-lane">
+      <h2><b>デシャップ KDS</b> <span>/?simClient=deshap</span></h2>
+      <div class="frame-box" id="deshap-box"></div>
+    </section>
+    <section class="lane" data-lane="kds2" id="kds2-lane">
+      <h2><b>2台目 KDS</b> <span id="kds2-origin"></span></h2>
+      <div class="frame-box" id="kds2-box"></div>
+    </section>
+  </div>
+  <div id="overlay"></div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var MOCK = /[?&]mock=1\b/.test(location.search);
+  var MAX_LOG = 500;
+  var KDS_W = 1280, KDS_H = 800;
+  var $ = function (id) { return document.getElementById(id); };
+  var reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function esc(v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function pad(n) { return n < 10 ? "0" + n : "" + n; }
+  function timeOf(iso) {
+    var d = new Date(iso); if (isNaN(d)) return "--:--:--";
+    return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+  }
+
+  /* ---------- オリジン（2台目は別オリジン） ---------- */
+  var host = location.hostname;
+  var kds2Origin = null;
+  if (host === "localhost") kds2Origin = location.protocol + "//127.0.0.1" + (location.port ? ":" + location.port : "");
+  else if (host === "127.0.0.1") kds2Origin = location.protocol + "//localhost" + (location.port ? ":" + location.port : "");
+  var kds2Host = kds2Origin ? kds2Origin.replace(/^[a-z]+:\/\//, "") : null;
+
+  var LABEL = { order: "注文端末", deshap: "デシャップ", kds2: "2台目KDS", unknown: "不明な端末", server: "サーバー" };
+  function deviceOf(ev) {
+    if (ev.client === "order" || ev.client === "deshap" || ev.client === "kds2") return ev.client;
+    if (ev.kind && ev.kind.indexOf("ws-") === 0 && ev.origin) {
+      if (ev.origin === location.host) return "deshap";
+      if (kds2Host && ev.origin === kds2Host) return "kds2";
+      return "unknown";
+    }
+    return null;
+  }
+
+  /* ---------- iframe 配置 ---------- */
+  var frames = {};
+  function makeFrame(boxId, src, name) {
+    var box = $(boxId);
+    if (MOCK) {
+      box.innerHTML = '<div class="mock-ph">モックモード: ' + esc(name) + ' の画面はここに表示されます<br>(iframe は読み込みません)</div>';
+      return;
+    }
+    var f = document.createElement("iframe");
+    f.src = src; f.title = name;
+    box.appendChild(f);
+    frames[boxId] = f;
+  }
+  makeFrame("order-box", "/sim/order?simClient=order", "注文端末");
+  makeFrame("deshap-box", "/?simClient=deshap", "デシャップ KDS");
+
+  function fitFrames() {
+    ["deshap-box", "kds2-box"].forEach(function (id) {
+      var f = frames[id]; if (!f) return;
+      var box = $(id), w = box.clientWidth, h = box.clientHeight;
+      if (!w || !h) return;
+      // 縮尺は KDS を最低 1280×800 で描ける値にし、余った分は描画領域を広げて枠いっぱいに使う
+      var s = Math.min(w / KDS_W, h / KDS_H);
+      f.style.width = Math.round(w / s) + "px"; f.style.height = Math.round(h / s) + "px";
+      f.style.transform = "scale(" + s + ")";
+    });
+  }
+  window.addEventListener("resize", fitFrames);
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(fitFrames);
+    ro.observe($("deshap-box")); ro.observe($("kds2-box"));
+  }
+
+  /* ---------- 2台目トグル ---------- */
+  var kds2On = false;
+  var tg = $("kds2-toggle");
+  if (!kds2Origin) {
+    tg.disabled = true;
+    $("kds2-note").textContent = "2台目は localhost/127.0.0.1 で開いたときだけ使えます";
+  }
+  tg.addEventListener("change", function () {
+    kds2On = tg.checked;
+    document.body.classList.toggle("two", kds2On);
+    if (kds2On && !MOCK && !frames["kds2-box"]) {
+      makeFrame("kds2-box", kds2Origin + "/?simClient=kds2", "2台目 KDS");
+      $("kds2-origin").textContent = kds2Origin + "/?simClient=kds2";
+    }
+    if (kds2On && MOCK) { makeFrame("kds2-box", "", "2台目 KDS"); $("kds2-origin").textContent = kds2Origin || ""; }
+    setTimeout(fitFrames, 0);
+  });
+
+  /* ---------- 分類 ---------- */
+  function wsType(ev) {
+    var m = ev.response;
+    if (m && typeof m === "object" && typeof m.type === "string") return m.type;
+    return "";
+  }
+  function colorCat(ev) {
+    var p = ev.path || "";
+    if (ev.kind && ev.kind.indexOf("ws-") === 0) {
+      var t = wsType(ev);
+      if (/^order[s.]/.test(t) && t !== "orders.ack") return "order";
+      return "other";
+    }
+    if (p.indexOf("/api/orders") === 0) return "order";
+    if (p.indexOf("/api/kitchen-state") === 0) return "kitchen";
+    if (p.indexOf("/api/stock") === 0 || p.indexOf("/api/seats") === 0) return "reserve";
+    return "other";
+  }
+  function filterCat(ev) {
+    if (ev.kind && ev.kind.indexOf("ws-") === 0) return "ws";
+    return colorCat(ev);
+  }
+  var COLOR = { order: "#2A6A8C", kitchen: "#C25200", reserve: "#8a6a00", other: "#868C94" };
+  function isPoll(ev) {
+    return ev.kind === "http" && ev.method === "GET" && ev.changed === false;
+  }
+
+  /* ---------- パケットアニメーション ---------- */
+  var overlay = $("overlay");
+  var inFlight = 0;
+  function laneEl(name) {
+    if (name === "server") return $("state-lane");
+    if (name === "order") return $("order-lane");
+    if (name === "deshap") return $("deshap-lane");
+    if (name === "kds2") return kds2On ? $("kds2-lane") : null;
+    return null;
+  }
+  function center(el) {
+    var o = overlay.getBoundingClientRect(), r = el.getBoundingClientRect();
+    return { x: r.left - o.left + r.width / 2, y: r.top - o.top + Math.min(r.height / 2, 120) };
+  }
+  function fly(fromName, toName, text, color, delay, resp) {
+    if (reduceMotion || document.hidden) return;
+    var a = laneEl(fromName), b = laneEl(toName);
+    if (!a || !b || inFlight > 60) return;
+    var pa = center(a), pb = center(b);
+    // 列をまたぐ点が見えるよう、サーバー側は列の内側へ寄せる
+    var el = document.createElement("div");
+    el.className = "pk" + (resp ? " resp" : "");
+    el.style.background = color;
+    el.textContent = text;
+    el.style.opacity = "0";
+    overlay.appendChild(el);
+    inFlight++;
+    var jitter = (Math.random() - 0.5) * 30;
+    var from = "translate(" + pa.x + "px," + (pa.y + jitter) + "px)";
+    var to = "translate(" + pb.x + "px," + (pb.y + jitter) + "px)";
+    var anim = el.animate
+      ? el.animate([{ transform: from, opacity: 0 }, { transform: from, opacity: 1, offset: .1 }, { transform: to, opacity: 1, offset: .9 }, { transform: to, opacity: 0 }],
+          { duration: 900, delay: delay, easing: "ease-in-out", fill: "both" })
+      : null;
+    function done() { if (el.parentNode) el.parentNode.removeChild(el); inFlight--; }
+    if (anim) anim.onfinish = done; else done();
+  }
+  function shortLabel(ev) {
+    if (ev.kind === "http") return (ev.method || "") + " " + (ev.path || "");
+    var t = wsType(ev);
+    return "WS " + (t || ev.path || "");
+  }
+  function animate(ev) {
+    var col = COLOR[colorCat(ev)];
+    var dev = deviceOf(ev);
+    var txt = shortLabel(ev);
+    if (ev.kind === "ws-send" && ev.origin) {
+      // 接続直後の orders.snapshot は、つないできた1台だけへ送る
+      if (dev && dev !== "unknown") fly("server", dev, txt, col, 0, false);
+    } else if (ev.kind === "ws-send") {
+      fly("server", "deshap", txt, col, 0, false);
+      if (kds2On) fly("server", "kds2", txt, col, 0, false);
+    } else if (ev.kind === "http") {
+      if (!dev || dev === "unknown") return;
+      fly(dev, "server", txt, col, 0, false);
+      fly("server", dev, ev.status != null ? String(ev.status) : "応答", col, 450, true);
+    } else {
+      // ws-open / ws-recv / ws-close
+      var d = dev && dev !== "unknown" ? dev : "deshap";
+      fly(d, "server", txt, ev.kind === "ws-close" ? "#868C94" : col, 0, false);
+    }
+  }
+
+  /* ---------- ログ ---------- */
+  var events = [];            // 古い→新しい
+  var seen = {};              // id -> true
+  var paused = false, pausedBuf = [];
+  var selectedId = null;
+  var omitted = 0;
+  var renderQueued = false;
+  var newIds = {};
+
+  function resetLog() { events = []; seen = {}; pausedBuf = []; newIds = {}; omitted = 0; }
+
+  function directionText(ev) {
+    var dev = deviceOf(ev);
+    var name = dev ? LABEL[dev] : "不明な端末";
+    switch (ev.kind) {
+      case "http": return name + " → サーバー";
+      case "ws-send": if (ev.origin) return "サーバー ⇒ " + (dev ? name : "KDS") + " (接続時の全件)";
+        return "サーバー ⇒ 全KDS (" + (ev.wsClients != null ? ev.wsClients : "?") + "台)";
+      case "ws-recv": return (dev ? name : "KDS") + " → サーバー (WS)";
+      case "ws-open": return (dev ? name : "KDS") + " ⇒ サーバー (WS接続)";
+      case "ws-close": return (dev ? name : "KDS") + " ✕ サーバー (WS切断)";
+    }
+    return name;
+  }
+  function passes(ev) {
+    var fd = $("f-dev").value, fk = $("f-kind").value;
+    if (fd) {
+      var d = deviceOf(ev);
+      if (ev.kind === "ws-send" && !ev.origin) { if (!(fd === "deshap" || (fd === "kds2" && kds2On))) return false; }
+      else if (d !== fd) return false;
+    }
+    if (fk && filterCat(ev) !== fk) return false;
+    return true;
+  }
+
+  function renderLog() {
+    renderQueued = false;
+    var showPoll = $("poll-show").checked;
+    var html = [], cnt = 0;
+    omitted = 0;
+    for (var i = events.length - 1; i >= 0; i--) {
+      var ev = events[i];
+      if (!passes(ev)) continue;
+      if (!showPoll && isPoll(ev)) { omitted++; continue; }
+      cnt++;
+      var bad = ev.status != null && ev.status >= 400;
+      html.push(
+        '<div class="row k-' + colorCat(ev) + (ev.id === selectedId ? " sel" : "") + (newIds[ev.id] ? " new" : "") + '" data-id="' + esc(ev.id) + '">' +
+        '<span class="t">' + esc(timeOf(ev.at)) + '</span>' +
+        '<span class="dir">' + esc(directionText(ev)) + '</span>' +
+        '<span class="mp">' + esc(ev.kind === "http" ? (ev.method || "") + " " : "") + esc(ev.path || "") +
+        (ev.status != null ? '<span class="st' + (bad ? " bad" : "") + '">' + esc(ev.status) + '</span>' : "") +
+        (ev.durationMs != null ? '<span class="st">' + esc(ev.durationMs) + 'ms</span>' : "") + '</span>' +
+        '<span class="sm">' + esc(ev.summary || "") + '</span></div>');
+    }
+    newIds = {};
+    $("log").innerHTML = html.join("");
+    $("omitted").textContent = omitted ? "変化なしのポーリング " + omitted + "件を省略" : "";
+    $("log-count").textContent = "(" + cnt + "件表示 / 保持 " + events.length + ")";
+  }
+  function queueRender() {
+    if (renderQueued) return; renderQueued = true; requestAnimationFrame(renderLog);
+  }
+
+  function addEvent(ev, replay) {
+    if (ev == null || ev.id == null || seen[ev.id]) return;
+    if (paused && !replay) { pausedBuf.push(ev); return; }
+    seen[ev.id] = true;
+    events.push(ev);
+    if (events.length > MAX_LOG) { var old = events.shift(); delete seen[old.id]; }
+    newIds[ev.id] = true;
+    queueRender();
+    if (!replay) {
+      if (isPoll(ev) && !$("poll-show").checked) { /* 飛ばさない */ } else animate(ev);
+      scheduleState();
+    }
+  }
+
+  $("b-pause").addEventListener("click", function () {
+    paused = !paused;
+    this.textContent = paused ? "再開" : "一時停止";
+    if (!paused) { var b = pausedBuf; pausedBuf = []; b.forEach(function (e) { addEvent(e, true); }); }
+  });
+  $("b-clear").addEventListener("click", function () { resetLog(); selectedId = null; $("detail").classList.remove("open"); queueRender(); });
+  ["f-dev", "f-kind", "poll-show"].forEach(function (id) { $(id).addEventListener("change", queueRender); });
+
+  /* 詳細ペイン */
+  function pretty(v) {
+    if (v == null) return "(なし)";
+    if (typeof v === "string") return v;
+    try { return JSON.stringify(v, null, 2); } catch (e) { return String(v); }
+  }
+  var currentDetail = null;
+  $("log").addEventListener("click", function (e) {
+    var row = e.target.closest ? e.target.closest(".row") : null; if (!row) return;
+    var id = Number(row.getAttribute("data-id"));
+    var ev = null; for (var i = 0; i < events.length; i++) if (events[i].id === id) { ev = events[i]; break; }
+    if (!ev) return;
+    selectedId = id; currentDetail = ev;
+    $("d-title").textContent = "#" + ev.id + " " + (ev.method || ev.kind) + " " + (ev.path || "");
+    var reqLabel = ev.kind === "ws-send" ? "(サーバーからの送信)" : "";
+    $("d-req").textContent = ev.kind === "ws-send" || ev.kind === "ws-recv" ? reqLabel || "(なし)" : pretty(ev.request);
+    $("d-res").textContent = pretty(ev.response);
+    $("detail").classList.add("open");
+    queueRender();
+  });
+  $("d-close").addEventListener("click", function () { $("detail").classList.remove("open"); selectedId = null; queueRender(); });
+  $("d-copy").addEventListener("click", function () {
+    if (!currentDetail) return;
+    var text = JSON.stringify({ request: currentDetail.request, response: currentDetail.response }, null, 2);
+    var btn = this;
+    function ok() { btn.textContent = "コピー済み"; setTimeout(function () { btn.textContent = "コピー"; }, 1200); }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok, fallback);
+    else fallback();
+    function fallback() {
+      var ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); ok(); } catch (e) { /* 失敗は無視 */ }
+      document.body.removeChild(ta);
+    }
+  });
+
+  /* ---------- サーバー状態パネル ---------- */
+  var prevVals = {}, stateTimer = null, stateBusy = false;
+  function scheduleState() { clearTimeout(stateTimer); stateTimer = setTimeout(fetchState, 300); }
+
+  function fmtItems(o) {
+    var items = Array.isArray(o.items) ? o.items : [];
+    return items.map(function (it) { return (it && it.name != null ? it.name : "?") + "×" + (it && it.qty != null ? it.qty : 1); }).join(", ");
+  }
+  function sizeOf(v) { return v == null ? 0 : Array.isArray(v) ? v.length : typeof v === "object" ? Object.keys(v).length : 0; }
+  function doneCount(done) {
+    if (!done || typeof done !== "object") return 0;
+    var n = 0;
+    Object.keys(done).forEach(function (k) {
+      var v = done[k];
+      if (Array.isArray(v)) n += v.length; else if (v && typeof v === "object") n += Object.keys(v).length; else n += 1;
+    });
+    return n;
+  }
+
+  function renderState(s) {
+    var orders = Array.isArray(s.orders) ? s.orders : [];
+    var k = s.kitchen || {};
+    var ws = s.ordersStream;
+    var stock = s.stock;
+    var h = [];
+    var vals = {};
+    function kv(key, label, val) {
+      vals[key] = String(val);
+      return '<div class="kv" data-k="' + esc(key) + '"><span>' + esc(label) + '</span><b>' + esc(val) + '</b></div>';
+    }
+    h.push('<section><h3>メモリ上の注文 ' + orders.length + '件</h3><ul>');
+    if (!orders.length) h.push('<li style="color:var(--text-3)">なし</li>');
+    orders.forEach(function (o, i) {
+      var id = o.id != null ? o.id : (o.orderId != null ? o.orderId : i);
+      var key = "o:" + id;
+      var text = "卓" + (o.table != null ? o.table : "?") + " " + fmtItems(o);
+      vals[key] = text;
+      h.push('<li data-k="' + esc(key) + '">' + esc(text) + '</li>');
+    });
+    h.push('</ul></section>');
+    h.push('<section><h3>厨房状態</h3>' +
+      kv("k.rev", "rev", k.rev != null ? k.rev : "-") +
+      kv("k.konro", "コンロ割当", sizeOf(k.konro)) +
+      kv("k.done", "完了済み品目", doneCount(k.done)) +
+      kv("k.deleted", "削除済み", sizeOf(k.deleted)) + '</section>');
+    h.push('<section><h3>WebSocket</h3>' +
+      (ws ? kv("w.clients", "接続数", ws.clients) + kv("w.seq", "配信 sequence", ws.sequence) + kv("w.up", "最新まで受信確認", ws.upToDate + "台")
+          : '<div style="color:var(--text-3)">WS 未導入</div>') + '</section>');
+    h.push('<section><h3>予約</h3>' +
+      kv("s.stock", "当日の予約ストック", stock == null ? "取得不可" : sizeOf(stock) + "件") +
+      (s.seats != null ? kv("s.seats", "着席登録", sizeOf(s.seats) + "件") : "") + '</section>');
+    var body = $("state-body");
+    body.innerHTML = h.join("");
+    Object.keys(vals).forEach(function (key) {
+      if (prevVals[key] !== undefined && prevVals[key] !== vals[key] || (prevVals[key] === undefined && Object.keys(prevVals).length && key.indexOf("o:") === 0)) {
+        var el = body.querySelector('[data-k="' + key.replace(/["\\]/g, "\\$&") + '"]');
+        if (el) el.classList.add("flash");
+      }
+    });
+    prevVals = vals;
+  }
+  function fetchState() {
+    if (MOCK) { renderState(mockState()); return; }
+    if (stateBusy) return; stateBusy = true;
+    fetch("/sim/state", { cache: "no-store" }).then(function (r) { return r.json(); })
+      .then(renderState).catch(function () {}).then(function () { stateBusy = false; });
+  }
+  setInterval(fetchState, 3000);
+
+  /* ---------- SSE ---------- */
+  function setSse(mode) {
+    var el = $("sse"); el.className = "sse " + mode;
+    $("sse-t").textContent = mode === "on" ? "接続中（受信OK）" : mode === "off" ? "再接続中…" : "接続中…";
+  }
+  var helloSeen = false;
+  if (!MOCK) {
+    var es = new EventSource("/sim/events");
+    es.addEventListener("open", function () { setSse("on"); });
+    es.addEventListener("hello", function () {
+      // 再接続時はログをいったん消してバックログで埋め直す（id で重複排除）
+      resetLog(); queueRender(); helloSeen = true; setSse("on"); scheduleState();
+    });
+    es.addEventListener("flow", function (m) {
+      var ev; try { ev = JSON.parse(m.data); } catch (e) { return; }
+      addEvent(ev, !helloSeen ? true : backlogPhase);
+    });
+    es.addEventListener("error", function () { setSse("off"); });
+    // hello 直後のバックログは短時間アニメ無しで取り込む
+    var backlogPhase = false;
+    es.addEventListener("hello", function () { backlogPhase = true; setTimeout(function () { backlogPhase = false; }, 400); });
+  } else {
+    setSse("on");
+    $("sse-t").textContent = "モック（擬似イベント）";
+  }
+
+  /* ---------- モック ---------- */
+  var mockId = 0, mockOrders = [], mockRev = 0, mockSeq = 0, mockDone = 0;
+  var MOCK_ITEMS = ["生ビール", "焼き鳥盛り合わせ", "唐揚げ<b>", "枝豆", "ハイボール", "刺身3点盛り"];
+  function mk(o) {
+    var base = { id: ++mockId, at: new Date().toISOString(), kind: "http", client: null, method: null, path: "", status: null,
+      durationMs: Math.round(2 + Math.random() * 12), request: null, response: null, summary: "", changed: true, wsClients: null };
+    return Object.assign(base, o);
+  }
+  function mockState() {
+    return { orders: mockOrders, kitchen: { rev: mockRev, konro: { a: 1 }, done: { x: [0].concat(new Array(mockDone).fill(1)) }, deleted: {} },
+      stock: [{}, {}, {}], ordersStream: { clients: kds2On ? 2 : 1, sequence: mockSeq, upToDate: kds2On ? 2 : 1 }, seats: [] };
+  }
+  var mockStep = 0;
+  function mockTick() {
+    var n = mockStep++ % 6;
+    if (n === 0) {
+      var o = { id: "M" + mockId, table: 1 + Math.floor(Math.random() * 12),
+        items: [{ name: MOCK_ITEMS[Math.floor(Math.random() * MOCK_ITEMS.length)], qty: 1 + Math.floor(Math.random() * 3) }] };
+      mockOrders.push(o);
+      addEvent(mk({ client: "order", method: "POST", path: "/api/orders", status: 201, request: { orderId: o.id, table: o.table, items: o.items }, response: { ok: true }, summary: "注文を受付（新規）" }));
+      mockSeq++;
+      setTimeout(function () {
+        addEvent(mk({ kind: "ws-send", path: "/ws/orders", response: { type: "order.created", sequence: mockSeq, order: o }, summary: "WS配信: order.created", wsClients: kds2On ? 2 : 1 }));
+        setTimeout(function () {
+          addEvent(mk({ kind: "ws-recv", path: "/ws/orders", origin: location.host, response: { type: "orders.ack", sequence: mockSeq }, summary: "WS受信確認 seq " + mockSeq }));
+          if (kds2On) addEvent(mk({ kind: "ws-recv", path: "/ws/orders", origin: kds2Host, response: { type: "orders.ack", sequence: mockSeq }, summary: "WS受信確認 seq " + mockSeq }));
+        }, 700);
+      }, 600);
+    } else if (n === 2) {
+      mockRev++; mockDone++;
+      addEvent(mk({ client: "deshap", method: "POST", path: "/api/kitchen-state", status: 200, request: { events: [{ type: "toggle", id: "M1", idx: 0 }] }, response: { ok: true, rev: mockRev }, summary: "厨房操作: 品目完了×1" }));
+    } else if (n === 3) {
+      addEvent(mk({ client: kds2On ? "kds2" : "deshap", method: "GET", path: "/api/kitchen-state", status: 200, response: { rev: mockRev }, summary: "厨房状態を取得 (rev " + mockRev + ")", changed: true }));
+    } else if (n === 4) {
+      addEvent(mk({ client: "deshap", method: "GET", path: "/api/orders", status: 200, response: mockOrders, summary: "注文一覧を取得 (" + mockOrders.length + "件)", changed: false }));
+      addEvent(mk({ client: "deshap", method: "GET", path: "/api/stock", status: 200, response: [], summary: "予約ストックを取得 (3件)", changed: false }));
+    } else if (n === 5) {
+      addEvent(mk({ client: "deshap", method: "GET", path: "/api/health", status: 200, response: { ok: true }, summary: "死活確認", changed: false }));
+      if (mockOrders.length > 6) mockOrders.shift();
+    }
+  }
+  if (MOCK) {
+    mockState();
+    addEvent(mk({ kind: "ws-open", path: "/ws/orders", origin: location.host, summary: "WS接続" }));
+    setInterval(mockTick, 1500);
+    scheduleState();
+  }
+
+  fitFrames();
+  queueRender();
+  if (!MOCK) fetchState();
+})();
+</script>
+</body>
+</html>
