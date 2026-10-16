@@ -1,3 +1,6 @@
+﻿# このファイルは UTF-8 (BOM 付き) で保存する。Windows PowerShell 5.1 は BOM の無い .ps1 を
+# ANSI (日本語環境では Shift-JIS) として読むため、日本語の文字列が化けて構文エラーになる。
+# PR本文ファイルを BOM なしに限定しているのは GitHub へ渡す本文の話で、このスクリプト自体とは別。
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)]
@@ -82,14 +85,24 @@ if ($LASTEXITCODE -ne 0) {
   exit $LASTEXITCODE
 }
 
-$target = if ($Action -eq "create") {
-  (& gh pr view --json url --jq .url | Out-String).Trim()
-}
-else {
-  $Number
-}
+# gh は UTF-8 で出力するが、Windows PowerShell 5.1 は外部コマンドの出力を
+# [Console]::OutputEncoding (日本語環境の既定は CP932) で読むため、読み戻した本文が化けて
+# 「一致しません」で止まる。読み戻しの間だけ UTF-8 で受け、終わったら元に戻す。
+$previousOutputEncoding = [Console]::OutputEncoding
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+try {
+  $target = if ($Action -eq "create") {
+    (& gh pr view --json url --jq .url | Out-String).Trim()
+  }
+  else {
+    $Number
+  }
 
-$remoteBody = (& gh pr view $target --json body --jq .body | Out-String) -replace "`r`n", "`n" -replace "`r", "`n"
+  $remoteBody = (& gh pr view $target --json body --jq .body | Out-String) -replace "`r`n", "`n" -replace "`r", "`n"
+}
+finally {
+  [Console]::OutputEncoding = $previousOutputEncoding
+}
 $remoteBody = $remoteBody.TrimEnd("`n")
 $expectedBody = ($body -replace "`r`n", "`n" -replace "`r", "`n").TrimEnd("`n")
 if ($remoteBody -cne $expectedBody) {
