@@ -2147,6 +2147,122 @@
   .hall-order-card, .hall-ready-card, .hall-stock-card { border-color: var(--sw-s1); }
   .hall-cue, .serve-cue { border-radius: 0; }
 
+  /* ============================================================
+     密度と操作感の改善 (デシャップ側UX)
+     1280×800 では進行中カードが3列×1.5行しか収まらず、10分超過のカードが初期表示の外に
+     出ていた。品目行64px・品名22px+・卓番28px+ の要件は保ったまま、カードの「品目以外」
+     (バナー・サブ行・前菜帯・コンロ帯) を詰めて1カードあたり約100px縮める。
+     あわせて、品目行のタップ対象を行全体として見せ、押した結果を行の明滅で返す。 */
+
+  /* ---------- 盤面の余白 ---------- */
+  main { padding: 10px; }
+  .board { gap: 10px; }
+  .hud { min-height: 44px; padding: 4px var(--pad-shell); }
+
+  /* ---------- カードのバナー: 卓番は 44px に (要件28px+) ---------- */
+  .card-banner { padding: 5px 10px 6px; gap: 8px; }
+  .card-banner .table-no { font-size: 44px; }
+  .card-banner::before { margin: 5px 0; }
+
+  /* ---------- サブ行: 44px ボタンの高さぴったりにし、コンロ割当もここに置く ---------- */
+  .card-sub { min-height: 46px; padding: 0 6px 0 10px; gap: 6px; }
+  .card-sub .recv { margin-right: auto; }
+  /* 卓番・コンロ割当 = 補助操作。文字を同じ太さ・大きさにそろえ、1行に並べても読める幅にする */
+  .card-sub .table-override-btn, .card-sub .konro-toggle {
+    margin-left: 0;
+    min-width: 44px;
+    padding: 0 8px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .card-sub .konro-toggle[aria-expanded="true"] {
+    background: var(--sw-grad-pressed);
+    box-shadow: inset 1px 1px 2px rgba(0,0,0,.25);
+  }
+
+  /* ---------- 前菜の未提供帯 (キッチンは読取専用): 1行の細い帯に ---------- */
+  body:not(.mode-hall) .card .serve-cue[data-serve-kind="starter"].readonly {
+    margin: 4px var(--pad-card) 0;
+    padding: 2px 8px;
+    min-height: 24px;
+    border-width: 1px;
+    font-size: 12px;
+    line-height: 1.3;
+  }
+
+  /* ---------- 品目行: 行全体がボタンだと分かる面を与える ---------- */
+  .items { padding: 2px 0 0; }
+  .item {
+    position: relative;
+    grid-template-columns: 34px 1fr auto;
+    column-gap: 10px;
+    padding: 6px 10px 6px 12px;
+    background: rgba(255,255,255,.55);     /* 淡色カードの上に白い「行」を浮かせる */
+    box-shadow: inset 0 -1px 0 var(--border-soft);
+  }
+  .item + .item { border-top: 0; }
+  .item:hover  { background: var(--sw-hover); }
+  .item:active { background: var(--sw-select); }
+  .item.done { background: transparent; }
+  .check { width: 32px; height: 32px; font-size: 20px; }
+  /* 数量箱: 進捗 (完了/全数) を厨房の距離から読める大きさに */
+  .item-qty { --qty-box-size: 40px; padding: 0 8px; font-size: 22px; }
+  .item-qty .qty-total { font-size: 15px; }
+  .item.multi:not(.done) .item-qty .qty-total { margin-left: 2px; }
+  /* タップが効いた合図: 行を一度明るく光らせる */
+  .item.flash { animation: itemFlash .35s ease-out; }
+  @keyframes itemFlash {
+    0%   { background-color: var(--sw-select); }
+    100% { background-color: rgba(255,255,255,.55); }
+  }
+  .item.done.flash { animation-name: itemFlashDone; }
+  @keyframes itemFlashDone {
+    0%   { background-color: var(--sw-select); }
+    100% { background-color: transparent; }
+  }
+  /* 長押し (1個分戻す) の進捗。押した 0.2 秒後から下辺の帯が伸び、0.8 秒で成立する。
+     通常タップでは伸びる前に離すので見えない。 */
+  .item::after {
+    content: "";
+    position: absolute;
+    left: 0; bottom: 0;
+    height: 3px; width: 0;
+    background: var(--cta);
+    pointer-events: none;
+  }
+  .item.pressing::after { width: 100%; transition: width .6s linear .2s; }
+  .item.pressing .item-qty { outline-color: var(--cta); }
+
+  /* ---------- コンロ帯: 使用中の番号があるか、展開中のときだけ出す ---------- */
+  .konro {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px var(--pad-card) 6px;
+  }
+  .konro .konro-label { flex: 0 0 auto; }
+  .konro .konro-grid { flex: 1 1 auto; }
+  /* 展開中は 1〜10 の5列グリッドだけを出す (ラベル分の行を足さない) */
+  .konro.expanded .konro-label { display: none; }
+  .konro.expanded .konro-grid { padding-top: 0; }
+  .konro:not(.expanded):not(:has(.konro-btn:not([data-state="skeleton"]))) { display: none; }
+  .konro:not(.expanded) .konro-grid { min-height: 44px; align-items: center; }
+
+  /* ---------- HUD のコンロ/タイマー: 使用中の番号だけを並べる ---------- */
+  .kh-cell { width: 36px; height: 36px; font-size: 16px; }
+  .kh-cell[data-state="skeleton"] { display: none; }
+  .kh-row:not(:has(.kh-cell:not([data-state="skeleton"]))) .kh-label::after {
+    content: " なし";
+    color: var(--text-muted);
+    font-weight: 700;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .item.flash { animation: none; }
+    .item.pressing::after { transition: none; }
+  }
+
 </style>
 </head>
 <body class="is-empty">
@@ -3530,8 +3646,13 @@
       btn.addEventListener("pointercancel", clearPressTimer);
       btn.addEventListener("click", function (ev) {
         if (suppressClick) { suppressClick = false; ev.preventDefault(); return; }
+        // タップが効いたことを行の明滅で返す (数字が変わるだけでは厨房の距離から判りにくい)
+        btn.classList.remove("flash");
+        void btn.offsetWidth;   // 連続タップでもアニメーションを頭から再生する
+        btn.classList.add("flash");
         onToggle(order.id, idx);
       });
+      btn.addEventListener("animationend", function () { btn.classList.remove("flash"); });
     }
 
     /* 品目リスト <ul.items> を生成 (buildCard 初回 / ポーリングでの品目変更時の再構築で共用) */
@@ -3683,37 +3804,36 @@
       head.appendChild(elapsed);
       head.appendChild(people);
       if (FEATURE_DELETE_ORDER) head.appendChild(delBtn); // #59 既定OFF
-      // サブ行: 種別チップ + 受付 + 停 + 伝
-      timeRow.appendChild(badge);
-      timeRow.appendChild(recv);
-      timeRow.appendChild(tableOverrideBtn);
-      if (FEATURE_TIMER_LOCK) timeRow.appendChild(lockBtn); // #59 既定OFF
-      timeRow.appendChild(slipBtn);
-
-      /* items */
-      var ul = buildItemsList(order);
-
-      /* konro: コンロ番号 1〜10 (既定=使用中のみ細帯 / 「割当」で全1-10を展開) */
+      /* konro: コンロ番号 1〜10 (既定=使用中のみ細帯 / 「コンロ割当」で全1-10を展開)。
+         展開ボタンはサブ行に置き、カード下部の帯は使用中の番号 (または展開した1〜10) だけにする。
+         未使用のカードでは帯そのものを出さず、カードの高さを品目分に抑える。 */
       var konro = document.createElement("div");
       konro.className = "konro";
-      var kHead = document.createElement("div");
-      kHead.className = "konro-head";
       var kLabel = document.createElement("div");
       kLabel.className = "konro-label js-konro-label";
       kLabel.textContent = t("konro");
       var kToggle = document.createElement("button");
       kToggle.type = "button";
       kToggle.className = "konro-toggle";
-      kToggle.textContent = "割当";
+      kToggle.textContent = "コンロ割当";
       kToggle.setAttribute("aria-expanded", "false");
       kToggle.setAttribute("aria-label", "コンロ番号を割り当て");
       kToggle.addEventListener("click", function () {
         var open = konro.classList.toggle("expanded");
         kToggle.setAttribute("aria-expanded", open ? "true" : "false");
-        kToggle.textContent = open ? "閉じる" : "割当";
+        kToggle.textContent = open ? "閉じる" : "コンロ割当";
       });
-      kHead.appendChild(kLabel);
-      kHead.appendChild(kToggle);
+      // サブ行: 種別チップ + 受付 + 卓番 + 停 + コンロ割当 + 伝
+      timeRow.appendChild(badge);
+      timeRow.appendChild(recv);
+      timeRow.appendChild(tableOverrideBtn);
+      if (FEATURE_TIMER_LOCK) timeRow.appendChild(lockBtn); // #59 既定OFF
+      timeRow.appendChild(kToggle);
+      timeRow.appendChild(slipBtn);
+
+      /* items */
+      var ul = buildItemsList(order);
+
       var kGrid = document.createElement("div");
       kGrid.className = "konro-grid";
       kGrid.setAttribute("role", "group");
@@ -3729,7 +3849,7 @@
           kGrid.appendChild(kbtn);
         })(kn);
       }
-      konro.appendChild(kHead);
+      konro.appendChild(kLabel);
       konro.appendChild(kGrid);
 
       /* 種別アンダーライン (緊急度バンドの直下・新規=藍/予約=金) */
