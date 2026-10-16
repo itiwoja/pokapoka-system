@@ -17,11 +17,17 @@ var ALLOWED_STATIC_FILES = [
   path.join("relay-server", "kds-bridge.js"),
 ];
 
-/** root (リポジトリ直下) 配下の許可済みファイルを配信する。"/" と "/kds" は KDS 画面、"/reservations" は予約入力画面 */
-function serveStatic(res, url, root) {
+/**
+ * root (リポジトリ直下) 配下の許可済みファイルを配信する。"/" と "/kds" は KDS 画面、"/reservations" は予約入力画面。
+ * options.extraPages ({ パス: リポジトリ直下のファイル名 }) は allowlist に加えて配信する (シミュレーター用。無効時は渡さない)
+ */
+function serveStatic(res, url, root, options) {
   var rel;
+  var extraPages = options && options.extraPages;
+  var extra = !!extraPages && Object.prototype.hasOwnProperty.call(extraPages, url.pathname);
   try {
-    rel = (url.pathname === "/" || url.pathname === "/kds") ? "/" + KDS_PAGE
+    rel = extra ? "/" + extraPages[url.pathname]
+      : (url.pathname === "/" || url.pathname === "/kds") ? "/" + KDS_PAGE
       : url.pathname === "/reservations" ? "/" + RESERVATION_PAGE
       : decodeURIComponent(url.pathname);
   }
@@ -34,7 +40,7 @@ function serveStatic(res, url, root) {
   if (relativePath === ".." || relativePath.indexOf(".." + path.sep) === 0 || path.isAbsolute(relativePath)) {
     return httpUtil.text(res, 403, "forbidden");
   }
-  if (ALLOWED_STATIC_FILES.indexOf(relativePath) < 0) return httpUtil.text(res, 404, "not found");
+  if (!extra && ALLOWED_STATIC_FILES.indexOf(relativePath) < 0) return httpUtil.text(res, 404, "not found");
 
   fs.readFile(file, function (err, data) {
     if (err) return httpUtil.text(res, 404, "not found");
