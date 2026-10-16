@@ -274,7 +274,6 @@ test("予約はSQLiteファイルに残り、再起動後も配信される", as
   var os2 = require("os");
   var fs2 = require("fs");
   var dir = fs2.mkdtempSync(path.join(os2.tmpdir(), "relay-reservations-"));
-  t.after(function () { fs2.rmSync(dir, { recursive: true, force: true }); });
   var dbPath = path.join(dir, "reservations.sqlite");
 
   var first = createTestRelay({ reservationDbPath: dbPath });
@@ -285,6 +284,8 @@ test("予約はSQLiteファイルに残り、再起動後も配信される", as
 
   var second = createTestRelay({ reservationDbPath: dbPath });
   t.after(function () { return second.stop(); });
+  // t.after は登録順に動く。Windows は開いたままの SQLite を消せないため、stop より後に登録する
+  t.after(function () { fs2.rmSync(dir, { recursive: true, force: true }); });
   second.start();
   await events.once(second.server, "listening");
   var stock = await requestJson(second.server, "/api/stock");

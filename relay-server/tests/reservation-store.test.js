@@ -116,7 +116,6 @@ test("日付が変わると前日以前の予約を削除し、先の日付の�
 
 test("ファイルに保存した予約は開き直しても残る", function (t) {
   var dir = fs.mkdtempSync(path.join(os.tmpdir(), "reservation-store-"));
-  t.after(function () { fs.rmSync(dir, { recursive: true, force: true }); });
   var file = path.join(dir, "nested", "reservations.sqlite");
 
   var first = store.openReservationStore(file, { now: function () { return NOW; } });
@@ -124,6 +123,8 @@ test("ファイルに保存した予約は開き直しても残る", function (t
   first.close();
 
   var second = open(t, file).store;
+  // t.after は登録順に動く。Windows は開いたままの SQLite を消せないため、閉じる処理より後に登録する
+  t.after(function () { fs.rmSync(dir, { recursive: true, force: true }); });
   assert.equal(second.get("r1").rid, "r1");
   assert.equal(second.file, file);
 });
