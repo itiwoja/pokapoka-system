@@ -27,6 +27,7 @@ var KEY_TO_ENV = {
   "seat.walkinTtlMin": "SEAT_WALKIN_TTL_MIN",
   "kitchen.ttlMin": "KITCHEN_TTL_MIN",
   "order.ttlMin": "ORDER_TTL_MIN",
+  "order.dbFile": "ORDER_DB_FILE",
   "order.mockScenario": "MOCK_ORDER_SCENARIO",
   // 店内LAN内でだけ使う共有トークン。店ごとに書き換える設定値なので
   // config.json に置く (このファイル自体が .gitignore 済み) #174

@@ -29,6 +29,8 @@ function handleOrders(req, res, url, context) {
         return json(res, { ok: false, error: result.error }, 400);
       }
       var put = orderIntake.putOrder(context.orders, result.order);
+      // 控えの保存に失敗しても受付と配信は止めない (再起動までは届く)。原因はログで分かるようにする
+      if (!put.duplicate) persist(context, function (store) { store.put(put.order); });
       context.stream.refresh();
       var operation = put.created ? "order.create" : (put.updated ? "order.update" : "order.duplicate");
       recordAudit(context.audit, operation, auditTarget("order", result.order.id), "success", null, {
@@ -59,9 +61,21 @@ function cancelOrder(res, orderId, context) {
   var target = auditTarget("order", orderId);
   if (!orderIntake.validateOrderId(orderId)) return fail(target, "invalid-id", "invalid orderId", 400);
   if (!orderIntake.removeOrder(context.orders, orderId)) return fail(target, "not-found", "order not found", 404);
+  persist(context, function (store) { store.remove(orderId); });
   context.stream.refresh();
   recordAudit(context.audit, "order.cancel", target, "success", { state: "active" }, { state: "deleted" });
   return httpUtil.noContent(res);
+}
+
+/** 注文の控え (order-store) への書込み。store が無ければ何もしない。失敗はログに残して続行する */
+function persist(context, write) {
+  if (!context.store) return;
+  try { write(context.store); }
+  catch (err) {
+    if (typeof context.log === "function") {
+      context.log("注文の控えを保存できない: " + (err && err.message || err) + " (再起動すると当日の注文が消える可能性があります)");
+    }
+  }
 }
 
 module.exports = { handleOrders: handleOrders };

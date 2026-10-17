@@ -4,6 +4,7 @@
  * 役割:
  *   1. リポジトリ直下の静的ファイルを配信
  *   2. 予約を SQLite (既定 data/reservations.sqlite) に保存し、当日分を /api/stock でKDSへ配信
+ *      注文も控えを SQLite (既定 data/orders.sqlite) に残し、再起動後に当日分を読み戻す (履歴は持たない)
  *      (TableCheck連携は2026-10-11中止。予約は /reservations の画面から手入力・CSV・貼り付け・メールで持ち込む)
  *   3. 注文端末からの注文受付と WebSocket 配信
  *   4. POST /api/print でチビ伝を実機プリンターへ中継(ブラウザは生ソケットを開けないため #144)
@@ -31,6 +32,7 @@ var audit = require("./audit-log");
 var loadConfig = require("./load-config");
 var printer = require("./printer");
 var openReservationStore = require("./reservation-store").openReservationStore;
+var openOrderStore = require("./order-store").openOrderStore;
 var printerSettings = require("./printer-settings");
 var attachOrdersWebSocket = require("./orders-websocket").attachOrdersWebSocket;
 var createConfig = require("./relay-config").createConfig;
@@ -81,7 +83,7 @@ function createRelay(options) {
   // 厨房状態の共有 (#132)。sessionId は relay 再起動を端末側が検出するための識別子で、
   // 再起動すると rev が 0 に戻るため、これが無いと端末が「取込済み」と誤認する
   var kitchenState = kitchen.createState(options.sessionId || String(Date.now().toString(36)));
-  var orders = new Map();      // 注文端末から受けた注文 (当日メモリのみ #115)
+  var orders = new Map();      // 注文端末から受けた注文 (当日分。控えは orderStore に残す)
   var started = false;
   var slipStyle = printerSettings.createSlipStyleStore(options.slipStylePath || path.join(root, "config", "slip-style.json"), printerModule, log);
   var printerIp = printerSettings.createPrinterIpStore(options.printerIpPath || path.join(root, "config", "printer-ip.json"), printerModule, log);
@@ -90,6 +92,14 @@ function createRelay(options) {
   var reservationDbPath = config.reservationDbFile ? path.resolve(root, config.reservationDbFile)
     : options.reservationDbPath || ":memory:";
   var reservations = options.reservations || openReservationStore(reservationDbPath, { now: now });
+  // 注文の控え。config の order.dbFile > 起動スクリプトの既定ファイル > メモリ上 (テストで店舗の data/ を汚さない)。
+  // 再起動で当日の注文が KDS から消えないよう、起動時に保持期間内の分を読み戻す
+  var orderDbPath = config.orderDbFile ? path.resolve(root, config.orderDbFile)
+    : options.orderDbPath || ":memory:";
+  var orderStore = options.orderStore || openOrderStore(orderDbPath, { now: now, ttlMs: config.orderTtlMs });
+  var restoredOrders = 0;
+  try { restoredOrders = orderStore.loadInto(orders, Date.now()); }
+  catch (err) { log("注文の控えを読めない: " + (err && err.message || err)); }
   // 予約メールの取込フォルダ。config の reservation.mailDir > 起動スクリプトの既定 > 無効 (テストで店舗の data/ を読まない)
   var mailInbox = createMailInbox(config.reservationMailDir ? path.resolve(root, config.reservationMailDir)
     : options.mailInboxPath || null, { now: now });
@@ -192,12 +202,15 @@ function createRelay(options) {
       return json(res, stock);
     }
     if (pathname === "/api/health") {
-      var reservationHealth;
+      var reservationHealth, orderHealth;
       try { reservationHealth = reservations.health(); }
       catch (err) { reservationHealth = { store: "sqlite", error: "unavailable" }; }
+      try { orderHealth = orderStore.health(); }
+      catch (err) { orderHealth = { store: "sqlite", error: "unavailable" }; }
       return json(res, {
         ready: true,
         reservations: reservationHealth,
+        orders: orderHealth,
         ordersStream: orderStream.stats(),
       });
     }
@@ -223,7 +236,9 @@ function createRelay(options) {
       return handleKitchenState(req, res, { state: kitchenState, ttlMs: config.kitchenTtlMs, audit: auditContext });
     }
     if (pathname === "/api/orders" || pathname.indexOf("/api/orders/") === 0) {
-      return handleOrders(req, res, url, { orders: orders, ttlMs: config.orderTtlMs, stream: orderStream, audit: auditContext });
+      return handleOrders(req, res, url, {
+        orders: orders, ttlMs: config.orderTtlMs, stream: orderStream, audit: auditContext, store: orderStore, log: log,
+      });
     }
 
     var printContext = { printer: printerModule, slipStyle: slipStyle, printerIp: printerIp, audit: auditContext };
@@ -243,7 +258,8 @@ function createRelay(options) {
       var address = server.address();
       var listenPort = address && address.port || config.port;
       var baseUrl = (tlsOptions ? "https://" : "http://") + (config.host.includes(":") ? "[" + config.host + "]" : config.host) + ":" + listenPort;
-      log("起動: " + baseUrl + "  (予約の保存先: " + reservations.file + ")");
+      log("起動: " + baseUrl + "  (予約の保存先: " + reservations.file + " / 注文の控え: " + orderStore.file + ")");
+      if (restoredOrders) log("注文の控えから " + restoredOrders + " 件を読み戻した (再起動前の当日分)");
       if (config.mockOrderScenario) {
         mockOrderScenario = require("./mock-order-scenario").startMockOrderScenario({
           orders: orders, refresh: orderStream.refresh, log: log,
@@ -282,6 +298,7 @@ function createRelay(options) {
       server.close(function (err) { if (err) reject(err); else resolve(); });
     }).then(function () {
       if (!options.reservations) reservations.close();
+      if (!options.orderStore) orderStore.close();
     });
   }
 
@@ -318,6 +335,7 @@ if (require.main === module) {
   createRelay({
     configFile: configFile,
     reservationDbPath: path.join(__dirname, "..", "data", "reservations.sqlite"),
+    orderDbPath: path.join(__dirname, "..", "data", "orders.sqlite"),
     mailInboxPath: path.join(__dirname, "..", "data", "mail-inbox"),
   }).start();
 }

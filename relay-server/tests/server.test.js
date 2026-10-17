@@ -292,6 +292,48 @@ test("予約はSQLiteファイルに残り、再起動後も配信される", as
   assert.deepEqual(stock.body.map(function (r) { return r.rid; }), ["r-keep"]);
 });
 
+test("注文はSQLiteの控えに残り、再起動後も配信される。取消した注文は戻らない", async function (t) {
+  var os3 = require("os");
+  var fs3 = require("fs");
+  var dir = fs3.mkdtempSync(path.join(os3.tmpdir(), "relay-orders-"));
+  var dbPath = path.join(dir, "orders.sqlite");
+  function post(server, body) {
+    return requestRaw(server, "/api/orders", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+  }
+
+  var first = createTestRelay({ orderDbPath: dbPath });
+  first.start();
+  await events.once(first.server, "listening");
+  assert.equal((await post(first.server, { orderId: "keep-1", tables: [3, 4], people: 2,
+    items: [{ name: "ゴーヤチャンプルー", qty: 2, note: "大盛" }] })).status, 201);
+  assert.equal((await post(first.server, { orderId: "gone-1", table: "7", items: [{ name: "茶", qty: 1 }] })).status, 201);
+  // 同じ注文の内容更新も控えに反映される (受付時刻は初回のまま)
+  var updated = JSON.parse((await post(first.server, { orderId: "keep-1", tables: [3, 4], people: 3,
+    items: [{ name: "ゴーヤチャンプルー", qty: 2, note: "大盛" }] })).text);
+  assert.equal(updated.updated, true);
+  assert.equal((await requestRaw(first.server, "/api/orders/gone-1", { method: "DELETE" })).status, 204);
+  var health = await requestJson(first.server, "/api/health");
+  assert.deepEqual(health.body.orders, { store: "sqlite", orders: 1 });
+  await first.stop();
+
+  var second = createTestRelay({ orderDbPath: dbPath });
+  t.after(function () { return second.stop(); });
+  t.after(function () { fs3.rmSync(dir, { recursive: true, force: true }); });
+  second.start();
+  await events.once(second.server, "listening");
+  var feed = await requestJson(second.server, "/api/orders");
+  assert.equal(feed.body.length, 1);
+  assert.equal(feed.body[0].id, "keep-1");
+  assert.equal(feed.body[0].table, "3,4");
+  assert.equal(feed.body[0].people, 3, "更新後の内容で戻る");
+  assert.equal(feed.body[0].start, updated.order.start, "受付時刻は初回のまま");
+  // 読み戻した注文も通常どおり取消できる
+  assert.equal((await requestRaw(second.server, "/api/orders/keep-1", { method: "DELETE" })).status, 204);
+  assert.deepEqual((await requestJson(second.server, "/api/health")).body.orders, { store: "sqlite", orders: 0 });
+});
+
 test("厨房状態APIはイベントを畳み込み、別端末が1回の取得で追いつける", async function (t) {
   var relay = createTestRelay();
   t.after(function () { return relay.stop(); });
