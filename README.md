@@ -89,9 +89,9 @@ npm test
 - デシャップモニター・注文端末の接続先（host/port）は **`config/config.json` に集約**（雛形: `config/config.example.json`。優先順位は 既定値 < config.json < 環境変数）
 - 起動方法・エンドポイント・LAN 配信時の注意（固定IP・ファイアウォール）は [relay-server/README.md](relay-server/README.md) を参照
 
-### データ保存方針: 予約だけを保存する
+### データ保存方針: 予約を保存し、注文は当日分の控えだけを持つ
 
-2026-06-18 の打合せでは「注文・予約はサーバーに保存しない」と決めていました。予約の正本を TableCheck が持つ前提だったためです。TableCheck 連携の中止（2026-10-11）で予約を持つのがこのシステムだけになったため、**予約は中継サーバーの SQLite に保存**し、再起動しても残るようにしました。過ぎた日の予約は自動で削除します。ミニPCの故障に備え、`data/reservations.sqlite` を定期的に別媒体へバックアップしてください（手順は [relay-server/README.md](relay-server/README.md#予約の保存reservation-storejs)）。**注文は従来どおり保存せず**、当日メモリだけで扱います。
+2026-06-18 の打合せでは「注文・予約はサーバーに保存しない」と決めていました。予約の正本を TableCheck が持つ前提だったためです。TableCheck 連携の中止（2026-10-11）で予約を持つのがこのシステムだけになったため、**予約は中継サーバーの SQLite に保存**し、再起動しても残るようにしました。過ぎた日の予約は自動で削除します。ミニPCの故障に備え、`data/reservations.sqlite` を定期的に別媒体へバックアップしてください（手順は [relay-server/README.md](relay-server/README.md#予約の保存reservation-storejs)）。注文は履歴としては保存しませんが、営業中に中継サーバーを再起動しても KDS から当日の注文が消えないよう、**当日分の控えを SQLite（`data/orders.sqlite`）に残し**、保持時間（既定720分）を過ぎた分は自動で削除します（2026-10-17）。
 
 ## 提供時間の自動計測（Issue #29）
 

@@ -56,6 +56,9 @@ function attachOrdersWebSocket(server, orders, config, log, hooks) {
     previous = next;
     return feed;
   }
+  // 起動時に控えから読み戻した注文は「既に配信済み」として扱い、最初の更新で全件を order.created と
+  // して流さない (接続時は snapshot で全件渡すので差分に含める必要がない)
+  previous = new Map(intake.toFeed(orders, Date.now(), config.orderTtlMs).map(order => [order.id, JSON.stringify(order)]));
   function upgrade(req, socket, head) {
     socket.on("error", () => {});
     function reject(code) { socket.end("HTTP/1.1 " + code + "\r\nConnection: close\r\n\r\n"); }

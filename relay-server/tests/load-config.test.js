@@ -23,7 +23,7 @@ test("config.json を環境変数形のオーバーレイへ変換する", funct
     server: { host: "192.168.1.10", port: 8000 },
     reservation: { dbFile: "data/reservations.sqlite" },
     seat: { beforeMin: 30, afterMin: 120 },
-    order: { mockScenario: false },
+    order: { mockScenario: false, dbFile: "data/orders.sqlite" },
   });
 
   assert.deepEqual(loadConfig.load(file), {
@@ -31,6 +31,7 @@ test("config.json を環境変数形のオーバーレイへ変換する", funct
     PORT: "8000",
     RESERVATION_DB_FILE: "data/reservations.sqlite",
     MOCK_ORDER_SCENARIO: "0",
+    ORDER_DB_FILE: "data/orders.sqlite",
     SEAT_BEFORE_MIN: "30",
     SEAT_AFTER_MIN: "120",
   });
