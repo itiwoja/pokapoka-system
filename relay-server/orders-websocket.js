@@ -26,7 +26,7 @@ function attachOrdersWebSocket(server, orders, config, log, hooks) {
     return Object.assign({ type, sessionId, sequence, sentAt: new Date().toISOString() }, body);
   }
   function wire(order) {
-    return { orderId: order.id, table: order.table, status: order.type,
+    return { orderId: order.id, table: order.table, tables: order.tables == null ? null : order.tables, status: order.type,
       orderedAt: new Date(order.start).toISOString(), people: order.people,
       items: order.items.map(item => ({ name: item.name, qty: item.qty,
         note: item.options, allergies: item.allergies, done: false })) };

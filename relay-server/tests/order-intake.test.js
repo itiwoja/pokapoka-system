@@ -24,6 +24,7 @@ test("受信形式をKDSの配信形式へ正規化する", function () {
   assert.deepEqual(result.order, {
     id: "t12-0001",
     table: "12",
+    tables: null,
     type: "new",
     start: Date.parse("2026-08-02T18:00:00+09:00"),
     people: 4,
@@ -128,4 +129,41 @@ test("配信は受付順で、TTL超過分は落ちる", function () {
   // TTL=30分: 1時間前の注文は日跨ぎで残らないよう落とす (#115 当日メモリのみ)
   assert.deepEqual(intake.toFeed(orders, NOW, 1800000).map(function (o) { return o.id; }), ["new"]);
   assert.equal(orders.size, 1);
+});
+
+test("tables は昇順に並べて table へ連結し、body の table は無視する", function () {
+  var result = intake.normalizeOrder(body({ table: "99", tables: [4, 3] }), NOW);
+  assert.deepEqual(result.order.tables, [3, 4]);
+  assert.equal(result.order.table, "3,4");
+  // 15 卓でも連結後の文字列に 6 文字制限は掛けない
+  var many = [];
+  for (var i = 15; i >= 1; i--) many.push(i);
+  assert.equal(intake.normalizeOrder(body({ tables: many }), NOW).order.table, "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15");
+});
+
+test("tables の検証エラーは直す場所が分かる文言を返す", function () {
+  var message = "tables must be an array of 1 to 15 distinct integers between 1 and 2147483647";
+  var cases = [[], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], [3, 3], [1.5], ["3"], [0], [2147483648], "3,4"];
+  cases.forEach(function (tables) {
+    assert.equal(intake.normalizeOrder(body({ tables: tables }), NOW).error, message, JSON.stringify(tables));
+  });
+});
+
+test("tables が無ければ従来の table 規則を使い、tables は null", function () {
+  var ok = intake.normalizeOrder(body({ table: "A1" }), NOW);
+  assert.equal(ok.order.tables, null);
+  assert.equal(ok.order.table, "A1");
+  assert.match(intake.normalizeOrder(body({ table: "1234567" }), NOW).error, /^table must be/);
+  assert.match(intake.normalizeOrder(body({ table: undefined }), NOW).error, /^table must be/);
+});
+
+test("tables だけが違う再送は更新になる", function () {
+  var orders = new Map();
+  var first = intake.putOrder(orders, intake.normalizeOrder(body({ orderId: "tb-1", tables: [3] }), NOW).order);
+  assert.equal(first.created, true);
+  var same = intake.putOrder(orders, intake.normalizeOrder(body({ orderId: "tb-1", tables: [3] }), NOW).order);
+  assert.equal(same.duplicate, true);
+  var changed = intake.putOrder(orders, intake.normalizeOrder(body({ orderId: "tb-1", tables: [3, 4] }), NOW).order);
+  assert.equal(changed.updated, true);
+  assert.deepEqual(changed.order.tables, [3, 4]);
 });

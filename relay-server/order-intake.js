@@ -4,9 +4,11 @@
  * 契約の向き: 我々が受け口を定義し、注文端末チームがそれに合わせて送る (#139)。
  *
  * 受信形式 (注文端末 → relay / POST /api/orders):
- *   { orderId, table, people?, orderedAt?, items:[{ name, qty, note?, allergies? }] }
+ *   { orderId, table, tables?, people?, orderedAt?, items:[{ name, qty, note?, allergies? }] }
+ *   ※ 複数卓の注文 (order-system からの転送) は tables:[3,4] で届く。tables があれば table は無視し、
+ *     昇順に並べて "3,4" の形で relay が組み立てる。tables が無ければ従来どおり table 文字列が必須
  * 配信形式 (relay → KDS / GET /api/orders):
- *   { id, table, type:"new", start, people, items:[{ name, qty, options, allergies, done }] }
+ *   { id, table, tables, type:"new", start, people, items:[{ name, qty, options, allergies, done }] }
  *   ※ start は epoch ミリ秒。KDS (kds-a-grid.html) の既存データ契約に合わせている。
  *
  * 方針:
@@ -27,6 +29,22 @@ var MAX_NAME_LENGTH = 80;
 var MAX_NOTE_LENGTH = 200;
 var MAX_QTY = 99;
 var MAX_PEOPLE = 99;
+var MAX_TABLES = 15;
+var MAX_TABLE_NO = 2147483647;
+
+/* 複数卓の検証。戻り値は昇順に揃えた配列、不正なら null。
+   昇順に揃えるのは、送信側の並び違いで同じ注文が「内容差分」に見えないようにするため */
+function normalizeTables(value) {
+  if (!Array.isArray(value) || !value.length || value.length > MAX_TABLES) return null;
+  for (var i = 0; i < value.length; i++) {
+    if (typeof value[i] !== "number" || !Number.isInteger(value[i]) || value[i] < 1 || value[i] > MAX_TABLE_NO) return null;
+  }
+  var sorted = value.slice().sort(function (a, b) { return a - b; });
+  for (var j = 1; j < sorted.length; j++) {
+    if (sorted[j] === sorted[j - 1]) return null;
+  }
+  return sorted;
+}
 
 function validateOrderId(value) {
   if (typeof value !== "string" && typeof value !== "number") return null;
@@ -77,8 +95,17 @@ function normalizeOrder(body, now) {
   var orderId = validateOrderId(body.orderId);
   if (!orderId) return { error: "orderId must be a non-empty string of at most " + MAX_ORDER_ID_LENGTH + " characters" };
 
-  var table = validateTable(body.table);
-  if (!table) return { error: "table must be a non-empty string of at most " + MAX_TABLE_LENGTH + " characters" };
+  // tables があれば table は見ない。連結後の文字列には 6 文字制限を掛けない (15 卓で 30 文字を超えるため)
+  var tables = null;
+  var table;
+  if (body.tables !== undefined && body.tables !== null) {
+    tables = normalizeTables(body.tables);
+    if (!tables) return { error: "tables must be an array of 1 to " + MAX_TABLES + " distinct integers between 1 and " + MAX_TABLE_NO };
+    table = tables.join(",");
+  } else {
+    table = validateTable(body.table);
+    if (!table) return { error: "table must be a non-empty string of at most " + MAX_TABLE_LENGTH + " characters" };
+  }
 
   if (!Array.isArray(body.items) || !body.items.length) return { error: "items must be a non-empty array" };
   if (body.items.length > MAX_ITEMS) return { error: "items must contain at most " + MAX_ITEMS + " entries" };
@@ -107,13 +134,14 @@ function normalizeOrder(body, now) {
     start = Math.min(parsed, now);
   }
 
-  return { order: { id: orderId, table: table, type: "new", start: start, people: people, items: items } };
+  return { order: { id: orderId, table: table, tables: tables, type: "new", start: start, people: people, items: items } };
 }
 
 /* 更新対象だけを安定した形へ寄せる。start は初回受付時刻として不変にするため比較しない。 */
 function mutableOrderContent(order) {
   return {
     table: order.table,
+    tables: order.tables == null ? null : order.tables,
     people: order.people,
     items: (order.items || []).map(function (item) {
       return {
