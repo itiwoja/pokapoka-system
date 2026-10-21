@@ -1691,6 +1691,14 @@
     background: transparent;
     color: var(--text-secondary);
   }
+  /* 提供順は 前菜 → 膳 → デザート。前菜が未提供の卓のデザートは、帯は出したまま
+     ボタンを置かず、読取専用の帯 (破線・地なし) にして「先に前菜を」と出す (#289・案A)。
+     前菜を「出した」にすると applyServeCueToCard で長押しのボタン付きに作り直される。 */
+  .serve-cue .serve-cue-wait {
+    margin-left: auto; flex: 0 0 auto;
+    min-height: 44px; display: inline-flex; align-items: center;
+    font-weight: 700; color: var(--text-secondary);
+  }
   /* デザートは膳を出し終えてから。全品完了するまでは出さない */
   .card:not(.all-done) .serve-cue[data-serve-kind="dessert"] { display: none; }
   /* 前菜は「提供済みになったら」畳む。全品完了を条件にしない (#230)。
@@ -3292,6 +3300,10 @@
       if (mode !== "hall") return;
       if (orderId == null || (kind !== "starter" && kind !== "dessert")) return;
       var id = String(orderId);
+      // 提供順は 前菜 → 膳 → デザート。前菜が未提供の卓は、どの経路からでもデザートを
+      // 出したことにしない (ボタンを隠すだけでなく経路の側でも止める #289・案A / #259 と同じ考え方)。
+      // 取り消し (served=false) は止めない
+      if (kind === "dessert" && served && !serveCueState(id).starter) return;
       var st = serveCueMap[id];
       if (!st || typeof st !== "object") st = { starter: false, dessert: false };
       st[kind] = !!served;
@@ -4785,6 +4797,19 @@
         cue.appendChild(label);
         return cue;
       }
+      /* 提供順は 前菜 → 膳 → デザート。前菜が未提供の卓は、デザートの帯は出したまま
+         押せるボタンを置かず「先に前菜を出してください」と出す (#289・案A)。
+         前菜を「出した」にすると setServeCue → applyServeCueToCard で作り直され、
+         長押しのボタンが出る。前菜を戻せば、またこの形に戻る。 */
+      if (kind === "dessert" && !served && !state.starter) {
+        cue.classList.add("readonly", "waiting-starter");
+        var wait = document.createElement("span");
+        wait.className = "serve-cue-wait";
+        wait.textContent = "先に前菜を出してください";
+        cue.appendChild(label);
+        cue.appendChild(wait);
+        return cue;
+      }
       var dessertServe = (kind === "dessert" && !served);
       var button = document.createElement("button");
       button.type = "button";
@@ -4801,6 +4826,9 @@
         attachServeHoldHandlers(cue, button, progress, SERVE_REVERT_MS, served
           ? function () { setServeCue(orderId, kind, false); }
           : function () {
+              // 帯を作った後に前菜が戻された (他タブ・他端末) 場合や、キーボードの2段階確認でも、
+              // 前菜が未提供なら卓を閉じない。帯を今の状態で作り直すだけにする (#289)
+              if (!serveCueState(orderId).starter) { applyServeCueToCard(orderId); renderHallViews(); return; }
               setServeCue(orderId, "dessert", true);
               dismissHallReady(orderId);   // 提供準備完了パネル側のcueも閉じる
               removeCard(orderId, /*fade*/ true);   // 卓の提供が終わったのでカードを消す
