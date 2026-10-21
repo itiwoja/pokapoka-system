@@ -1313,6 +1313,8 @@
     transition: color .1s ease, border-color .1s ease, background .1s ease;
   }
   .res-del:hover { color: #fff; background: var(--u-alert); border-color: var(--u-alert); }
+  /* 予約の削除は注文削除 (#68) と同じ2段階。1回目で「削除?」に変わり、猶予内にもう一度で消す (#295) */
+  .res-del.armed { color: #fff; background: var(--u-alert); border-color: var(--u-alert); font-size: 13px; min-width: 56px; padding: 0 6px; }
 
   /* ============================================================ モーダル (予約追加フォーム) */
   .modal-backdrop {
@@ -1725,6 +1727,8 @@
   .table-override-confirm h2 { margin: 0 0 10px; font-size: 20px; }
   .table-override-confirm p { margin: 0 0 16px; line-height: 1.6; font-weight: 700; }
   .hall-ready-toast { z-index: 12; }
+  /* 前菜の取り消し (#295) は提供準備完了の「戻す」と同じ形。両方が出ているときは上に積む */
+  #hallReadyUndoToast.show ~ #starterUndoToast { bottom: 100px; }
 
   /* ============================================================
      Java Swing (Metal / Ocean テーマ) 風スキン
@@ -2436,6 +2440,11 @@
     <span id="hallReadyUndoMsg"></span>
     <button class="undo-btn" type="button" id="hallReadyUndoBtn">戻す</button>
   </div>
+  <!-- ホールの前菜「出した」の取り消し (#295)。提供済みの前菜の帯はホールで畳まれるので、ここで戻す -->
+  <div class="toast hall-ready-toast starter-undo-toast" id="starterUndoToast" role="status">
+    <span id="starterUndoMsg"></span>
+    <button class="undo-btn" type="button" id="starterUndoBtn">戻す</button>
+  </div>
 
   <!-- 予約追加フォーム -->
   <div class="modal-backdrop" id="modalBackdrop">
@@ -2687,6 +2696,8 @@
     var tableOverridePending = null; // { id, candidate }。重複警告の2段階確認
     var hallReadyUndoId = null;
     var hallReadyUndoTimer = null;
+    var starterUndoId = null;      // ホールで前菜を「出した」直後の取り消し対象 (#295)
+    var starterUndoTimer = null;
     var seatDialContext = "reservation"; // reservation / tableOverride
     var bc = null;
     var undoInfo = null;           // { id, index } 全完了直後の取り消し対象
@@ -2786,6 +2797,9 @@
     var hallProtoViewEl = document.getElementById("hallProtoView");
     var hallReadyUndoToastEl = document.getElementById("hallReadyUndoToast");
     var hallReadyUndoMsgEl = document.getElementById("hallReadyUndoMsg");
+    var starterUndoToastEl = document.getElementById("starterUndoToast");   // 前菜「出した」の取り消し (#295)
+    var starterUndoMsgEl = document.getElementById("starterUndoMsg");
+    var starterUndoBtn = document.getElementById("starterUndoBtn");
     var hallReadyUndoBtn = document.getElementById("hallReadyUndoBtn");
     var tableOverrideConfirmBackdrop = document.getElementById("tableOverrideConfirmBackdrop");
     var tableOverrideConfirmMessage = document.getElementById("tableOverrideConfirmMessage");
@@ -4300,6 +4314,30 @@
       hallReadyUndoId = null;
       if (hallReadyUndoToastEl) hallReadyUndoToastEl.classList.remove("show");
     }
+    /* ホールで前菜を「出した」直後の取り消し (#295)。提供済みの前菜の帯はホールで畳む (#230) ため、
+       別の卓を押し間違えても帯の「長押しで戻す」に届かなかった。デザートと同じ形の「戻す」を
+       HALL_READY_UNDO_MS (6秒) 出し、押されたら前菜を未提供に戻す。 */
+    function showStarterUndo(id) {
+      starterUndoId = String(id);
+      var entry = cards[starterUndoId];
+      var table = entry && entry.order ? effectiveTable(entry.order) : "";
+      if (starterUndoMsgEl) starterUndoMsgEl.textContent = "卓 " + (table || "--") + " の前菜を出しました";
+      if (starterUndoToastEl) starterUndoToastEl.classList.add("show");
+      if (starterUndoTimer) clearTimeout(starterUndoTimer);
+      starterUndoTimer = setTimeout(hideStarterUndo, HALL_READY_UNDO_MS);
+    }
+    function hideStarterUndo() {
+      if (starterUndoTimer) { clearTimeout(starterUndoTimer); starterUndoTimer = null; }
+      starterUndoId = null;
+      if (starterUndoToastEl) starterUndoToastEl.classList.remove("show");
+    }
+    function undoStarter() {
+      if (!starterUndoId) return;
+      var id = starterUndoId;
+      hideStarterUndo();
+      if (mode !== "hall") return;   // 前菜の記録はホールだけ (#228)
+      if (serveCueState(id).starter) setServeCue(id, "starter", false);
+    }
     function dismissHallReady(id) {
       if (mode !== "hall") return;
       var key = String(id), snapshot = hallReadyMap[key];
@@ -4809,6 +4847,7 @@
         button.addEventListener("click", function () {
           if (serveCueSuppressClick) { serveCueSuppressClick = false; return; }
           setServeCue(orderId, kind, true);
+          if (kind === "starter") showStarterUndo(orderId);   // 押し間違いを6秒だけ戻せるようにする (#295)
         });
       }
       return cue;
@@ -4990,7 +5029,27 @@
       del.className = "res-del";
       del.setAttribute("aria-label", t("del"));
       del.textContent = "×";
-      del.addEventListener("click", function () { deleteRes(r.rid); });
+      /* 予約の「×」は「調理開始」の隣にあり、1回押すだけで消えていた (#295)。
+         注文削除 (#68) と同じ2段階にする: 1回目で「削除?」、DELETE_ARM_MS 内にもう一度で消す。 */
+      var delArmTimer = null;
+      function disarmResDelete() {
+        if (delArmTimer) { clearTimeout(delArmTimer); delArmTimer = null; }
+        del.classList.remove("armed");
+        del.textContent = "×";
+        del.setAttribute("aria-label", t("del"));
+      }
+      del.addEventListener("click", function () {
+        if (del.classList.contains("armed")) {
+          disarmResDelete();
+          deleteRes(r.rid);
+          return;
+        }
+        del.classList.add("armed");
+        del.textContent = "削除?";
+        del.setAttribute("aria-label", "もう一度タップで予約を削除");
+        if (delArmTimer) clearTimeout(delArmTimer);
+        delArmTimer = setTimeout(disarmResDelete, DELETE_ARM_MS);
+      });
       actions.appendChild(seat);
       actions.appendChild(go);
       actions.appendChild(del);
@@ -6016,7 +6075,7 @@
       if (mode === "hall" && grab) cancelReorder();
       // 相手モード用のundoトーストは閉じる。重なって別操作のundoが実行されるのを防ぐ (#261)
       if (mode !== "kitchen") hideUndoToast();
-      else hideHallReadyUndo();
+      else { hideHallReadyUndo(); hideStarterUndo(); }
       if (mode !== "kitchen") closeTableOverrideConfirm();
       if (mode !== "kitchen" && seatDialContext === "tableOverride") closeSeatDial();
       applyMode();
@@ -6284,6 +6343,7 @@
       });
       if (undoToastBtn) undoToastBtn.addEventListener("click", undoComplete);
       if (hallReadyUndoBtn) hallReadyUndoBtn.addEventListener("click", undoHallReady);
+      if (starterUndoBtn) starterUndoBtn.addEventListener("click", undoStarter);
       if (tableOverrideConfirmCancel) tableOverrideConfirmCancel.addEventListener("click", closeTableOverrideConfirm);
       if (tableOverrideConfirmAllow) tableOverrideConfirmAllow.addEventListener("click", allowTableOverride);
       if (tableOverrideConfirmBackdrop) tableOverrideConfirmBackdrop.addEventListener("click", function (e) {
