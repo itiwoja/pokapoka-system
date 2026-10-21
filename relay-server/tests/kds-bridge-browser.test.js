@@ -380,6 +380,46 @@ test("卓番の上書きも種として送り、取り込んだ変更と解除�
   assert.deepEqual(bridge.stored("kds_table_override_v1"), { o2: "14" });
 });
 
+test("relay が受け付けない一束は捨てて後続を送り、他の端末の状態も取り込み続ける。5xx は送り直す (#297)", async function () {
+  var snapshot = { sessionId: "s1", rev: 1, konro: {}, done: {}, locked: {}, seq: [], deleted: {},
+    serveCue: {}, hallReady: {}, tableOverride: {} };
+  var replies = [
+    { status: 400, body: { ok: false, error: "events[0]: konro.num is invalid" } },
+    { status: 503, body: { ok: false, error: "unavailable" } },
+  ];
+  var bridge = startBridge({
+    "GET /api/kitchen-state": function () { return { status: 200, body: snapshot }; },
+    "POST /api/kitchen-state": function () {
+      return replies.shift() || { status: 200, body: { ok: true, rev: 3, sessionId: "s1" } };
+    },
+  });
+  await settle();
+
+  var bad = { type: "konro", id: "o1", num: 0, state: "white" };
+  bridge.channel.onmessage({ data: bad });
+  await waitUntil(function () { return bridge.posts("/api/kitchen-state").length === 1; });
+  await settle();
+  var kitchenStatus = bridge.status().channels.kitchen;
+  assert.equal(kitchenStatus.rejectedCount, 1);   // 送れなかった操作がある
+  assert.equal(kitchenStatus.retrying, false);
+  assert.equal(kitchenStatus.error, "HTTP 400");
+  assert.ok(kitchenStatus.lastFailureAt > 0);
+
+  // 列が空になったので、別の端末の操作を取り込める (以前は送り直し続けて取り込めなかった)
+  snapshot = Object.assign({}, snapshot, { rev: 2, konro: { o2: { 2: "red" } } });
+  await bridge.tick("tickKitchen");
+  assert.deepEqual(bridge.stored("kds_konro_v1"), { o2: { 2: "red" } });
+  assert.equal(bridge.status().channels.kitchen.rejectedCount, 1);   // 取り込めても件数は消さない
+
+  // 後続の操作は送る。503 は同じ一束を送り直し、400 の一束は送り直さない
+  var good = { type: "toggle", id: "o2", index: 0, doneCount: 1 };
+  bridge.channel.onmessage({ data: good });
+  await waitUntil(function () { return bridge.posts("/api/kitchen-state").length === 3; }, 3000);
+  await settle();
+  assert.deepEqual(bridge.posts("/api/kitchen-state"), [{ events: [bad] }, { events: [good] }, { events: [good] }]);
+  assert.equal(bridge.status().channels.kitchen.error, null);
+});
+
 test("KDS の操作イベントを relay へ送り、着席は予約者名付きで座席占有へ登録する", async function () {
   var bridge = startBridge({
     "GET /api/stock": ok([reservation("r1")]),

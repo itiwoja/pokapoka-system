@@ -91,6 +91,8 @@
           retrying: false,
           failureCount: 0,
           error: null,
+          rejectedCount: 0,      // relay が受け付けず、送り直さずに捨てた操作の件数 (#297)
+          lastRejectedAt: null,
         };
       }
       return records[key];
@@ -132,6 +134,19 @@
       record.error = safeSyncError(status);
     }
 
+    /* relay が中身を受け付けず (400)、送り直さずに捨てた (#297)。最終失敗の時刻には残すが、
+       送り直さないので retrying にはしない。捨てた件数は、後で成功しても消さない */
+    function reject(name, at, status, count) {
+      var record = recordFor(name);
+      var time = timestamp(at);
+      if (record.firstAttemptAt === null) record.firstAttemptAt = time;
+      record.lastAttemptAt = time;
+      record.lastFailureAt = time;
+      record.lastRejectedAt = time;
+      record.rejectedCount += Math.max(0, Number(count) || 0);
+      record.error = safeSyncError(status);
+    }
+
     function classify(record, at) {
       if (record.firstAttemptAt === null) return SYNC_STATES.pending;
       var reference = record.lastSuccessAt === null ? record.firstAttemptAt : record.lastSuccessAt;
@@ -151,6 +166,8 @@
         retrying: !!record.retrying,
         failureCount: record.failureCount,
         error: record.error,
+        rejectedCount: record.rejectedCount,
+        lastRejectedAt: record.lastRejectedAt,
       };
     }
 
@@ -189,6 +206,7 @@
       attempt: attempt,
       success: success,
       failure: failure,
+      reject: reject,
       snapshot: snapshot,
       classify: function (name, at) { return publicRecord(name, at).state; },
     };
@@ -220,6 +238,15 @@
   function markSyncFailure(name, status) {
     syncStatus.failure(name, Date.now(), status);
     publishSyncStatus();
+  }
+
+  function markSyncRejected(name, status, count) {
+    syncStatus.reject(name, Date.now(), status, count);
+    publishSyncStatus();
+  }
+
+  function warn(message) {
+    try { (console.warn || console.log).call(console, message); } catch (e) {}
   }
 
   function load(key, fb) { try { var v = JSON.parse(localStorage.getItem(key)); return v == null ? fb : v; } catch (e) { return fb; } }
@@ -381,7 +408,8 @@
 
   /**
    * 厨房イベントを順序どおりに送るキュー。
-   * 失敗した batch は、その送信中に追加されたイベントより前へ戻して retryMs 後に再送する。
+   * 失敗した batch (sendBatch が投げたもの) は、その送信中に追加されたイベントより前へ戻して
+   * retryMs 後に再送する。sendBatch が投げずに戻れば、その batch は済んだものとして次へ進む。
    * イベントは絶対状態を表すため、応答喪失による同一 batch の再送も relay 側で安全に再適用できる。
    */
   function createKitchenQueue(sendBatch, options) {
@@ -443,12 +471,24 @@
     };
   }
 
+  /* 厨房イベントの一束を relay へ送る。400 は relay が中身を受け付けなかったもので、何度送っても
+     通らない。送り直すと列が空にならず、この端末は relay の状態を取り込めなくなる (#297)。
+     そこで投げずに { rejected:true } を返し、呼び出し側が一束を捨てて次へ進む。
+     通信断・5xx・408・429 などは投げ、列が送り直す */
   async function postKitchenBatch(fetchFn, batch) {
     var res = await fetchFn(API_KITCHEN, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ events: batch }),
     });
+    if (res.status === 400) {
+      var reason = null;
+      try {
+        var rejected = await res.json();
+        if (rejected && rejected.error) reason = String(rejected.error);
+      } catch (e) {}
+      return { ok: false, rejected: true, status: 400, error: reason };
+    }
     if (!res.ok) throw new Error(res.status);
     return res.json();
   }
@@ -457,6 +497,13 @@
     markSyncAttempt("kitchen");
     try {
       var body = await postKitchenBatch(fetch, batch);
+      if (body && body.rejected) {
+        // 送れなかった操作がある。同期状態に件数と時刻を残し、一束を捨てて後続を送る (#297)
+        markSyncRejected("kitchen", body.status, batch.length);
+        warn("[kds-bridge] relay が受け付けなかった厨房イベント " + batch.length + " 件を捨てました: " +
+          (body.error || "HTTP " + body.status));
+        return;
+      }
       markSyncSuccess("kitchen");
       // 自分の変更が relay に載った時点の rev。これより古いスナップショットは取り込まない
       // (取り込むと、送った直後の操作が一瞬巻き戻って見える)

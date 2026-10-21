@@ -314,3 +314,70 @@ test("同期状態の集約は経路別の障害を隠さず、全経路停止�
   assert.equal(safe.snapshot(1).channels.orders.error, "通信エラー");
   assert.doesNotMatch(JSON.stringify(safe.snapshot(1)), /secret-value/);
 });
+
+/* ---- Issue #297: relay が受け付けない一束で厨房同期が止まらない ---- */
+
+test("relay が受け付けない一束 (400) は送り直さずに捨て、後続の一束を送る (#297)", async function () {
+  var sent = [];
+  var fetchStub = async function (url, init) {
+    sent.push(JSON.parse(init.body).events);
+    if (sent.length === 1) {
+      return { ok: false, status: 400, json: async function () { return { ok: false, error: "events[0]: konro.num is invalid" }; } };
+    }
+    return { ok: true, status: 200, json: async function () { return { ok: true, rev: 1 }; } };
+  };
+  var results = [];
+  var queue = createKitchenQueue(async function (batch) {
+    results.push(await postKitchenBatch(fetchStub, batch));
+  }, { flushMs: 1000, retryMs: 10 });
+  var bad = { type: "konro", id: "order-1", num: 0, state: "white" };
+  var good = { type: "toggle", id: "order-1", index: 0, doneCount: 1 };
+
+  queue.enqueue(bad);
+  await queue.flushNow();
+  // 列の先頭へ戻さないので、列が空になり relay の状態を取り込める
+  assert.deepEqual(queue.pending(), []);
+  assert.equal(queue.isBusy(), false);
+  assert.deepEqual(results[0], { ok: false, rejected: true, status: 400, error: "events[0]: konro.num is invalid" });
+
+  queue.enqueue(good);
+  await queue.flushNow();
+  await delay(30);
+  assert.deepEqual(sent, [[bad], [good]]);
+});
+
+test("通信断・5xx・408・429 は今までどおり送信失敗として投げ、列が送り直す (#297)", async function () {
+  var statuses = [408, 429, 500, 503];
+  for (var i = 0; i < statuses.length; i++) {
+    var status = statuses[i];
+    await assert.rejects(postKitchenBatch(async function () {
+      return { ok: false, status: status, json: async function () { return {}; } };
+    }, [{ type: "timerLock", id: "order-1", locked: true }]), new RegExp(String(status)));
+  }
+  await assert.rejects(postKitchenBatch(async function () { throw new Error("offline"); },
+    [{ type: "timerLock", id: "order-1", locked: true }]), /offline/);
+});
+
+test("捨てた操作は同期状態に件数と時刻を残し、後で成功しても消さない (#297)", function () {
+  var tracker = createSyncStatusTracker({ delayedMs: 10, offlineMs: 30 });
+  tracker.attempt("kitchen", 0);
+  tracker.success("kitchen", 0);
+
+  tracker.attempt("kitchen", 5);
+  tracker.reject("kitchen", 5, 400, 3);
+  var rejected = tracker.snapshot(6).channels.kitchen;
+  assert.equal(rejected.state, "normal");    // relay には届いている
+  assert.equal(rejected.retrying, false);    // 送り直さないので「再試行中」にしない
+  assert.equal(rejected.lastFailureAt, 5);   // 画面の「最終失敗」に出る
+  assert.equal(rejected.error, "HTTP 400");
+  assert.equal(rejected.rejectedCount, 3);
+  assert.equal(rejected.lastRejectedAt, 5);
+
+  tracker.attempt("kitchen", 7);
+  tracker.success("kitchen", 7);
+  var later = tracker.snapshot(7).channels.kitchen;
+  assert.equal(later.error, null);
+  assert.equal(later.lastFailureAt, 5);
+  assert.equal(later.rejectedCount, 3);
+  assert.equal(later.lastRejectedAt, 5);
+});
