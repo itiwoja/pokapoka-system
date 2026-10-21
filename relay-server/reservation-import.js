@@ -5,17 +5,21 @@
  * 予約を持ち込むための解析だけを持つ。保存はしない。どの入口も reservation-store.js の save() に
  * 渡せる下書き ({rid?,startAt,adults,kids,name,table,menu[],allergies,request,memo,status}) を返す。
  *
- * TableCheck の CSV の列名・予約詳細の書式・通知メールの文面は実物を確認できていない。
+ * CSV・Excel の取込は、TableCheck の予約の書き出し (2026-10-21 に実物の .xlsx で確認。1行目がタイトル、
+ * 2行目が72列の見出し) を読める。予約詳細の書式・通知メールの文面は実物を確認できていない。
  * 列名やラベルは表記ゆれを広く受け、読み取れなかった項目は warnings で返す。
  * 取り込む前に必ず人が確認する前提で使う (自動では保存しない)。
  */
 "use strict";
 
 var crypto = require("node:crypto");
+var xlsxReader = require("./xlsx-reader");
 
 var MAX_MENU_ITEMS = 50;
 var MAX_CSV_ROWS = 500;
 var MAX_MIME_DEPTH = 5;
+var MAX_HEADER_SEARCH_ROWS = 10;   // 見出しの行を探すのは先頭からこの行数まで
+var MIN_HEADER_FIELDS = 3;         // 分かる列がこの数以上ある最初の行を見出しとみなす
 
 /* ============================================================ 共通: 文字コード・日時・人数・メニュー */
 
@@ -126,16 +130,27 @@ function parseCount(value) {
   return m ? Number(m[1]) : null;
 }
 
+var MENU_BULLET = /^[\s・●○◆■▼*\-]+/;
+// 数が品名の前に来る品目 ("1 × 土鍋御膳")。TableCheck の「注文」列はこの形を ", " でつなぐ
+var QTY_FIRST_ITEM = /^(\d+)\s*[x×✕*]\s*([\s\S]+)$/i;
+// 数が先の並びの区切り。直後が「数 ×」で始まる所だけで分け、品名の中の読点・カンマでは割らない
+var QTY_FIRST_SEPARATOR = /\s*(?:\r?\n|[、,;])\s*(?=[・●○◆■▼\-]*\s*\d+\s*[x×✕*])/i;
+
 /**
- * メニューの並びを品目へ分ける ("土鍋御膳 x2、うなぎ×1" など。区切りは改行・読点・カンマ・セミコロン)。
+ * メニューの並びを品目へ分ける ("土鍋御膳 x2、うなぎ×1" や "1 × 土鍋御膳, 2 × うなぎ"。
+ * 区切りは改行・読点・カンマ・セミコロン)。
  * requireQty が真なら、数量の書いてある行だけを品目とみなす (本文全体から拾うときの誤検出よけ)
  */
 function parseMenuList(value, options) {
   var requireQty = !!(options && options.requireQty);
   var out = [];
-  nfkc(value).split(/\r?\n|、|,|;/).forEach(function (line) {
-    line = line.replace(/^[\s・●○◆■▼*\-]+/, "").trim();
+  var text = nfkc(value);
+  var parts = QTY_FIRST_ITEM.test(text.replace(MENU_BULLET, "")) ? text.split(QTY_FIRST_SEPARATOR) : text.split(/\r?\n|、|,|;/);
+  parts.forEach(function (line) {
+    line = line.replace(MENU_BULLET, "").trim();
     if (!line || out.length >= MAX_MENU_ITEMS) return;
+    var q = QTY_FIRST_ITEM.exec(line);
+    if (q && Number(q[1]) >= 1) return out.push({ name: q[2].replace(/\s+/g, " ").trim(), qty: Number(q[1]) });
     var m = /^(.+?)\s*[x×✕*]\s*(\d+)\s*(?:個|つ|名分|人前|膳|点)?$/i.exec(line) ||
       /^(.+?)\s+(\d+)\s*(?:個|つ|名分|人前|膳|点)?$/.exec(line) ||
       /^(.+?)(\d+)\s*(?:個|つ|名分|人前|膳|点)$/.exec(line);
@@ -154,6 +169,40 @@ function allergyNote(value) {
 function note(value) {
   var s = String(value == null ? "" : value).trim();
   return s || null;
+}
+
+// 予約フォームの質問と答え ("質問1: アレルギーや… 回答1: えび")。答えは同じ行か次の行にあり、
+// 同じ行に次の「質問N:」が続くときはその手前まで。TableCheck の「予約メモ」に入ってくる
+var FORM_ANSWER = /質問([0-9０-９]+)[ \t]*[:：][ \t]*([^\n]*?)\s*回答\1[ \t]*[:：][ \t]*((?:(?!質問[0-9０-９]+[ \t]*[:：])[^\n])*)(\n?)/g;
+var ALLERGY_QUESTION = /アレルギー|allerg/i;
+// これより長いメモからは問答を探さない (保存できるメモは500文字まで。長すぎる値で照合が遅くならないように)
+var MAX_MEMO_SCAN = 5000;
+
+/**
+ * メモからアレルギーの質問と答えを取り出す。答えが「なし」などでなければアレルギーとして返し、
+ * 質問と答えはメモから外す (答えが「なし」でも外す。厨房へ二重に出さない)。ほかの質問はメモに残す
+ * @returns {{allergies: string[], memo: string}}
+ */
+function takeAllergyAnswers(memo) {
+  var allergies = [];
+  var text = String(memo == null ? "" : memo);
+  if (text.length > MAX_MEMO_SCAN) return { allergies: allergies, memo: text };
+  var rest = text.replace(/\r\n?/g, "\n")
+    .replace(FORM_ANSWER, function (all, no, question, answer, newline, offset, whole) {
+      if (!ALLERGY_QUESTION.test(question)) return all;
+      var found = allergyNote(answer);
+      if (found) allergies.push(found);
+      // 行の頭から始まる問答は改行ごと外す。行の途中から始まるなら、前の文と次の行がつながらないよう改行を残す
+      return offset === 0 || whole[offset - 1] === "\n" ? "" : newline;
+    });
+  return { allergies: allergies, memo: rest.replace(/[ \t]+$/gm, "").trim() };
+}
+
+/** アレルギーの記載を重ねずにつなぐ */
+function joinAllergies(list) {
+  var out = [];
+  list.forEach(function (s) { if (s && out.indexOf(s) < 0) out.push(s); });
+  return out.length ? out.join("、") : null;
 }
 
 function statusFrom(value) {
@@ -185,15 +234,19 @@ function ridFrom(value) {
 
 /* ============================================================ B. CSV */
 
-// 列名 → 項目。上から順に照合するので、「人数(大人)」が pax より先に adults へ当たる
+// 列名 → 項目。上から順に照合するので、「人数(大人)」が pax より先に adults へ当たる。
+// TableCheck の人数は「人数:大人」「人数:シニア」「人数:子供」「人数:幼児」の4列。シニア・幼児を pax より先に
+// 当て、部分一致の「人数」で合計人数と取り違えないようにする (シニアは大人へ、幼児は子供へ足す)
 var CSV_FIELDS = [
   ["rid", ["予約id", "予約番号", "予約no", "id", "rid", "reservationid"]],
   ["datetime", ["来店日時", "予約日時", "日時", "startat", "datetime"]],
-  ["date", ["来店日", "予約日", "日付", "date"]],
-  ["time", ["来店時間", "来店時刻", "予約時間", "時間", "時刻", "time"]],
+  ["date", ["来店日", "予約日", "開始日", "日付", "date"]],
+  ["time", ["来店時間", "来店時刻", "予約時間", "開始時刻", "時間", "時刻", "time"]],
   ["name", ["予約者名", "予約者", "お名前", "名前", "氏名", "顧客名", "name"]],
   ["adults", ["大人人数", "大人", "adults", "adult"]],
   ["kids", ["子供人数", "子供", "子ども", "お子様", "小人", "kids", "children"]],
+  ["seniors", ["シニア人数", "シニア", "seniors", "senior"]],
+  ["infants", ["幼児人数", "乳幼児", "幼児", "infants", "infant"]],
   ["pax", ["合計人数", "人数", "pax", "partysize"]],
   ["menu", ["事前メニュー", "メニュー", "コース", "注文", "menu", "orders"]],
   ["allergies", ["アレルギー", "allergies", "allergy"]],
@@ -209,21 +262,38 @@ function headerKey(value) {
 
 // 来店日時ではない日時の列 (作成日時・更新日時・登録日時・変更日時・キャンセル日時など) に含まれる語。
 // 部分一致で「日時」「日付」「時間」に当たり、来店日時と取り違えないよう、来店日時の項目には当てない。
+// TableCheck の「終了時間」「終了日」「終了時刻」(帰る時刻) と「滞在時間」(長さ) も同じ扱い。
 // 「来店」を含む列 (来店日時(変更後) など) は来店日時なので除かない
-var RECORD_TIME_WORDS = ["作成", "更新", "登録", "変更", "修正", "キャンセル", "取消", "取り消", "受付", "申込", "申し込"];
+var RECORD_TIME_WORDS = ["作成", "更新", "登録", "変更", "修正", "キャンセル", "取消", "取り消", "受付", "申込", "申し込", "終了", "滞在"];
 var VISIT_TIME_FIELDS = { datetime: true, date: true, time: true };
+// 予約者のほかの同席者の名前 (TableCheck の「顧客 2: 名前」〜「顧客 4: 名前」) は予約者名に当てない
+var OTHER_GUEST_KEY = /^顧客\d/;
+// 年月日のそろった日付。時刻の列 (TableCheck の「予約時間」) にこれが入っていれば、来店日時の列として読む
+var FULL_DATE = /\d{4}\s*[\/\-.年]\s*\d{1,2}\s*[\/\-.月]\s*\d{1,2}/;
 
 function isRecordTimeKey(key) {
   return key.indexOf("来店") < 0 && RECORD_TIME_WORDS.some(function (word) { return key.indexOf(word) >= 0; });
 }
 
-/** 見出し行の各列を項目へ割り当てる。完全一致を優先し、残りを部分一致 (日本語の2文字以上の別名だけ) で当てる */
-function mapColumns(header) {
+function hasFullDate(dataRows, index) {
+  return dataRows.some(function (row) { return FULL_DATE.test(nfkc(row.cells[index])); });
+}
+
+/**
+ * 見出し行の各列を項目へ割り当てる。完全一致を優先し、残りを部分一致 (日本語の2文字以上の別名だけ) で当てる。
+ * 来店日時の列が無く、時刻の列 (「予約時間」など) の値に年月日が入っていれば、その列を来店日時として読む
+ * (ほかの CSV で「予約時間」が時刻だけなら、今までどおり時刻として読む)
+ */
+function mapColumns(header, dataRows) {
   var keys = header.map(headerKey);
   var columns = {};
   var used = {};
+  var timeAliases = CSV_FIELDS.filter(function (field) { return field[0] === "time"; })[0][1];
   CSV_FIELDS.forEach(function (field) {
     var index = keys.findIndex(function (key, i) { return !used[i] && field[1].indexOf(key) >= 0; });
+    if (index < 0 && field[0] === "datetime") {
+      index = keys.findIndex(function (key, i) { return !used[i] && timeAliases.indexOf(key) >= 0 && hasFullDate(dataRows || [], i); });
+    }
     if (index >= 0) { columns[field[0]] = index; used[index] = true; }
   });
   CSV_FIELDS.forEach(function (field) {
@@ -232,11 +302,28 @@ function mapColumns(header) {
     var index = keys.findIndex(function (key, i) {
       if (used[i]) return false;
       if (VISIT_TIME_FIELDS[field[0]] && isRecordTimeKey(key)) return false;
+      if (field[0] === "name" && OTHER_GUEST_KEY.test(key)) return false;
       return aliases.some(function (alias) { return key.indexOf(alias) >= 0; });
     });
     if (index >= 0) { columns[field[0]] = index; used[index] = true; }
   });
   return columns;
+}
+
+/**
+ * 見出しの行を探す。先頭から順に見て、分かる列が MIN_HEADER_FIELDS 以上ある最初の行を見出しにする
+ * (TableCheck の書き出しは1行目がタイトル「予約」だけ)。見つからなければ null
+ */
+function findHeader(rows) {
+  for (var i = 0; i < Math.min(rows.length, MAX_HEADER_SEARCH_ROWS); i++) {
+    var columns = mapColumns(trimCells(rows[i].cells), rows.slice(i + 1));
+    if (Object.keys(columns).length >= MIN_HEADER_FIELDS) return { index: i, columns: columns };
+  }
+  return null;
+}
+
+function trimCells(cells) {
+  return cells.map(function (c) { return String(c == null ? "" : c).trim(); });
 }
 
 /** RFC 4180 相当の CSV を行の配列へ (引用符・引用符内の改行に対応)。タブ区切りも受ける。各行に開始行番号を付ける */
@@ -276,11 +363,50 @@ function parseCsvRows(text) {
  *          columns は 項目 → 見出し名。error があるときはファイル全体を取り込めない
  */
 function parseCsv(text, options) {
-  var now = options && options.now || new Date();
   var rows = parseCsvRows(text);
   if (!rows.length) return { columns: {}, unmapped: [], rows: [], error: "CSVに行がありません" };
-  var header = rows[0].cells.map(function (c) { return c.trim(); });
-  var columns = mapColumns(header);
+  return parseTable(rows, options);
+}
+
+/**
+ * Excel (.xlsx) の最初のシート → 予約の下書きの並び。返り値は parseCsv と同じ形
+ * @param {Buffer} buffer - .xlsx のバイト列
+ */
+function parseXlsx(buffer, options) {
+  var rows;
+  try { rows = xlsxReader.readFirstSheet(buffer, { maxRows: MAX_HEADER_SEARCH_ROWS + MAX_CSV_ROWS + 1 }); }
+  catch (err) {
+    var reason = err && err.code === "XLSX_INVALID" ? err.message : "壊れているか、対応していない形式です";
+    return { columns: {}, unmapped: [], rows: [], error: "Excelファイルを読めません (" + reason + ")" };
+  }
+  if (!rows.length) return { columns: {}, unmapped: [], rows: [], error: "Excelのシートに行がありません" };
+  return parseTable(rows, options);
+}
+
+// OLE 複合文書 (古い .xls、またはパスワード付きの .xlsx) の先頭
+var OLE_SIGNATURE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+
+/**
+ * 予約入力画面の「CSV取込」で選んだファイル (CSV・TSV・.xlsx) を中身で見分けて読む。返り値は parseCsv と同じ形
+ * @param {Buffer} buffer - ファイルのバイト列
+ */
+function parseImportFile(buffer, options) {
+  if (xlsxReader.isXlsx(buffer)) return parseXlsx(buffer, options);
+  if (buffer.length >= OLE_SIGNATURE.length && buffer.subarray(0, OLE_SIGNATURE.length).equals(OLE_SIGNATURE)) {
+    return { columns: {}, unmapped: [], rows: [],
+      error: "古い形式の Excel (.xls) やパスワード付きのファイルは読めません。.xlsx か CSV で保存し直してください" };
+  }
+  return parseCsv(decodeBytes(buffer), options);
+}
+
+/** 行の並び [{line, cells[]}] → 予約の下書きの並び。CSV と Excel で共通 */
+function parseTable(rows, options) {
+  var now = options && options.now || new Date();
+  var found = findHeader(rows);
+  var headerIndex = found ? found.index : 0;
+  var header = trimCells(rows[headerIndex].cells);
+  var dataRows = rows.slice(headerIndex + 1);
+  var columns = found ? found.columns : mapColumns(header, dataRows);
   var named = {};
   Object.keys(columns).forEach(function (field) { named[field] = header[columns[field]]; });
   var mappedIndexes = Object.keys(columns).map(function (field) { return columns[field]; });
@@ -290,30 +416,40 @@ function parseCsv(text, options) {
     base.error = "来店日時の列が見つかりません (「来店日時」、または「来店日」と「来店時間」の列が必要)";
     return base;
   }
-  if (rows.length - 1 > MAX_CSV_ROWS) {
+  if (dataRows.length > MAX_CSV_ROWS) {
     base.error = "行数が多すぎます (" + MAX_CSV_ROWS + "行まで)";
     return base;
   }
 
-  base.rows = rows.slice(1).map(function (row) {
+  base.rows = dataRows.map(function (row) {
     function cell(field) {
       var index = columns[field];
-      return index === undefined || row.cells[index] == null ? "" : row.cells[index].trim();
+      return index === undefined || row.cells[index] == null ? "" : String(row.cells[index]).trim();
     }
+    function countOf(field) { return cell(field) ? parseCount(cell(field)) : null; }
     var errors = [];
     var startAt = parseDateTime(columns.datetime !== undefined && cell("datetime") ? cell("datetime") : cell("date") + " " + cell("time"), now);
     if (!startAt) errors.push("来店日時を読み取れません");
 
-    var adults = cell("adults") ? parseCount(cell("adults")) : null;
-    var kids = cell("kids") ? parseCount(cell("kids")) : null;
+    var adults = countOf("adults");
+    var kids = countOf("kids");
+    // 予約ストアの人数は大人・子供の2区分。シニアは大人へ、幼児は子供へ足す
+    var seniors = countOf("seniors");
+    var infants = countOf("infants");
+    if (infants != null) kids = (kids || 0) + infants;
+    if (adults != null && seniors != null) adults += seniors;
     if (adults == null && cell("pax")) {
       var people = parsePeople(cell("pax"));
       if (people) {
-        // 合計人数の列しか無いときは、子供の列の分を引いて大人とする
+        // 合計人数の列しか無いときは、子供の列の分を引いて大人とする (シニアは合計に含まれているとみなす)
         adults = kids != null && !/大人/.test(cell("pax")) ? Math.max(0, people.adults - kids) : people.adults;
         if (kids == null) kids = people.kids;
       }
     }
+    if (adults == null && seniors != null) adults = seniors;
+
+    // 「予約メモ」の予約フォームの答えのうち、アレルギーの質問の答えはアレルギーへ移す
+    var memo = takeAllergyAnswers(cell("memo"));
     var name = guestName(cell("name"));
     var draft = {
       rid: ridFrom(cell("rid")) || (startAt ? derivedRid("csv", startAt, name || "") : null),
@@ -324,9 +460,9 @@ function parseCsv(text, options) {
       status: statusFrom(cell("status")),
       table: note(cell("table")),
       menu: parseMenuList(cell("menu")),
-      allergies: allergyNote(cell("allergies")),
+      allergies: joinAllergies([allergyNote(cell("allergies"))].concat(memo.allergies)),
       request: note(cell("request")),
-      memo: note(cell("memo")),
+      memo: note(memo.memo),
     };
     return { line: row.line, draft: draft, errors: errors };
   });
@@ -578,6 +714,8 @@ module.exports = {
   parsePeople: parsePeople,
   parseMenuList: parseMenuList,
   parseCsv: parseCsv,
+  parseXlsx: parseXlsx,
+  parseImportFile: parseImportFile,
   parseText: parseText,
   parseMail: parseMail,
 };
