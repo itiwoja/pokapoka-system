@@ -3,7 +3,9 @@
 > **2026-10-11: TableCheck API連携は行わないことになった。** 予約情報は店員の手入力で扱う方針とする（入力方法は未設計）。
 > TableCheck の実API取得処理・疎通確認・暫定契約の文書は [`archive/tablecheck/`](../archive/tablecheck/README.md) へ退避した。
 > 予約を持っているのはこのシステムだけになったため、予約は SQLite(`data/reservations.sqlite`)に保存する。
-> TableCheck を模したモックとデモコンソール(`/demo`)を含め、TableCheck 用のコードはすべて `archive/tablecheck/` へ退避した。予約を入れる入口(画面・API)は手入力の設計後に作る。
+> TableCheck を模したモックとデモコンソール(`/demo`)を含め、TableCheck 用のコードはすべて `archive/tablecheck/` へ退避した。
+> その後、予約入力画面 `/reservations`(試作。手入力・CSV取込・貼り付け・メールの4方式)を作り、予約はここから入れられる。
+> 本番でどの入口を使うかは検討中(→「予約の入口(試作・4方式)」)。
 
 予約(メニュー・人数等)を保存し、当日分を KDS の予約ストックに流し込むサーバー。
 6/18 議事録の「ファイルを置くだけの見かけ上のサーバー」役と、予約ストック役の2役を1プロセスで担う。
@@ -24,8 +26,8 @@
 
 ```
 【予約の入力】             【店内ミニPC = このサーバー】          【KDS端末】
-店員の手入力(未設計) ──▶ data/reservations.sqlite
-                            server.js ── /api/stock(当日分) ──▶ kds-bridge.js
+予約入力画面(試作)   ──▶ data/reservations.sqlite
+/reservations               server.js ── /api/stock(当日分) ──▶ kds-bridge.js
                                                                   → kds_stock_v1 へマージ
                             kds-a-grid.html も配信                → BroadcastChannel で全端末反映
 
@@ -63,7 +65,6 @@ TableCheck と連携せずに予約を持ち込む方法を比べるため、4�
 Node.js 22.13 以上が必要。リポジトリ直下で次を実行する(`order-terminal` サブモジュールは不要)。
 
 ```sh
-git switch feature/reservation-intake
 npm --prefix relay-server ci
 npm run reservation:samples     # 当日の日付で架空のサンプルを data/ に作る
 npm start
@@ -84,6 +85,8 @@ npm start
 
 - **B・C・D の読み取りは、TableCheck の実物の CSV・画面・メールで確かめていない。** 列名やラベルの表記ゆれを
   広く受けるように作ってあるが、実物で読めるかは未確認。読み取れなかった項目は画面に警告を出す。
+- CSV の列名は完全一致を先に当て、残りを部分一致で当てる。作成日時・更新日時・登録日時・変更日時・キャンセル日時
+  などの列は、部分一致で来店日時(日時・日付・時間)に当てない。「来店」を含む列は来店日時として読む。
 - C と D は自動では保存しない。読み違えたアレルギーが厨房へ出ないよう、必ず人が確かめてから登録する。
 - D はメールサーバーへ接続しない(メールの認証情報をミニPCに置かないため)。取込フォルダへ保存するまでは
   メールソフト側の自動保存か手作業で行う。登録または破棄した候補は `processed/` へ移す(削除はしない)。
