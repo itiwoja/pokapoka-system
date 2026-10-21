@@ -160,6 +160,53 @@ test("カード削除とTTL切れでは前菜/デザートと提供準備完了�
   assert.deepEqual(state.serveCue, {});
 });
 
+test("卓番の上書きを畳み込み、removed か空の卓番で解除する (#293)", function () {
+  var state = kitchen.createState("s1");
+  kitchen.applyEvents(state, [
+    { type: "tableOverride", id: "o-1", table: " 12 ", removed: false },
+    { type: "tableOverride", id: "o-2", table: 7, removed: false },
+    { type: "tableOverride", id: "o-3", table: "A1", removed: false },
+  ], NOW);
+  // KDS の受信と同じく文字列にそろえる (前後の空白は KDS の保存時と同じく落とす)
+  assert.deepEqual(kitchen.snapshot(state).tableOverride, { "o-1": "12", "o-2": "7", "o-3": "A1" });
+
+  // KDS の broadcastTableOverride は解除を { table:null, removed:true } で送る
+  kitchen.applyEvents(state, [
+    { type: "tableOverride", id: "o-1", table: null, removed: true },
+    { type: "tableOverride", id: "o-2", table: "  ", removed: false },
+    { type: "tableOverride", id: "o-3", table: "B2", removed: true },
+  ], NOW);
+  assert.deepEqual(state.tableOverride, {});
+  assert.equal(state.rev, 2);
+});
+
+test("卓番の上書きの不正な形は受理しない (#293)", function () {
+  var state = kitchen.createState("s1");
+  assert.match(kitchen.applyEvents(state, [{ type: "tableOverride", id: "", table: "12" }], NOW).error, /tableOverride\.id/);
+  assert.match(kitchen.applyEvents(state, [{ type: "tableOverride", id: "o-1", table: { n: 12 } }], NOW).error,
+    /tableOverride\.table/);
+  assert.match(kitchen.applyEvents(state, [{ type: "tableOverride", id: "o-1", table: ["12"] }], NOW).error,
+    /tableOverride\.table/);
+  // 切ると別の卓番になるので、長すぎるものは切らずに受理しない
+  assert.match(kitchen.applyEvents(state, [{ type: "tableOverride", id: "o-1", table: "1".repeat(33) }], NOW).error,
+    /tableOverride\.table/);
+  assert.equal(state.rev, 0);
+  assert.deepEqual(state.tableOverride, {});
+});
+
+test("カード削除とTTL切れでは卓番の上書きも片づける (#293)", function () {
+  var state = seeded();
+  kitchen.applyEvents(state, [
+    { type: "tableOverride", id: "o-1", table: "12", removed: false },
+    { type: "tableOverride", id: "o-2", table: "13", removed: false },
+  ], NOW);
+  kitchen.applyEvents(state, [{ type: "deleteOrder", id: "o-1" }], NOW);
+  assert.deepEqual(state.tableOverride, { "o-2": "13" });
+
+  kitchen.purgeStale(state, NOW + 7200000, 3600000);
+  assert.deepEqual(state.tableOverride, {});
+});
+
 test("スナップショットはrelayの起動識別子を含む (再起動の検出用)", function () {
   var snap = kitchen.snapshot(seeded());
   assert.equal(snap.sessionId, "s1");
