@@ -515,9 +515,23 @@
   });
 
   function onLocalKitchenEvent(msg) {
-    if (!msg || !KITCHEN_EVENTS[msg.type]) return;
-    if (msg.fromRelay) return;   // relay から取り込んだ変更を KDS へ知らせたもの。送り返さない
+    if (!msg || msg.fromRelay) return;   // relay から取り込んだ変更を KDS へ知らせたもの。送り返さない
+    if (msg.type === "moveToMain") {
+      var resOrder = resOrderEvent(msg.order);
+      if (resOrder) kitchenQueue.enqueue(resOrder);
+      return;
+    }
+    if (!KITCHEN_EVENTS[msg.type]) return;
     kitchenQueue.enqueue(msg);
+  }
+
+  /* 予約から進行中へ移した注文 (#291)。KDS の moveResToMain は注文を window.KDS_ORDERS へ
+     入れるだけで、localStorage にも relay にも残さない。そのため押した端末の再読み込みで消え、
+     別の端末には出なかった。「調理開始」の合図 (moveToMain) を relay の厨房状態へ送る */
+  function resOrderEvent(order) {
+    var id = order && order.id != null ? String(order.id) : "";
+    if (id.indexOf("res-") !== 0 || id.length <= 4) return null;
+    return { type: "resOrder", id: id, rid: id.slice(4), order: order };
   }
 
   /* relay がまだ空のときに、この端末の手元の状態をイベント列にして送る。
@@ -562,6 +576,10 @@
       var table = overrideTable(overrides[id]);
       if (table) events.push({ type: "tableOverride", id: id, table: table, removed: false });
     });
+    (Array.isArray(window.KDS_ORDERS) ? window.KDS_ORDERS : []).forEach(function (order) {
+      var event = resOrderEvent(order);
+      if (event && !deleted[event.id] && !serverOrderIds[event.id]) events.push(event);
+    });
 
     if (!events.length) return false;
     kitchenQueue.enqueueAll(events);
@@ -579,6 +597,7 @@
     if (isPlainObject(snap.serveCue)) adoptServeCues(snap.serveCue);
     if (isPlainObject(snap.hallReady)) adoptHallReady(snap.hallReady);
     if (isPlainObject(snap.tableOverride)) adoptTableOverrides(snap.tableOverride);
+    if (isPlainObject(snap.resOrders)) adoptResOrders(snap.resOrders);
   }
 
   function isPlainObject(value) {
@@ -639,6 +658,52 @@
       if (before === after) return;
       notifyKds({ type: "tableOverride", id: id, table: after || null, removed: !after });
     });
+  }
+
+  /* 予約から進行中へ移した注文 (#291) を取り込む。
+     - 無ければ window.KDS_ORDERS へ入れる。注文フィードのマージ (applyOrders) はサーバー由来でない
+       注文を残すので、次のフィードで消えない。再読み込みしても、ここでカードが戻る
+     - その予約は、この端末の予約ストックからも外す。/api/stock から戻らないよう取込実績 (seen) に載せ、
+       KDS へ {type:"stock"} で知らせる (KDS の poll() はストックを読み直さないため)
+     - 前に relay から取り込み、relay から消えたもの (カード削除・TTL切れ) は外す。この端末で作って
+       まだ relay に載っていないものは、取り込んだことが無いので消さない */
+  var relayResOrderIds = {};
+
+  function adoptResOrders(next) {
+    var current = Array.isArray(window.KDS_ORDERS) ? window.KDS_ORDERS : [];
+    var ordersChanged = false;
+    var orders = current.filter(function (order) {
+      var id = order && order.id != null ? String(order.id) : "";
+      if (relayResOrderIds[id] && !next[id]) { ordersChanged = true; return false; }
+      return true;
+    });
+    var present = {};
+    orders.forEach(function (order) { if (order && order.id != null) present[String(order.id)] = true; });
+
+    var stock = load(LS_STOCK, []);
+    if (!Array.isArray(stock)) stock = [];
+    var seen = load(LS_BRIDGE_SEEN, {}) || {};
+    var stockChanged = false;
+    var seenChanged = false;
+    var adopted = {};
+    Object.keys(next).forEach(function (id) {
+      var order = next[id];
+      if (!isPlainObject(order) || !Array.isArray(order.items) || order.rid == null) return;
+      adopted[id] = true;
+      if (!present[id]) { orders.push(order); ordersChanged = true; }
+      var rid = String(order.rid);
+      if (!seen[rid]) { seen[rid] = 1; seenChanged = true; }
+      var rest = stock.filter(function (r) { return !(r && String(r.rid) === rid); });
+      if (rest.length !== stock.length) { stock = rest; stockChanged = true; }
+    });
+    relayResOrderIds = adopted;
+
+    if (ordersChanged) window.KDS_ORDERS = orders;
+    if (seenChanged) save(LS_BRIDGE_SEEN, seen);
+    if (stockChanged) {
+      save(LS_STOCK, stock);
+      notifyKds({ type: "stock", stock: stock });
+    }
   }
 
   async function tickKitchen() {

@@ -420,6 +420,84 @@ test("relay が受け付けない一束は捨てて後続を送り、他の端�
   assert.equal(bridge.status().channels.kitchen.error, null);
 });
 
+/* relay が正規化した予約由来の注文 (kitchen-state.js の normalizeResOrder の形) */
+function relayResOrder(rid, table) {
+  return { id: "res-" + rid, rid: rid, table: table, type: "reserved", start: 1000, people: 2, adults: 2, kids: 0,
+    allergies: null, request: null, memo: null,
+    items: [{ name: "土鍋御膳", qty: 2, options: null, allergies: null, done: false }] };
+}
+
+function orderIds(bridge) {
+  return plain(bridge.window.KDS_ORDERS).map(function (o) { return o.id; }).sort();
+}
+
+test("予約から進行中へ移した注文を取り込んでカードを出し、その予約をストックから外す (#291)", async function () {
+  var local = relayResOrder("r9", "9");   // この端末で「調理開始」し、まだ relay に載っていない
+  var snapshot = { sessionId: "s1", rev: 0, konro: {}, done: {}, locked: {}, seq: [], deleted: {},
+    serveCue: {}, hallReady: {}, tableOverride: {}, resOrders: {} };
+  var bridge = startBridge({
+    "GET /api/stock": ok([reservation("r1"), reservation("r2")]),
+    "GET /api/orders": ok([order("o1")]),
+    "GET /api/kitchen-state": function () { return { status: 200, body: snapshot }; },
+    "POST /api/kitchen-state": ok({ ok: true, rev: 1, sessionId: "s1" }),
+  }, {
+    orders: [local],
+    storage: {
+      kds_stock_v1: JSON.stringify([reservation("r1"), reservation("r2")]),
+      kds_bridge_seen_v1: JSON.stringify({ r1: 1, r2: 1 }),
+    },
+  });
+  await settle();
+
+  // 空の relay には、手元の予約由来の注文も種として送る (relay の再起動で消えないように)
+  assert.deepEqual(bridge.posts("/api/kitchen-state"), [{ events: [
+    { type: "resOrder", id: "res-r9", rid: "r9", order: local },
+  ] }]);
+
+  // 別の端末で r1 を卓5で「調理開始」した
+  snapshot = Object.assign({}, snapshot, { rev: 2, resOrders: { "res-r1": relayResOrder("r1", "5") } });
+  await bridge.tick("tickKitchen");
+  assert.deepEqual(orderIds(bridge), ["o1", "res-r1", "res-r9"]);
+  assert.deepEqual(plain(bridge.window.KDS_ORDERS).filter(function (o) { return o.id === "res-r1"; })[0],
+    relayResOrder("r1", "5"));
+  assert.deepEqual(bridge.stored("kds_stock_v1").map(function (r) { return r.rid; }), ["r2"]);
+  // KDS の poll() はストックを読み直さないので、KDS の受信 (msg.type === "stock") へ知らせる
+  assert.deepEqual(plain(bridge.channel.posted).filter(function (m) { return m.type === "stock"; }).pop(),
+    { type: "stock", stock: bridge.stored("kds_stock_v1"), fromRelay: true });
+
+  // 注文フィードと予約ストックの次の取得でも、カードは残り、予約はストックへ戻らない
+  await bridge.tick("tickOrders");
+  await bridge.tick("tickOnce");
+  assert.deepEqual(orderIds(bridge), ["o1", "res-r1", "res-r9"]);
+  assert.deepEqual(bridge.stored("kds_stock_v1").map(function (r) { return r.rid; }), ["r2"]);
+
+  // 予約由来の注文を運ばない古い relay の応答では、手元の注文を消さない
+  snapshot = { sessionId: "s1", rev: 3, konro: {}, done: {}, locked: {}, seq: [], deleted: {} };
+  await bridge.tick("tickKitchen");
+  assert.deepEqual(orderIds(bridge), ["o1", "res-r1", "res-r9"]);
+
+  // relay から消えた (カード削除) ものは外す。relay から取り込んだことの無い手元の注文は残す
+  snapshot = { sessionId: "s1", rev: 4, konro: {}, done: {}, locked: {}, seq: [], deleted: { "res-r1": true },
+    serveCue: {}, hallReady: {}, tableOverride: {}, resOrders: {} };
+  await bridge.tick("tickKitchen");
+  assert.deepEqual(orderIds(bridge), ["o1", "res-r9"]);
+});
+
+test("再読み込みした端末は、relay の予約由来の注文でカードを取り戻す (#291)", async function () {
+  var restored = relayResOrder("r1", "5");
+  var bridge = startBridge({
+    "GET /api/kitchen-state": ok({ sessionId: "s1", rev: 5, konro: {}, done: { "res-r1": [1] }, locked: {}, seq: ["res-r1"],
+      deleted: {}, serveCue: {}, hallReady: {}, tableOverride: {}, resOrders: { "res-r1": restored } }),
+  }, { storage: { kds_stock_v1: JSON.stringify([]), kds_bridge_seen_v1: JSON.stringify({ r1: 1 }) } });
+  await settle();
+
+  // メモリにしか無かった注文は再読み込みで消えていた。取り込みでカードの元が戻る
+  assert.deepEqual(plain(bridge.window.KDS_ORDERS), [restored]);
+  assert.deepEqual(bridge.stored("kds_done_v2"), { "res-r1": [1] });
+  // ストックに無い予約なら、知らせる必要も無い
+  assert.equal(plain(bridge.channel.posted).filter(function (m) { return m.type === "stock"; }).length, 0);
+});
+
 test("KDS の操作イベントを relay へ送り、着席は予約者名付きで座席占有へ登録する", async function () {
   var bridge = startBridge({
     "GET /api/stock": ok([reservation("r1")]),
@@ -433,6 +511,10 @@ test("KDS の操作イベントを relay へ送り、着席は予約者名付き
   bridge.channel.onmessage({ data: { type: "stock", stock: [] } });   // 厨房イベントではないので送らない
 
   await waitUntil(function () { return bridge.posts("/api/kitchen-state").length > 0; });
-  assert.deepEqual(bridge.posts("/api/kitchen-state"), [{ events: [{ type: "konro", id: "A1", num: 3, state: "red" }] }]);
+  // 予約から進行中へ移した注文も厨房状態として送る (#291)
+  assert.deepEqual(bridge.posts("/api/kitchen-state"), [{ events: [
+    { type: "konro", id: "A1", num: 3, state: "red" },
+    { type: "resOrder", id: "res-r1", rid: "r1", order: { id: "res-r1", table: 5 } },
+  ] }]);
   assert.deepEqual(bridge.posts("/api/seats"), [{ table: "5", rid: "r1", name: "山田" }]);
 });
