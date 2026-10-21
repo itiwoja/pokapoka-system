@@ -87,6 +87,27 @@ test("CSV: 来店日時の列が無ければファイル全体を断る", functi
   assert.match(imp.parseCsv("", OPTS).error, /行がありません/);
 });
 
+test("CSV: 作成日時・更新日時などの列を来店日時と取り違えない", function () {
+  // 来店日と時刻が別の列で、ほかに作成日時・更新日時がある (予約サイトの書き出しによくある形)
+  var csv = "予約番号,作成日時,来店日,時刻,お名前,人数,更新日時,キャンセル日時\n" +
+    "R-1,2026/10/01 09:00,2026/10/14,18:30,山田,2,2026/10/02 10:15,\n";
+  var out = imp.parseCsv(csv, OPTS);
+  assert.equal(out.error, undefined);
+  assert.equal(out.columns.datetime, undefined);
+  assert.equal(out.columns.date, "来店日");
+  assert.equal(out.columns.time, "時刻");
+  assert.deepEqual(out.unmapped, ["作成日時", "更新日時", "キャンセル日時"]);
+  assert.equal(Date.parse(out.rows[0].draft.startAt), local(2026, 10, 14, 18, 30));
+
+  // 来店日時の列が作成日時しか無いなら、作成日時で取り込まずに断る
+  assert.match(imp.parseCsv("お名前,人数,登録日時\n山田,2,2026/10/01 09:00\n", OPTS).error, /来店日時の列/);
+
+  // 「来店」を含む列は、変更などの語があっても来店日時として読む
+  var changed = imp.parseCsv("来店日時(変更後),お名前,変更日時\n2026/10/15 19:00,佐藤,2026/10/03 08:00\n", OPTS);
+  assert.equal(changed.columns.datetime, "来店日時(変更後)");
+  assert.equal(Date.parse(changed.rows[0].draft.startAt), local(2026, 10, 15, 19, 0));
+});
+
 test("文字コード: UTF-8 として読めないバイト列は Shift_JIS とみなす", function () {
   // "来店日時" の Shift_JIS
   var sjis = Buffer.from([0x97, 0x88, 0x93, 0x58, 0x93, 0xfa, 0x8e, 0x9e]);

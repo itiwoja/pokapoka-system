@@ -207,6 +207,16 @@ function headerKey(value) {
   return nfkc(value).toLowerCase().replace(/[\s_\-]/g, "");
 }
 
+// 来店日時ではない日時の列 (作成日時・更新日時・登録日時・変更日時・キャンセル日時など) に含まれる語。
+// 部分一致で「日時」「日付」「時間」に当たり、来店日時と取り違えないよう、来店日時の項目には当てない。
+// 「来店」を含む列 (来店日時(変更後) など) は来店日時なので除かない
+var RECORD_TIME_WORDS = ["作成", "更新", "登録", "変更", "修正", "キャンセル", "取消", "取り消", "受付", "申込", "申し込"];
+var VISIT_TIME_FIELDS = { datetime: true, date: true, time: true };
+
+function isRecordTimeKey(key) {
+  return key.indexOf("来店") < 0 && RECORD_TIME_WORDS.some(function (word) { return key.indexOf(word) >= 0; });
+}
+
 /** 見出し行の各列を項目へ割り当てる。完全一致を優先し、残りを部分一致 (日本語の2文字以上の別名だけ) で当てる */
 function mapColumns(header) {
   var keys = header.map(headerKey);
@@ -220,7 +230,9 @@ function mapColumns(header) {
     if (columns[field[0]] !== undefined) return;
     var aliases = field[1].filter(function (alias) { return alias.length >= 2 && /[^\x00-\x7f]/.test(alias); });
     var index = keys.findIndex(function (key, i) {
-      return !used[i] && aliases.some(function (alias) { return key.indexOf(alias) >= 0; });
+      if (used[i]) return false;
+      if (VISIT_TIME_FIELDS[field[0]] && isRecordTimeKey(key)) return false;
+      return aliases.some(function (alias) { return key.indexOf(alias) >= 0; });
     });
     if (index >= 0) { columns[field[0]] = index; used[index] = true; }
   });
