@@ -2263,6 +2263,19 @@
     .item.pressing::after { transition: none; }
   }
 
+  /* ============================================================
+     来店の単位 (#299)。前菜・デザートは注文ではなく来店に1回なので、同じ卓の追加注文の
+     カード (.visit-extra、種別チップは「追加」) には帯を出さない。厨房の前菜の出し分け
+     (body:not(.mode-hall) .card .serve-cue[data-serve-kind="starter"]) より強く効かせるため
+     html body から書く。 */
+  html body .card.visit-extra .serve-cue[data-serve-kind] { display: none; }
+  /* 最初のカードのデザートは、追加の膳が残っている間はボタンの代わりに文言を出す (読取専用の帯) */
+  .serve-cue .serve-cue-wait {
+    margin-left: auto; flex: 0 0 auto;
+    min-height: 44px; display: inline-flex; align-items: center;
+    font-weight: 700; color: var(--text-secondary);
+  }
+
 </style>
 </head>
 <body class="is-empty">
@@ -2620,7 +2633,8 @@
       reorderMsg:"並べ替え中（離して確定 / 取消で戻す）", undo:"取消", reorderDone:"確定",
       reorderCommitted:"並べ替えを確定しました", restore:"戻す",
       errTime:"予約時間を入力してください", errMenu:"メニューを1つ以上選択してください",
-      errSeat:"卓番を入力してください", slipMeta:"受付", kidsLabel:"幼"
+      errSeat:"卓番を入力してください", slipMeta:"受付", kidsLabel:"幼",
+      visitExtra:"追加"   // 同じ来店の追加注文のカード (#299)
     };
     /* 予約フォームのメニュー候補 (POS未接続のため静的。略称表示) */
     var MENU_OPTIONS = [
@@ -3877,6 +3891,62 @@
       return card;
     }
 
+    /* ===================== 来店の単位 (#299) =====================
+       前菜は「来店したら出るもの・全員分」、デザートは「膳をすべて出し終えた後」(9/3 の提供ルール)。
+       どちらも注文ではなく卓 (来店) の単位なので、同じ卓の追加注文で帯を2本出さない。
+       同じ来店 = 同じ実効の卓番 (effectiveTable) で、まだ画面に残っているカード (進行中か、
+       ホールでデザート待ち) の集まり。その卓のカードが全部消えた後の注文は新しい来店になる。
+       最初のカード = 受付時刻 (order.start) がいちばん早いもの。前菜とデザートの帯はここにだけ出し、
+       後から来たカードには「追加」の印を付ける。 */
+    function compareVisitIds(a, b) {
+      var sa = Number(cards[a] && cards[a].order && cards[a].order.start) || 0;
+      var sb = Number(cards[b] && cards[b].order && cards[b].order.start) || 0;
+      if (sa !== sb) return sa - sb;
+      return a < b ? -1 : (a > b ? 1 : 0);
+    }
+    function visitOf(id) {
+      var key = String(id), entry = cards[key];
+      if (!entry || !entry.order) return null;
+      var table = effectiveTable(entry.order);
+      var ids = table ? Object.keys(cards).filter(function (cid) {
+        var e = cards[cid];
+        return !!(e && e.order && effectiveTable(e.order) === table);
+      }) : [key];
+      ids.sort(compareVisitIds);
+      return {
+        table: table, first: ids[0], ids: ids,
+        // 最初のカード以外に、まだ膳が残っているカードがあるか (デザートを待たせる)
+        extraPending: ids.some(function (cid, i) { return i > 0 && !isAllDone(cards[cid]); })
+      };
+    }
+    /* 全カードの来店の役割 (最初 / 追加) を表示へ反映する。役割やデザートの出せる・出せないが
+       変わったカードだけ帯を作り直す (毎秒のポーリングで長押し中の帯を壊さないため)。 */
+    function refreshVisits() {
+      var groups = {};
+      Object.keys(cards).forEach(function (id) {
+        var e = cards[id];
+        if (!e || !e.order || !e.el) return;
+        var table = effectiveTable(e.order);
+        var key = table ? "t:" + table : "id:" + id;
+        (groups[key] = groups[key] || []).push(id);
+      });
+      Object.keys(groups).forEach(function (key) {
+        var ids = groups[key].sort(compareVisitIds);
+        var pending = ids.some(function (id, i) { return i > 0 && !isAllDone(cards[id]); });
+        ids.forEach(function (id, i) {
+          var e = cards[id], extra = i > 0;
+          var kind = e.order.type === "reserved" ? t("reserved") : t("new");
+          e.el.classList.toggle("visit-extra", extra);
+          var badge = e.el.querySelector(".js-badge");
+          if (badge) badge.textContent = extra ? t("visitExtra") : kind;
+          e.el.setAttribute("aria-label", "卓 " + (effectiveTable(e.order) || "") + " " + (extra ? t("visitExtra") : kind));
+          var sig = extra ? "extra" : (ids.length > 1 ? (pending ? "first-wait" : "first-ready") : "solo");
+          if ((e.visitSig || "solo") !== sig) applyServeCueToCard(id);
+          e.visitSig = sig;
+        });
+      });
+    }
+
     /* 全品完了済みでも、デザートを出すまでホールにカードを残す卓か (#228 / #260)。
        提供準備完了snapshotがあり、デザート未提供なら待ち。リロード後のカード再生成に使う。 */
     function isDessertWaiting(order) {
@@ -3967,6 +4037,9 @@
       // 並び順の整合: 消えた id を除去し、新着を末尾に追加 (時系列。手動並べ替えは保持)
       reconcileOrderSeq(seen, added);
       applyOrderSeq();
+      // 同じ卓の追加注文に「追加」を付け、前菜・デザートを来店の単位にする (#299)。
+      // 完了・卓番の上書き・カードの消去はどれも1秒ごとのポーリングでここを通るので、ここ1か所で揃える
+      refreshVisits();
 
       updateTimers();
       reflectEmpty();
@@ -4301,14 +4374,26 @@
       if (hallReadyUndoToastEl) hallReadyUndoToastEl.classList.remove("show");
     }
     function dismissHallReady(id) {
+      dismissHallReadyVisit([id]);
+    }
+    /* 同じ来店の提供準備完了をまとめて閉じ、「戻す」は1つにする (#299)。
+       まとめて閉じた snapshot には visitIds を残し、戻すときにそろって戻せるようにする。 */
+    function dismissHallReadyVisit(ids) {
       if (mode !== "hall") return;
-      var key = String(id), snapshot = hallReadyMap[key];
-      if (!snapshot || snapshot.status === "dismissed") return;
-      snapshot.status = "dismissed";
-      snapshot.dismissedAt = Date.now();
+      var keys = (ids || []).map(String);
+      var closed = [];
+      keys.forEach(function (key) {
+        var snapshot = hallReadyMap[key];
+        if (!snapshot || snapshot.status === "dismissed") return;
+        snapshot.status = "dismissed";
+        snapshot.dismissedAt = Date.now();
+        if (keys.length > 1) snapshot.visitIds = keys.slice();
+        closed.push(key);
+      });
+      if (!closed.length) return;
       saveHallReady();
-      broadcastHallReady(key, snapshot);
-      showHallReadyUndo(key, snapshot.table);
+      closed.forEach(function (key) { broadcastHallReady(key, hallReadyMap[key]); });
+      showHallReadyUndo(closed[0], hallReadyMap[closed[0]].table);
       renderHallViews();
     }
     function undoHallReady() {
@@ -4317,12 +4402,23 @@
       var key = hallReadyUndoId, snapshot = hallReadyMap[key];
       hideHallReadyUndo();
       if (!snapshot || snapshot.status !== "dismissed") return;
-      snapshot.status = "active";
-      delete snapshot.dismissedAt;
+      // 来店の単位でまとめて閉じたものは、そろって戻す (#299)
+      var keys = Array.isArray(snapshot.visitIds) && snapshot.visitIds.length ? snapshot.visitIds.map(String) : [key];
+      var restored = [];
+      keys.forEach(function (k) {
+        var s = hallReadyMap[k];
+        if (!s || s.status !== "dismissed") return;
+        s.status = "active";
+        delete s.dismissedAt;
+        delete s.visitIds;
+        restored.push(k);
+      });
       saveHallReady();
-      broadcastHallReady(key, snapshot);
+      restored.forEach(function (k) { broadcastHallReady(k, hallReadyMap[k]); });
       // デザート提供で消したカードも戻す。提供済みを外せば次のrenderでカードが再生成される (#260)
-      if (serveCueState(key).dessert) setServeCue(key, "dessert", false);
+      restored.forEach(function (k) {
+        if (serveCueState(k).dessert) setServeCue(k, "dessert", false);
+      });
       renderHallViews();
       poll();
     }
@@ -4785,6 +4881,20 @@
         cue.appendChild(label);
         return cue;
       }
+      /* デザートは来店の単位で1回 (#299)。同じ来店の追加の膳が残っている間は、最初のカードの
+         デザートにボタンを置かず「追加の膳がまだです」と出す。追加のカードの帯は CSS で隠す。 */
+      if (kind === "dessert" && !served) {
+        var visit = visitOf(orderId);
+        if (visit && visit.extraPending) {
+          cue.classList.add("readonly", "waiting-extra");
+          var wait = document.createElement("span");
+          wait.className = "serve-cue-wait";
+          wait.textContent = "追加の膳がまだです";
+          cue.appendChild(label);
+          cue.appendChild(wait);
+          return cue;
+        }
+      }
       var dessertServe = (kind === "dessert" && !served);
       var button = document.createElement("button");
       button.type = "button";
@@ -4801,9 +4911,14 @@
         attachServeHoldHandlers(cue, button, progress, SERVE_REVERT_MS, served
           ? function () { setServeCue(orderId, kind, false); }
           : function () {
-              setServeCue(orderId, "dessert", true);
-              dismissHallReady(orderId);   // 提供準備完了パネル側のcueも閉じる
-              removeCard(orderId, /*fade*/ true);   // 卓の提供が終わったのでカードを消す
+              // デザートは来店の単位 (#299)。帯を作った後に追加の注文が来た・戻された場合は出さない
+              var visit = visitOf(orderId);
+              if (visit && visit.extraPending) { applyServeCueToCard(orderId); return; }
+              var ids = visit ? visit.ids : [String(orderId)];
+              ids.forEach(function (vid) { setServeCue(vid, "dessert", true); });
+              dismissHallReadyVisit(ids);   // 提供準備完了の記録も来店の分をすべて閉じる
+              // 卓の提供が終わったので、その来店のカードをすべて消す
+              ids.forEach(function (vid) { removeCard(vid, /*fade*/ true); });
             });
       } else {
         button.addEventListener("click", function () {
