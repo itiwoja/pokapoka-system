@@ -8,7 +8,7 @@
   予約入力画面 (中継サーバーが /reservations で配信する)。
   TableCheck API 連携の中止 (2026-10-11) を受け、店員が予約を持ち込む入口を4つ並べる。
     A. 手入力      フォームから1件ずつ
-    B. CSV取込     管理画面から出した CSV をまとめて
+    B. CSV取込     管理画面から出した CSV・Excel(.xlsx) をまとめて (TableCheck の予約の書き出しを読める)
     C. 貼り付け    予約詳細の文面を貼ってフォームへ流し込む
     D. メール      取込フォルダの通知メール、または貼り付けたメールをフォームへ流し込む
   C と D は読み取った内容をフォームに入れるだけで、登録ボタンを押すまで保存しない。
@@ -105,9 +105,9 @@
 
     <!-- B. CSV取込 -->
     <div class="pane" data-pane="csv" hidden>
-      <h2>CSVをまとめて取り込む</h2>
-      <p class="hint">1行目を見出しとして読みます。「来店日時」(または「来店日」と「来店時間」)の列が必要です。名前・人数・メニュー・アレルギーなどは、列名から自動で判別します。同じCSVを2回取り込んでも二重登録にはなりません。</p>
-      <input type="file" id="csvFile" accept=".csv,.tsv,.txt,text/csv">
+      <h2>CSV・Excelをまとめて取り込む</h2>
+      <p class="hint">TableCheck の予約の書き出し(CSV・Excel(.xlsx))をそのまま選べます。見出しの行は自動で探します(先頭のタイトル行は読み飛ばします)。「来店日時」(または「来店日」と「来店時間」、TableCheck の「予約時間」)の列が必要です。名前・人数・注文・アレルギーなどは列名から判別し、電話・メールなどの連絡先は取り込みません。同じファイルを2回取り込んでも二重登録にはなりません。</p>
+      <input type="file" id="csvFile" accept=".csv,.tsv,.txt,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
       <div class="actions">
         <button type="button" class="plain" id="csvCheck" disabled>内容を確認する</button>
         <button type="button" class="primary" id="csvImport" disabled>取り込む</button>
@@ -352,7 +352,8 @@
   $("listToday").addEventListener("click", function () { $("listDate").value = dateStr(new Date()); loadList(); });
 
   /* ---------- B. CSV取込 ---------- */
-  var FIELD_LABEL = { rid: "予約ID", datetime: "来店日時", date: "来店日", time: "来店時間", name: "名前", adults: "大人", kids: "子供", pax: "人数", menu: "メニュー", allergies: "アレルギー", request: "要望", memo: "メモ", table: "卓番", status: "状態" };
+  var FIELD_LABEL = { rid: "予約ID", datetime: "来店日時", date: "来店日", time: "来店時間", name: "名前", adults: "大人", kids: "子供", seniors: "シニア(大人へ足す)", infants: "幼児(子供へ足す)", pax: "人数", menu: "メニュー", allergies: "アレルギー", request: "要望", memo: "メモ", table: "卓番", status: "状態" };
+  var XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
   function renderCsv(body) {
     var box = $("csvPreview");
@@ -385,7 +386,9 @@
     var file = $("csvFile").files[0];
     if (!file) return;
     $("csvCheck").disabled = $("csvImport").disabled = true;
-    api("POST", API + "/import/csv" + (dryRun ? "?dryRun=1" : ""), file, { "Content-Type": "text/csv" }).then(function (result) {
+    // サーバーは中身で CSV と .xlsx を見分ける。Content-Type は目安として付けるだけ
+    var type = /\.xlsx$/i.test(file.name) ? XLSX_TYPE : "text/csv";
+    api("POST", API + "/import/csv" + (dryRun ? "?dryRun=1" : ""), file, { "Content-Type": type }).then(function (result) {
       var body = result.body || {};
       if (result.status !== 200) { setMsg($("csvMsg"), errorText(result), "err"); renderCsv(body); return; }
       renderCsv(body);

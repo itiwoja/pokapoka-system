@@ -165,6 +165,41 @@ test("B. CSV取込: Shift_JIS のファイルを読み、来店日時の列が�
   assert.match(bad.body.error, /来店日時の列/);
 });
 
+test("B. CSV取込: TableCheck の書き出しの形の .xlsx を、確認してから取り込む", async function (t) {
+  var relay = (await startRelay(t)).relay;
+  var fixture = require("./xlsx-fixture");
+  var day = dateStr(new Date());
+  // 値は作り物。1行目がタイトル、2行目が見出し (TableCheck の書き出しと同じ並び方)
+  var book = fixture.xlsx({ sheet: fixture.worksheet([
+    fixture.inlineRow(1, ["予約"]),
+    fixture.inlineRow(2, ["予約ID", "予約時間", "人数:大人", "人数:シニア", "人数:子供", "人数:幼児", "名前", "電話", "注文", "ステータス", "テーブル"]),
+    fixture.inlineRow(3, ["XL0001", day + " 18:30", "2", "1", "0", "1", "テスト 太郎", "000-0000-0001", "1 × 土鍋御膳, 2 × うなぎ御膳", "確認", "A1/2"]),
+  ]) });
+
+  var dry = await request(relay, "POST", "/api/reservations/import/csv?dryRun=1", book);
+  assert.equal(dry.status, 200);
+  assert.equal(dry.body.valid, 1);
+  assert.equal(dry.body.columns.datetime, "予約時間");
+  assert.deepEqual(dry.body.unmapped, ["電話"]);
+  assert.equal(dry.body.rows[0].line, 3);
+  assert.deepEqual((await request(relay, "GET", "/api/stock")).body, [], "確認だけでは保存しない");
+
+  var real = await request(relay, "POST", "/api/reservations/import/csv", book);
+  assert.equal(real.body.saved, 1);
+  var stock = (await request(relay, "GET", "/api/stock")).body;
+  assert.equal(stock.length, 1);
+  assert.equal(stock[0].rid, "XL0001");
+  assert.equal(stock[0].time, "18:30");
+  assert.equal(stock[0].adults, 3);
+  assert.equal(stock[0].kids, 1);
+  assert.deepEqual(stock[0].menu.map(function (m) { return m.name + "×" + m.qty; }), ["土鍋御膳×1", "うなぎ御膳×2"]);
+  assert.equal(JSON.stringify(stock).indexOf("000-0000"), -1, "電話は取り込まない");
+
+  var broken = await request(relay, "POST", "/api/reservations/import/csv?dryRun=1", Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0]));
+  assert.equal(broken.status, 400);
+  assert.match(broken.body.error, /Excelファイルを読めません/);
+});
+
 test("C. 貼り付け: 下書きを返すだけで保存しない", async function (t) {
   var relay = (await startRelay(t)).relay;
   var out = await request(relay, "POST", "/api/reservations/import/text", {
