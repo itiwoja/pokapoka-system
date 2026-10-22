@@ -54,7 +54,7 @@ TableCheck と連携せずに予約を持ち込む方法を比べるため、4�
 | 方式 | 使い方 | 保存のタイミング |
 |---|---|---|
 | A. 手入力 | フォームから1件ずつ入れる | 登録ボタンを押したとき |
-| B. CSV取込 | 管理画面から出した CSV を選ぶ。1行目の列名から項目を判別する | 「内容を確認する」(保存しない)で確かめてから「取り込む」を押したとき |
+| B. CSV・Excel取込 | 管理画面から出した CSV、または TableCheck の予約一覧(.xlsx)を選ぶ。見出しの行(先頭5行のうち、来店日時か来店時間の列がある行)の列名から項目を判別する | 「内容を確認する」(保存しない)で確かめてから「取り込む」を押したとき |
 | C. 貼り付け | 予約詳細の文面を貼る。「項目名: 値」の行を読んでフォームへ入れる | フォームを確かめて登録ボタンを押したとき |
 | D. メール | 取込フォルダ(既定 `data/mail-inbox`、`reservation.mailDir` で変更)に置いた `.eml` / `.txt` が候補に並ぶ。1通ずつ選ぶ・貼ることもできる | 候補をフォームへ入れ、確かめて登録ボタンを押したとき |
 
@@ -75,15 +75,26 @@ npm start
 | 方式 | 試す手順 |
 |---|---|
 | A. 手入力 | 「手入力」タブで日時・名前・メニューを入れて「登録する」。右の一覧の「変更」「取消」も試せる |
-| B. CSV取込 | 「CSV取込」タブで `data/samples/sample.csv` を選び、「内容を確認する」→「取り込む」。4行のうち1行は日付が読めず取り込めない例、1行は取消の例 |
+| B. CSV・Excel取込 | 「予約取り込み」タブで `data/samples/sample.csv` を選び、「内容を確認する」→「取り込む」。4行のうち1行は日付が読めず取り込めない例、1行は取消の例。`data/samples/sample-tablecheck.csv` は TableCheck の予約一覧と同じ並び(タイトル行・「予約時間」・人数4区分・「1 × 品名」)の例 |
 | C. 貼り付け | 「貼り付け」タブに `data/samples/sample-paste.txt` の中身を貼り、「読み取ってフォームに入れる」→ 確かめて「登録する」 |
 | D. メール | 「メール」タブに取込フォルダの2通が並ぶ(1通は取消の例)。「フォームに入れる」→「登録する」。`data/samples/sample-mail.eml` を選んで1通だけ読むこともできる |
 
 登録した予約は、厨房画面 `http://127.0.0.1:8000/` の予約ストックに5秒ほどで出る(当日・メニューありの予約だけ)。
 やり直すときはサーバーを止めて `data/reservations.sqlite*` を消し、`npm run reservation:samples` をもう一度実行する。
 
-- **B・C・D の読み取りは、TableCheck の実物の CSV・画面・メールで確かめていない。** 列名やラベルの表記ゆれを
+- **B は、2026-10-22 に店から受け取った TableCheck の予約一覧(.xlsx)で読めることを確かめた。** この形式は
+  1行目がタイトル「予約」、2行目が見出しで、日時は「予約時間」に `2026-10-20 11:00` の形で入る。人数は
+  「人数:大人」「人数:シニア」「人数:子供」「人数:幼児」の4列で、まとめずにそれぞれ `adults`・`seniors`・
+  `children`・`kids`(幼児、0〜2歳)へ入れる。区分・合計・内訳表示は `party-size.js` にまとめ、KDS と予約入力画面も
+  `/relay-server/party-size.js` を読んで同じ計算を使う。この変更より前のファイルは、開いたときに `kids` に入っていた
+  値(当時の「子供」)を1回だけ `children` へ移す。注文は `1 × 品名, 1 × 品名` の形。アレルギーは
+  「食事制限・アレルギー」の列、「予約メモ」の `質問N: …アレルギー… 回答N: …` の回答(複数行も読む)、「苦手なもの」の列を
+  全部つなぐ(「なし」「特にありません」などは拾わない)。取り込めるファイルは 5MB まで。
+  実物は個人情報を含むためリポジトリには入れず、テストは架空の値で同じ形を組み立てている。
+- **C・D の読み取りは、TableCheck の実物の画面・メールで確かめていない。** ラベルの表記ゆれを
   広く受けるように作ってあるが、実物で読めるかは未確認。読み取れなかった項目は画面に警告を出す。
+- .xlsx は依存を増やさず `xlsx-reader.js`(node:zlib で展開)で最初のシートの文字列だけを読む。
+  数式・書式は扱わない。日付の書式が付いた数値(Excel で保存し直した日時)は日時の文字列に戻す。
 - C と D は自動では保存しない。読み違えたアレルギーが厨房へ出ないよう、必ず人が確かめてから登録する。
 - D はメールサーバーへ接続しない(メールの認証情報をミニPCに置かないため)。取込フォルダへ保存するまでは
   メールソフト側の自動保存か手作業で行う。登録または破棄した候補は `processed/` へ移す(削除はしない)。
@@ -260,12 +271,12 @@ cd relay-server && npm run preflight
 | パス | 内容 |
 |---|---|
 | `/` , `/kds-a-grid.html` | KDS 本体(配信時にブリッジを1行注入) |
-| `/api/stock` | KDS 予約ストック形式 `[{rid,time,adults,kids,name,menu[],allergies?,request?,seenAt}]`。`allergies` はアレルギー、`request` は要望の注記。当日の `booked` だけで、メニュー無し(席だけ)予約は含まない |
+| `/api/stock` | KDS 予約ストック形式 `[{rid,time,adults,seniors,children,kids,name,menu[],allergies?,request?,seenAt}]`。人数は大人・シニア・子供・幼児(`kids`、0〜2歳)を分けて持ち、合計は KDS が4つを足して出す。`allergies` はアレルギー、`request` は要望の注記。当日の `booked` だけで、メニュー無し(席だけ)予約は含まない |
 | `/reservations` | 予約入力画面(`reservation-entry.html`)。→「予約の入口」 |
 | `GET /api/reservations?date=YYYY-MM-DD` | 指定日(省略時は当日)の予約一覧 `{date,reservations[]}`。取消済みも含む |
-| `POST /api/reservations` | 予約の登録 `{startAt,name,adults,kids,table?,menu:[{name,qty}],allergies?,request?,memo?,rid?,status?}`。`rid` が既にあれば上書き。`mailId` を付けると、登録後に取込フォルダのそのメールを片づける |
+| `POST /api/reservations` | 予約の登録 `{startAt,name,adults,seniors?,children?,kids,table?,menu:[{name,qty}],allergies?,request?,memo?,rid?,status?}`。`rid` が既にあれば上書き。`mailId` を付けると、登録後に取込フォルダのそのメールを片づける |
 | `GET` / `PUT` / `DELETE /api/reservations/{rid}` | 1件の取得・変更・取消(取消は行を残して status を `canceled` にする) |
-| `POST /api/reservations/import/csv` | CSV(本文にファイルの中身。UTF-8 か Shift_JIS)の取込。`?dryRun=1` なら保存せず読み取り結果だけ返す |
+| `POST /api/reservations/import/csv` | CSV(本文にファイルの中身。UTF-8 か Shift_JIS)または .xlsx(先頭のバイトで見分ける)の取込。`?dryRun=1` なら保存せず読み取り結果だけ返す |
 | `POST /api/reservations/import/text` | `{text}` を読み取り、下書き `{draft,warnings}` を返す(保存しない) |
 | `POST /api/reservations/import/mail` | メール1通(本文に `.eml` の中身。`?text=1` なら貼り付けたテキスト)を読み取り、下書きを返す(保存しない) |
 | `GET /api/reservations/inbox` | メールの取込フォルダの候補 `{enabled,items:[{id,receivedAt,subject,draft,warnings}]}` |

@@ -180,7 +180,9 @@ orders 1──n order_items ──(n..1 任意)── menu_items
 | customer_name | text | NOT NULL | 来店時の特定に使う（A案: 一覧から選ぶ） |
 | expected_at | datetime | NOT NULL | 来店予定時刻。炊飯先行着手（E項）の起点 |
 | adults | int | NOT NULL | 「大人1名1膳必須」バリデーションに使う |
-| kids | int | NOT NULL, default 0 | 0〜2歳内訳 |
+| seniors | int | NOT NULL, default 0 | シニア内訳（TableCheck の「人数:シニア」。2026-10-22 追加） |
+| children | int | NOT NULL, default 0 | 子供内訳（幼児より上。TableCheck の「人数:子供」。2026-10-22 追加） |
+| kids | int | NOT NULL, default 0 | 幼児（0〜2歳）内訳 |
 | status | text | NOT NULL | `booked`(枠確保) / `seated`(着席=卓確定) / `done`(完了) / `no_show` / `canceled` |
 | assigned_table_id | FK → tables | NULL可 | **予約時は null → 来店時にホールが入力**（遅延割当）。更新可能（席の付け替え） |
 | seated_at | datetime | NULL可 | 来店・卓確定時刻 |
@@ -230,8 +232,10 @@ orders 1──n order_items ──(n..1 任意)── menu_items
 | type | text | NOT NULL | `new` / `reserved`（カード色の正本） |
 | reservation_id | FK → reservations | NULL可 | 予約→進行中移動の由来リンク |
 | adults | int | NULL可 | 内訳（無ければ null、合計のみ） |
-| kids | int | NULL可 | 同上 |
-| people | int | NOT NULL | 合計人数 |
+| seniors | int | NULL可 | 同上 |
+| children | int | NULL可 | 同上 |
+| kids | int | NULL可 | 同上（幼児 0〜2歳） |
+| people | int | NOT NULL | 合計人数（大人＋シニア＋子供＋幼児） |
 | received_at | datetime | NOT NULL | 現 `start`（着手時刻） |
 | completed_at | datetime | NULL可 | 全品目 done 時刻 |
 | status | text | NOT NULL | `open` / `completed` / `canceled` |
@@ -338,7 +342,7 @@ completed ──(完了取り消し)──→ open（completed_at を NULL に�
 | 1 | 採用 | 遅延割当モデル（2026-06-03 B項）: 予約時は reservation_slots で枠のみ確保、物理卓は来店時に確定。orders.table_label も null 許容 |
 | 2 | 採用 | 事前メニュー有無はフラグでなく reservation_items の有無で表現（C-2項・現行モック挙動と一致） |
 | 3 | 採用 | `done_at` を order_items に持たせる ＝ 品目完了が DB 書き込みになる。店内 LAN（ミニPCサーバ + Wi-Fi）での通信断時は「直前の表示を一時保持」（6/18 議事録）で足りるが、書き込みリトライの設計は物理設計で詰める |
-| 4 | 採用 | kids は「0〜2歳」1区分のみ（spec 準拠）。区分が増えたら子テーブル化を検討（YAGNI） |
+| 4 | 採用 | 人数は 大人(adults)・シニア(seniors)・子供(children)・幼児(kids、0〜2歳) の4区分を**まとめずに**持ち、合計は表示時に足す。当初は kids（0〜2歳）1区分のみだったが、2026-10-22 に受け取った TableCheck の予約一覧がこの4区分だったため、ユーザーの指示で列を足した（実装は relay-server/reservation-store.js。既存ファイルには開いたときに列を足し、それまで「子供」として kids に入っていた値を1回だけ children へ移す）。区分・合計・内訳表示は relay-server/party-size.js に1か所でまとめ、KDS・予約入力画面・中継サーバーで共有する。さらに区分が増えたら子テーブル化を検討 |
 | 5 | 採用 | options とアレルギーは**別列**（options_text / allergies_text）。アレルギーは安全に関わる情報のため options に混ぜない。定型オプションの形式が確定したら `order_item_options` 子テーブルへの分離を検討 |
 | 6 | 前提 | **本DB自体が「注文履歴を保存して分析する」将来構想の実装物**（→ §1.4）。採用しない限り、注文・予約は当日メモリのみ・使い捨て（§1）。採用時も基本は「当日分のみ」で、履歴分析には「明細パージ＋日次集計のみ保持」等の保持ポリシー拡張が必要（テーブル設計は不変） |
 | 7 | 保留 | menu_items の価格・写真列: 注文端末のメニュー表示（Instagram/EC風・料理写真）には必要になるが、注文端末側の設計時に追加する。KDS スコープでは不要 |
