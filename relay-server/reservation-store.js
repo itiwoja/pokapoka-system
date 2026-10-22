@@ -28,6 +28,8 @@ var SCHEMA = [
   "  start_ms INTEGER NOT NULL,",
   "  adults INTEGER NOT NULL CHECK(adults >= 0),",
   "  kids INTEGER NOT NULL CHECK(kids >= 0),",
+  "  seniors INTEGER NOT NULL DEFAULT 0 CHECK(seniors >= 0),",
+  "  children INTEGER NOT NULL DEFAULT 0 CHECK(children >= 0),",
   "  name TEXT NOT NULL,",
   "  status TEXT NOT NULL CHECK(status IN ('" + STATUSES.join("','") + "')),",
   "  table_no TEXT,",
@@ -39,6 +41,13 @@ var SCHEMA = [
   ") STRICT;",
   "CREATE INDEX IF NOT EXISTS reservations_start_ms ON reservations(start_ms);",
 ].join("\n");
+
+// 人数の内訳を足す前 (2026-10-22 より前) に作ったファイルへ後から足す列。
+// kids は従来どおり幼児 (0〜2歳)。TableCheck の予約一覧に合わせ、シニアと子供 (幼児より上) を別に持つ
+var ADDED_COLUMNS = [
+  ["seniors", "seniors INTEGER NOT NULL DEFAULT 0 CHECK(seniors >= 0)"],
+  ["children", "children INTEGER NOT NULL DEFAULT 0 CHECK(children >= 0)"],
+];
 
 /**
  * @param {string} filename - SQLite ファイルのパス。":memory:" ならメモリ上 (テスト用)
@@ -54,13 +63,18 @@ function openReservationStore(filename, options) {
     // 書き込み中の電源断でファイルを壊さないため WAL にする (ミニPCの電源断を想定)
     if (filename !== ":memory:") db.exec("PRAGMA journal_mode=WAL");
     db.exec(SCHEMA);
+    var existing = db.prepare("PRAGMA table_info(reservations)").all().map(function (c) { return c.name; });
+    ADDED_COLUMNS.forEach(function (column) {
+      if (existing.indexOf(column[0]) < 0) db.exec("ALTER TABLE reservations ADD COLUMN " + column[1]);
+    });
   } catch (err) { db.close(); throw err; }
 
   var upsert = db.prepare(
-    "INSERT INTO reservations(rid,start_at,start_ms,adults,kids,name,status,table_no,menu,allergies,request,memo,updated_at)" +
-    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)" +
+    "INSERT INTO reservations(rid,start_at,start_ms,adults,kids,seniors,children,name,status,table_no,menu,allergies,request,memo,updated_at)" +
+    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)" +
     " ON CONFLICT(rid) DO UPDATE SET start_at=excluded.start_at, start_ms=excluded.start_ms," +
-    " adults=excluded.adults, kids=excluded.kids, name=excluded.name, status=excluded.status," +
+    " adults=excluded.adults, kids=excluded.kids, seniors=excluded.seniors, children=excluded.children," +
+    " name=excluded.name, status=excluded.status," +
     " table_no=excluded.table_no, menu=excluded.menu, allergies=excluded.allergies," +
     " request=excluded.request, memo=excluded.memo, updated_at=excluded.updated_at");
   var selectOne = db.prepare("SELECT * FROM reservations WHERE rid=?");
@@ -73,7 +87,7 @@ function openReservationStore(filename, options) {
   function save(input) {
     var record = validate(input);
     upsert.run(record.rid, record.startAt, Date.parse(record.startAt), record.adults, record.kids,
-      record.name, record.status, record.table, JSON.stringify(record.menu),
+      record.seniors, record.children, record.name, record.status, record.table, JSON.stringify(record.menu),
       record.allergies, record.request, record.memo, new Date(now()).toISOString());
     return get(record.rid);
   }
@@ -144,6 +158,8 @@ function validate(input) {
     throw new Error("startAt は日時文字列 (例: 2026-10-11T18:30:00+09:00)");
   }
   var adults = count(input.adults, "adults");
+  var seniors = count(input.seniors, "seniors");
+  var children = count(input.children, "children");
   var kids = count(input.kids, "kids");
   var status = input.status == null ? "booked" : String(input.status);
   if (STATUSES.indexOf(status) < 0) throw new Error("status は " + STATUSES.join(" / ") + " のいずれか");
@@ -153,6 +169,8 @@ function validate(input) {
     rid: rid,
     startAt: input.startAt,
     adults: adults,
+    seniors: seniors,
+    children: children,
     kids: kids,
     name: text(input.name, "name") || "(名前なし)",
     status: status,
@@ -195,6 +213,8 @@ function fromRow(row) {
     rid: row.rid,
     startAt: row.start_at,
     adults: row.adults,
+    seniors: row.seniors,
+    children: row.children,
     kids: row.kids,
     name: row.name,
     status: row.status,
@@ -210,7 +230,8 @@ function fromRow(row) {
 }
 
 /**
- * 内部レコード → KDS 予約ストック形式 ({rid,time,adults,kids,name,menu,seenAt})。
+ * 内部レコード → KDS 予約ストック形式 ({rid,time,adults,seniors,children,kids,name,menu,seenAt})。
+ * kids は幼児 (0〜2歳)。合計人数は KDS 側で4つを足して出す。
  * booked 以外と、メニューが空の予約 (席だけ予約) は KDS に出さない (db-design §5.1 / deshup-spec 準拠)。
  * @param {Map<string,Object>} store
  * @param {number} seenAt - 取込時刻 (ms)
@@ -223,7 +244,7 @@ function toKdsStock(store, seenAt) {
     var item = {
       rid: rec.rid,
       time: isNaN(d) ? String(rec.startAt) : pad2(d.getHours()) + ":" + pad2(d.getMinutes()),
-      adults: rec.adults, kids: rec.kids,
+      adults: rec.adults, seniors: rec.seniors || 0, children: rec.children || 0, kids: rec.kids,
       name: rec.name,
       menu: rec.menu,
       seenAt: seenAt,

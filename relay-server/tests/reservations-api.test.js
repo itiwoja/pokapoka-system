@@ -9,6 +9,7 @@ var http = require("node:http");
 var events = require("node:events");
 var createRelay = require("../server").createRelay;
 var store = require("../reservation-store");
+var buildXlsx = require("./xlsx-fixture").buildXlsx;
 
 function todayAt(hours, minutes) {
   var d = new Date();
@@ -163,6 +164,23 @@ test("B. CSV取込: Shift_JIS のファイルを読み、来店日時の列が�
   var bad = await request(relay, "POST", "/api/reservations/import/csv", "名前,人数\n山田,2\n");
   assert.equal(bad.status, 400);
   assert.match(bad.body.error, /来店日時の列/);
+});
+
+test("B. CSV取込: TableCheck の予約一覧 (.xlsx) を同じ入口で受け、人数の内訳を分けて厨房へ渡す", async function (t) {
+  var relay = (await startRelay(t)).relay;
+  var day = dateStr(new Date());
+  var xlsx = buildXlsx([
+    ["予約"],
+    ["予約ID", "予約時間", "人数:大人", "人数:シニア", "人数:子供", "人数:幼児", "名前", "電話", "注文", "ステータス"],
+    ["TEST01", day + " 18:30", "2", "1", "1", "1", "てすと", "090-0000-0000", "1 × 土鍋御膳, 2 × うなぎ土鍋御膳", "確認"],
+  ]);
+  var out = await request(relay, "POST", "/api/reservations/import/csv", xlsx);
+  assert.equal(out.status, 200);
+  assert.equal(out.body.saved, 1);
+  var stock = (await request(relay, "GET", "/api/stock")).body;
+  assert.equal(stock[0].rid, "TEST01");
+  assert.deepEqual([stock[0].adults, stock[0].seniors, stock[0].children, stock[0].kids], [2, 1, 1, 1]);
+  assert.deepEqual(stock[0].menu.map(function (m) { return m.name + "×" + m.qty; }), ["土鍋御膳×1", "うなぎ土鍋御膳×2"]);
 });
 
 test("C. 貼り付け: 下書きを返すだけで保存しない", async function (t) {

@@ -17,7 +17,7 @@ var INBOX_PREFIX = BASE + "/inbox/";
  * /api/reservations — 予約の入口。TableCheck 連携の中止 (2026-10-11) を受けた店員の持ち込み用。
  *
  *   A. 手入力      GET・POST /api/reservations、GET・PUT・DELETE /api/reservations/{rid}
- *   B. CSV取込     POST /api/reservations/import/csv (?dryRun=1 で保存せず確認だけ)
+ *   B. CSV・Excel  POST /api/reservations/import/csv (?dryRun=1 で保存せず確認だけ)
  *   C. 貼り付け    POST /api/reservations/import/text (下書きを返すだけ。保存は A の POST)
  *   D. メール      POST /api/reservations/import/mail (同上)、
  *                  GET /api/reservations/inbox、DELETE /api/reservations/inbox/{id} (取込フォルダ)
@@ -131,7 +131,8 @@ function cancelReservation(res, rid, context) {
 function importCsv(req, res, url, context) {
   var dryRun = url.searchParams.get("dryRun") === "1";
   httpUtil.readBuffer(req, res, function (buffer) {
-    var parsed = reservationImport.parseCsv(reservationImport.decodeBytes(buffer), { now: context.now() });
+    // TableCheck の予約一覧は .xlsx で受け取るため、CSV と同じ入口で Excel も読む
+    var parsed = reservationImport.parseSpreadsheet(buffer, { now: context.now() });
     if (parsed.error) {
       return json(res, { ok: false, error: parsed.error, columns: parsed.columns, unmapped: parsed.unmapped }, 400);
     }

@@ -3,19 +3,24 @@
  *
  * TableCheck API 連携の中止 (2026-10-11) を受け、店員が TableCheck の管理画面や通知メールから
  * 予約を持ち込むための解析だけを持つ。保存はしない。どの入口も reservation-store.js の save() に
- * 渡せる下書き ({rid?,startAt,adults,kids,name,table,menu[],allergies,request,memo,status}) を返す。
+ * 渡せる下書き ({rid?,startAt,adults,seniors,children,kids,name,table,menu[],allergies,request,memo,status}) を返す。
+ * 人数は 大人 (adults)・シニア (seniors)・子供 (children)・幼児 (kids、0〜2歳) を分けて持ち、まとめない。
  *
- * TableCheck の CSV の列名・予約詳細の書式・通知メールの文面は実物を確認できていない。
+ * TableCheck の予約一覧は、2026-10-22 に店から受け取った .xlsx (1行目がタイトル「予約」、2行目が見出し) で
+ * 列名を確かめた。予約詳細の書式・通知メールの文面は実物を確認できていない。
  * 列名やラベルは表記ゆれを広く受け、読み取れなかった項目は warnings で返す。
  * 取り込む前に必ず人が確認する前提で使う (自動では保存しない)。
  */
 "use strict";
 
 var crypto = require("node:crypto");
+var xlsxReader = require("./xlsx-reader");
 
 var MAX_MENU_ITEMS = 50;
 var MAX_CSV_ROWS = 500;
 var MAX_MIME_DEPTH = 5;
+var MAX_HEADER_SEARCH_ROWS = 5;   // 見出しの前にタイトル行などがあっても探す行数
+var PEOPLE_FIELDS = ["adults", "seniors", "children", "kids"];
 
 /* ============================================================ 共通: 文字コード・日時・人数・メニュー */
 
@@ -109,16 +114,40 @@ function toLocalIso(y, m, d, h, mi) {
     sign + pad2(Math.floor(abs / 60)) + ":" + pad2(abs % 60);
 }
 
-/** "大人2名 子供1名" / "3名" / "3" → {adults,kids}。拾えなければ null */
+var PEOPLE_PATTERNS = [
+  ["adults", /大人\s*:?\s*(\d+)/],
+  ["seniors", /シニア\s*:?\s*(\d+)/],
+  ["children", /(?:子供|子ども|こども|お子様|お子さま|小人)\s*:?\s*(\d+)/],
+  ["kids", /(?:乳幼児|幼児)\s*:?\s*(\d+)/],
+];
+
+function zeroPeople() {
+  return { adults: 0, seniors: 0, children: 0, kids: 0 };
+}
+
+function peopleTotal(people) {
+  return PEOPLE_FIELDS.reduce(function (sum, field) { return sum + (people[field] || 0); }, 0);
+}
+
+/**
+ * "大人2名 シニア1名 子供1名 幼児1名" / "3名" / "3" → {adults,seniors,children,kids}。拾えなければ null。
+ * 合計だけのときは、書いてあるシニア・子供・幼児を引いた残りを大人とする
+ */
 function parsePeople(value) {
   var s = nfkc(value);
-  var a = /大人\s*:?\s*(\d+)/.exec(s);
-  var k = /(?:子供|子ども|こども|お子様|お子さま|小人|幼児)\s*:?\s*(\d+)/.exec(s);
-  var kids = k ? Number(k[1]) : 0;
-  if (a) return { adults: Number(a[1]), kids: kids };
+  var people = zeroPeople();
+  var found = false;
+  PEOPLE_PATTERNS.forEach(function (p) {
+    var m = p[1].exec(s);
+    if (m) { people[p[0]] = Number(m[1]); found = true; }
+  });
+  if (PEOPLE_PATTERNS[0][1].test(s)) return people;
   var total = /(\d+)\s*(?:名|人)/.exec(s) || /^\s*(\d+)\s*$/.exec(s);
-  if (total) return { adults: Math.max(0, Number(total[1]) - kids), kids: kids };
-  return k ? { adults: 0, kids: kids } : null;
+  if (total) {
+    people.adults = Math.max(0, Number(total[1]) - people.seniors - people.children - people.kids);
+    return people;
+  }
+  return found ? people : null;
 }
 
 function parseCount(value) {
@@ -136,6 +165,9 @@ function parseMenuList(value, options) {
   nfkc(value).split(/\r?\n|、|,|;/).forEach(function (line) {
     line = line.replace(/^[\s・●○◆■▼*\-]+/, "").trim();
     if (!line || out.length >= MAX_MENU_ITEMS) return;
+    // TableCheck は数量を先に書く ("1 × 鰻と和牛レアすき極上土鍋御膳")
+    var lead = /^(\d+)\s*[x×✕*]\s*(.+)$/i.exec(line);
+    if (lead && Number(lead[1]) >= 1) return out.push({ name: lead[2].trim(), qty: Number(lead[1]) });
     var m = /^(.+?)\s*[x×✕*]\s*(\d+)\s*(?:個|つ|名分|人前|膳|点)?$/i.exec(line) ||
       /^(.+?)\s+(\d+)\s*(?:個|つ|名分|人前|膳|点)?$/.exec(line) ||
       /^(.+?)(\d+)\s*(?:個|つ|名分|人前|膳|点)$/.exec(line);
@@ -149,6 +181,21 @@ function parseMenuList(value, options) {
 function allergyNote(value) {
   var s = String(value == null ? "" : value).trim();
   return !s || /^(?:なし|無し|無|ない|特になし|特に無し|なしです|no|none|n\/a|-|ー)$/i.test(s) ? null : s;
+}
+
+/**
+ * 予約フォームの質問と回答 ("質問1: アレルギーやお苦手な食材のあ… 回答1: なし") から、
+ * アレルギー・苦手な食材を尋ねた質問の回答を拾う。質問文は途中で「…」と切れていることがある
+ */
+function allergyFromAnswers(value) {
+  var s = nfkc(value);
+  var pattern = /質問\s*(\d+)\s*:\s*([\s\S]*?)\s*回答\s*\1\s*:\s*([^\n]*?)\s*(?=質問\s*\d+\s*:|\n|$)/g;
+  var answers = [], m;
+  while ((m = pattern.exec(s))) {
+    var answer = /アレルギー|苦手|食事制限/.test(m[2]) ? allergyNote(m[3]) : null;
+    if (answer && answers.indexOf(answer) < 0) answers.push(answer);
+  }
+  return answers.length ? answers.join(" / ") : null;
 }
 
 function note(value) {
@@ -185,15 +232,18 @@ function ridFrom(value) {
 
 /* ============================================================ B. CSV */
 
-// 列名 → 項目。上から順に照合するので、「人数(大人)」が pax より先に adults へ当たる
+// 列名 → 項目。上から順に照合するので、「人数:大人」が pax より先に adults へ当たる。
+// TableCheck の予約一覧は「予約時間」に日付つきの日時 ("2026-10-20 11:00") が入り、「開始日」「開始時刻」もある
 var CSV_FIELDS = [
   ["rid", ["予約id", "予約番号", "予約no", "id", "rid", "reservationid"]],
   ["datetime", ["来店日時", "予約日時", "日時", "startat", "datetime"]],
-  ["date", ["来店日", "予約日", "日付", "date"]],
-  ["time", ["来店時間", "来店時刻", "予約時間", "時間", "時刻", "time"]],
+  ["date", ["来店日", "予約日", "開始日", "日付", "date"]],
+  ["time", ["来店時間", "来店時刻", "予約時間", "開始時刻", "時間", "時刻", "time"]],
   ["name", ["予約者名", "予約者", "お名前", "名前", "氏名", "顧客名", "name"]],
   ["adults", ["大人人数", "大人", "adults", "adult"]],
-  ["kids", ["子供人数", "子供", "子ども", "お子様", "小人", "kids", "children"]],
+  ["seniors", ["シニア人数", "シニア", "seniors", "senior"]],
+  ["children", ["子供人数", "子供", "子ども", "お子様", "小人", "children", "child"]],
+  ["kids", ["幼児人数", "幼児", "乳幼児", "0-2歳", "0〜2歳", "kids", "infants", "infant"]],
   ["pax", ["合計人数", "人数", "pax", "partysize"]],
   ["menu", ["事前メニュー", "メニュー", "コース", "注文", "menu", "orders"]],
   ["allergies", ["アレルギー", "allergies", "allergy"]],
@@ -264,55 +314,93 @@ function parseCsvRows(text) {
  *          columns は 項目 → 見出し名。error があるときはファイル全体を取り込めない
  */
 function parseCsv(text, options) {
-  var now = options && options.now || new Date();
   var rows = parseCsvRows(text);
   if (!rows.length) return { columns: {}, unmapped: [], rows: [], error: "CSVに行がありません" };
-  var header = rows[0].cells.map(function (c) { return c.trim(); });
+  return parseTable(rows, options);
+}
+
+/** Excel (.xlsx) の最初のシート → parseCsv と同じ形 */
+function parseXlsx(buffer, options) {
+  var rows;
+  try { rows = xlsxReader.readXlsxRows(buffer); }
+  catch (err) { return { columns: {}, unmapped: [], rows: [], error: "Excelファイルを読めません (" + err.message + ")" }; }
+  if (!rows.length) return { columns: {}, unmapped: [], rows: [], error: "シートに行がありません" };
+  return parseTable(rows, options);
+}
+
+/** CSV か .xlsx かをバイト列の先頭で見分けて読む */
+function parseSpreadsheet(buffer, options) {
+  return xlsxReader.isXlsx(buffer) ? parseXlsx(buffer, options) : parseCsv(decodeBytes(buffer), options);
+}
+
+/**
+ * 見出しの行を探す。来店日時 (または来店時間) の列が当たる最初の行。
+ * TableCheck の出力は1行目がタイトル (「予約」) で、2行目が見出しになっている
+ */
+function findHeader(rows) {
+  var limit = Math.min(rows.length, MAX_HEADER_SEARCH_ROWS);
+  for (var i = 0; i < limit; i++) {
+    var columns = mapColumns(rows[i].cells.map(function (c) { return c.trim(); }));
+    if (columns.datetime !== undefined || columns.time !== undefined) return i;
+  }
+  return 0;
+}
+
+function parseTable(rows, options) {
+  var now = options && options.now || new Date();
+  var headerIndex = findHeader(rows);
+  var header = rows[headerIndex].cells.map(function (c) { return c.trim(); });
   var columns = mapColumns(header);
   var named = {};
   Object.keys(columns).forEach(function (field) { named[field] = header[columns[field]]; });
   var mappedIndexes = Object.keys(columns).map(function (field) { return columns[field]; });
   var unmapped = header.filter(function (h, i) { return h && mappedIndexes.indexOf(i) < 0; });
   var base = { columns: named, unmapped: unmapped, rows: [] };
-  if (columns.datetime === undefined && (columns.date === undefined || columns.time === undefined)) {
-    base.error = "来店日時の列が見つかりません (「来店日時」、または「来店日」と「来店時間」の列が必要)";
+  if (columns.datetime === undefined && columns.time === undefined) {
+    base.error = "来店日時の列が見つかりません (「来店日時」、または「来店日」と「来店時間」(「予約時間」) の列が必要)";
     return base;
   }
-  if (rows.length - 1 > MAX_CSV_ROWS) {
+  if (rows.length - 1 - headerIndex > MAX_CSV_ROWS) {
     base.error = "行数が多すぎます (" + MAX_CSV_ROWS + "行まで)";
     return base;
   }
 
-  base.rows = rows.slice(1).map(function (row) {
+  base.rows = rows.slice(headerIndex + 1).map(function (row) {
     function cell(field) {
       var index = columns[field];
       return index === undefined || row.cells[index] == null ? "" : row.cells[index].trim();
     }
     var errors = [];
-    var startAt = parseDateTime(columns.datetime !== undefined && cell("datetime") ? cell("datetime") : cell("date") + " " + cell("time"), now);
+    var when = columns.datetime !== undefined && cell("datetime") ? cell("datetime") : cell("date") + " " + cell("time");
+    // 時間の列に日付まで入っている (TableCheck の「予約時間」) なら、その列だけで読む
+    var startAt = parseDateTime(when, now) || (cell("time") ? parseDateTime(cell("time"), now) : null);
     if (!startAt) errors.push("来店日時を読み取れません");
 
-    var adults = cell("adults") ? parseCount(cell("adults")) : null;
-    var kids = cell("kids") ? parseCount(cell("kids")) : null;
-    if (adults == null && cell("pax")) {
+    var counts = {};
+    PEOPLE_FIELDS.forEach(function (field) { counts[field] = cell(field) ? parseCount(cell(field)) : null; });
+    if (counts.adults == null && cell("pax")) {
       var people = parsePeople(cell("pax"));
       if (people) {
-        // 合計人数の列しか無いときは、子供の列の分を引いて大人とする
-        adults = kids != null && !/大人/.test(cell("pax")) ? Math.max(0, people.adults - kids) : people.adults;
-        if (kids == null) kids = people.kids;
+        // 合計人数の列しか無いときは、シニア・子供・幼児の列の分を引いて大人とする
+        PEOPLE_FIELDS.forEach(function (field) { if (field !== "adults" && counts[field] == null) counts[field] = people[field]; });
+        counts.adults = /大人/.test(cell("pax")) ? people.adults
+          : Math.max(0, peopleTotal(people) - counts.seniors - counts.children - counts.kids);
       }
     }
     var name = guestName(cell("name"));
     var draft = {
       rid: ridFrom(cell("rid")) || (startAt ? derivedRid("csv", startAt, name || "") : null),
       startAt: startAt,
-      adults: adults == null ? 0 : adults,
-      kids: kids == null ? 0 : kids,
+      adults: counts.adults || 0,
+      seniors: counts.seniors || 0,
+      children: counts.children || 0,
+      kids: counts.kids || 0,
       name: name,
       status: statusFrom(cell("status")),
       table: note(cell("table")),
       menu: parseMenuList(cell("menu")),
-      allergies: allergyNote(cell("allergies")),
+      // アレルギーの列が空でも、予約メモの質問の回答に書かれていることがある
+      allergies: allergyNote(cell("allergies")) || allergyFromAnswers(cell("memo")),
       request: note(cell("request")),
       memo: note(cell("memo")),
     };
@@ -331,7 +419,9 @@ var TEXT_LABELS = {
   name: ["ご予約者名", "予約者名", "ご予約名", "予約者", "お名前", "名前", "氏名"],
   people: ["ご利用人数", "利用人数", "人数"],
   adults: ["大人"],
-  kids: ["お子様", "子ども", "子供", "小人"],
+  seniors: ["シニア"],
+  children: ["お子様", "子ども", "子供", "小人"],
+  kids: ["乳幼児", "幼児"],
   menu: ["事前メニュー", "ご注文内容", "注文内容", "メニュー", "コース", "ご注文", "注文"],
   allergies: ["食物アレルギー", "アレルギー"],
   request: ["ご要望", "ご希望", "要望", "リクエスト"],
@@ -398,15 +488,17 @@ function parseText(text, options) {
   }
 
   var people = fields.people ? parsePeople(fields.people) : null;
-  if (fields.adults && parseCount(fields.adults) != null) {
-    people = { adults: parseCount(fields.adults), kids: people ? people.kids : 0 };
-  }
-  if (fields.kids && parseCount(fields.kids) != null) {
-    // 合計人数だけが分かっているときは、子供の人数を引いて大人とする
-    var kidCount = parseCount(fields.kids);
-    var explicitAdults = fields.adults || /大人/.test(fields.people || "");
-    people = people ? { adults: explicitAdults ? people.adults : Math.max(0, people.adults - kidCount), kids: kidCount }
-      : { adults: 0, kids: kidCount };
+  var labeled = {};
+  PEOPLE_FIELDS.forEach(function (field) {
+    if (fields[field] && parseCount(fields[field]) != null) labeled[field] = parseCount(fields[field]);
+  });
+  if (Object.keys(labeled).length) {
+    // 合計人数だけが分かっているときは、シニア・子供・幼児の人数を引いて大人とする
+    var total = people ? peopleTotal(people) : 0;
+    var explicitAdults = labeled.adults != null || /大人/.test(fields.people || "");
+    people = people || zeroPeople();
+    Object.keys(labeled).forEach(function (field) { people[field] = labeled[field]; });
+    if (!explicitAdults) people.adults = Math.max(0, total - people.seniors - people.children - people.kids);
   }
   if (!people) people = parsePeople(looseText);
 
@@ -423,6 +515,8 @@ function parseText(text, options) {
       rid: ridFrom(fields.rid) || (startAt && name ? derivedRid(prefix, startAt, name) : null),
       startAt: startAt,
       adults: people ? people.adults : 0,
+      seniors: people ? people.seniors : 0,
+      children: people ? people.children : 0,
       kids: people ? people.kids : 0,
       name: name,
       status: fields.status ? statusFrom(fields.status) : "booked",
@@ -566,6 +660,8 @@ module.exports = {
   parsePeople: parsePeople,
   parseMenuList: parseMenuList,
   parseCsv: parseCsv,
+  parseXlsx: parseXlsx,
+  parseSpreadsheet: parseSpreadsheet,
   parseText: parseText,
   parseMail: parseMail,
 };
