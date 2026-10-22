@@ -182,6 +182,20 @@ test("Excel: 部品の場所や名前が違うファイルも、目次 (.rels) �
   assert.equal(Date.parse(out.rows[0].draft.startAt), local(2026, 10, 20, 13, 30), "書式も別の場所から読む");
 });
 
+test("Excel: 日時の書式なら0時ちょうどでも時刻を残し、右端の列は読み飛ばす", function () {
+  var rows = [["予約時間", "名前"], [{ serial: 46315 }, "山田", { ref: "XFD", inline: "右端" }]];
+  var out = imp.parseSpreadsheet(buildXlsx(rows), OPTS);
+  assert.deepEqual(out.rows[0].errors, []);
+  assert.equal(Date.parse(out.rows[0].draft.startAt), local(2026, 10, 20, 0, 0), "2026-10-20 00:00");
+  assert.equal(out.unmapped.length, 0, "1000列目より右は読まない");
+});
+
+test("Excel: 行が多すぎるファイルは、読み切る前に断る", function () {
+  var rows = [["予約時間", "名前"]];
+  for (var i = 0; i < 5001; i++) rows.push(["2026-10-20 18:00", "山田" + i]);
+  assert.match(imp.parseSpreadsheet(buildXlsx(rows), OPTS).error, /行数が多すぎます/);
+});
+
 test("Excel: 壊れたファイルは全体を断り、CSV は先頭のバイトで見分けて従来どおり読む", function () {
   var broken = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(40)]);
   assert.match(imp.parseSpreadsheet(broken, OPTS).error, /Excelファイルを読めません/);
@@ -193,6 +207,8 @@ test("CSV: 作成日時・受付日など来店でない日時の列を来店日
   var out = imp.parseCsv("作成日時,予約日,予約時間,名前\n2026-10-01 09:00,2026-10-01,2026-10-25 18:00,山田\n", OPTS);
   assert.equal(out.columns.datetime, undefined, "作成日時は来店日時にしない");
   assert.equal(Date.parse(out.rows[0].draft.startAt), local(2026, 10, 25, 18, 0), "時間の列の日付を日付の列より優先する");
+  var relative = imp.parseCsv("予約日,時間,名前\n2026-10-25,本日19:00,田中\n", OPTS);
+  assert.equal(Date.parse(relative.rows[0].draft.startAt), local(2026, 10, 25, 19, 0), "相対の書き方なら日付の列を正とする");
   var ended = imp.parseCsv("予約時間,終了日時,名前\n2026-10-25 18:00,2026-10-25 20:00,山田\n", OPTS);
   assert.equal(Date.parse(ended.rows[0].draft.startAt), local(2026, 10, 25, 18, 0), "終了日時は来店日時にしない");
 });

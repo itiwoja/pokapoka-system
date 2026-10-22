@@ -64,8 +64,10 @@ function readJson(req, res, cb) {
   });
 }
 
-/** 本文をバイト列のまま読む。文字コードが UTF-8 とは限らない CSV・メールの受け取りに使う */
-/** 本文をバイト列で読む。limit を省くと JSON と同じ上限 */
+/**
+ * 本文をバイト列のまま読む。文字コードが UTF-8 とは限らない CSV・メールや、.xlsx の受け取りに使う。
+ * limit (バイト) を省くと JSON と同じ上限
+ */
 function readBuffer(req, res, cb, limit) {
   var max = limit || MAX_JSON_BODY_BYTES;
   var chunks = [], size = 0, ended = false;

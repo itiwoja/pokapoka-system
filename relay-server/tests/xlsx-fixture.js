@@ -53,7 +53,8 @@ function esc(s) {
 
 /**
  * rows の各セルは文字列 (共有文字列にする)、{serial} (独自の日付書式の数値)、
- * {serial, builtin: true} (日本語版 Excel の組み込み日付書式 57 の数値)、{inline} (インライン文字列)。
+ * {serial, builtin: true} (日本語版 Excel の組み込み日付書式 57 の数値)、{inline} (インライン文字列)、
+ * {ref, inline} (列の位置を指定したインライン文字列)。
  * options.date1904 が真なら、Mac 版 Excel の「1904年から計算」のブックにする。
  * options.relocated が真なら、Excel 以外のツールのように部品を別の場所・名前に置き、目次 (.rels) でたどらせる
  */
@@ -65,7 +66,7 @@ function buildXlsx(rows, options) {
       var ref = colName(c) + (r + 1);
       if (v === "") return "";
       if (v && v.serial != null) return '<c r="' + ref + '" s="' + (v.builtin ? 2 : 1) + '"><v>' + v.serial + "</v></c>";
-      if (v && v.inline != null) return '<c r="' + ref + '" t="inlineStr"><is><t>' + esc(v.inline) + "</t></is></c>";
+      if (v && v.inline != null) return '<c r="' + (v.ref ? v.ref + (r + 1) : ref) + '" t="inlineStr"><is><t>' + esc(v.inline) + "</t></is></c>";
       strings.push(v);
       return '<c r="' + ref + '" t="s"><v>' + (strings.length - 1) + "</v></c>";
     }).join("") + "</row>";

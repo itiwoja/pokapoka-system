@@ -10,12 +10,19 @@
 var zlib = require("node:zlib");
 
 var MAX_ENTRIES = 2000;
-// 展開後の合計。ZIP 爆弾よけ。展開と走査はリクエストの処理中に同期で行うため、止まる時間も抑える
-var MAX_INFLATED_BYTES = 10 * 1024 * 1024;
+// 展開後の合計。ZIP 爆弾よけ。展開と走査はリクエストの処理中に同期で行うため、止まる時間も抑える。
+// 展開するのは読む部品 (ブック・目次・最初のシート・共有文字列・書式) だけなので、取込の上限 (5MB) の圧縮率でも足りる
+var MAX_INFLATED_BYTES = 20 * 1024 * 1024;
+// 1行の列数と行数の上限。右端の列 (XFD) に1セルだけ置いた行を大量に並べたファイルで、メモリと時間を食わないため
+var MAX_COLUMNS = 1000;
+var MAX_ROWS = 5000;
 var EXCEL_EPOCH_MS = Date.UTC(1899, 11, 30);
 var EXCEL_1904_EPOCH_MS = Date.UTC(1904, 0, 1);   // Mac 版 Excel の「1904年から計算」
-// 日付・時刻の組み込み書式の番号。27〜36・50〜58 は日本語版 Excel の和暦・年月日の書式
-var BUILTIN_DATE_FORMATS = [[14, 22], [27, 36], [45, 47], [50, 58]];
+// 日付・時刻の組み込み書式の番号 → 種類。27〜36・50〜58 は日本語版 Excel の書式 (32〜35 は時刻)
+var BUILTIN_DATE_FORMATS = [
+  [14, 17, "date"], [18, 21, "time"], [22, 22, "datetime"], [27, 31, "date"], [32, 35, "time"],
+  [36, 36, "date"], [45, 47, "time"], [50, 58, "date"],
+];
 
 /** バイト列が ZIP (xlsx) かどうか */
 function isXlsx(buf) {
@@ -51,17 +58,24 @@ function readXlsxRows(buf) {
     while ((c = cellPattern.exec(m[2] || ""))) {
       var ref = attr(c[1], "r");
       column = ref ? columnIndex(ref) : column + 1;
+      if (column >= MAX_COLUMNS) continue;   // 予約一覧に要る列はずっと左にある。右端の列は読まない
       cells[column] = cellValue(c[1], c[2] || "", shared, dateStyles, epoch);
     }
     for (var i = 0; i < cells.length; i++) if (cells[i] == null) cells[i] = "";
-    if (cells.some(function (v) { return v.trim() !== ""; })) rows.push({ line: rowNumber, cells: cells });
+    if (cells.some(function (v) { return v.trim() !== ""; })) {
+      if (rows.length >= MAX_ROWS) throw new Error("行数が多すぎます");
+      rows.push({ line: rowNumber, cells: cells });
+    }
   }
   return rows;
 }
 
 /* ---- ZIP ---- */
 
-/** ZIP の中身を {パス: UTF-8 の文字列} で返す。xlsx に要る .xml / .rels だけを展開する */
+/**
+ * ZIP の目次を読み、.xml / .rels の部品を {パス: 圧縮されたままの中身} で返す。
+ * 展開は part() で読むときに行い、読まない部品 (ほかのシート・ピボット・図形など) は展開しない
+ */
 function unzip(buf) {
   var eocd = -1;
   for (var i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 0xffff); i--) {
@@ -72,8 +86,7 @@ function unzip(buf) {
   var offset = buf.readUInt32LE(eocd + 16);
   if (count > MAX_ENTRIES) throw new Error("ファイル数が多すぎます");
 
-  var files = {};
-  var inflated = 0;
+  var entries = {};
   for (var n = 0; n < count; n++) {
     if (offset + 46 > buf.length || buf.readUInt32LE(offset) !== 0x02014b50) throw new Error("ZIP の目次が壊れています");
     var method = buf.readUInt16LE(offset + 10);
@@ -88,25 +101,30 @@ function unzip(buf) {
 
     if (localOffset + 30 > buf.length || buf.readUInt32LE(localOffset) !== 0x04034b50) throw new Error("ZIP の中身が壊れています");
     var start = localOffset + 30 + buf.readUInt16LE(localOffset + 26) + buf.readUInt16LE(localOffset + 28);
-    var data = buf.subarray(start, start + compressedSize);
-    var out;
-    if (method === 0) out = data;
-    else if (method === 8) out = zlib.inflateRawSync(data, { maxOutputLength: Math.max(1, MAX_INFLATED_BYTES - inflated) });
-    else throw new Error("対応していない圧縮形式です");
-    inflated += out.length;
-    if (inflated > MAX_INFLATED_BYTES) throw new Error("展開後のサイズが大きすぎます");
-    files[name] = out.toString("utf8");
+    entries[name] = { method: method, data: buf.subarray(start, start + compressedSize) };
   }
-  return files;
+  return { entries: entries, inflated: 0, cache: {} };
 }
 
-/** ZIP 内の部品を名前で引く。部品名は大文字小文字を区別しない (OPC の決まり) */
+/** ZIP 内の部品を名前で引き、UTF-8 の文字列にする。部品名は大文字小文字を区別しない (OPC の決まり) */
 function part(files, name) {
   if (name == null) return null;
-  if (files[name] != null) return files[name];
-  var lower = name.toLowerCase();
-  var key = Object.keys(files).find(function (k) { return k.toLowerCase() === lower; });
-  return key ? files[key] : null;
+  var key = files.entries[name] ? name : Object.keys(files.entries).find(function (k) { return k.toLowerCase() === name.toLowerCase(); });
+  if (!key) return null;
+  if (files.cache[key] != null) return files.cache[key];
+  var entry = files.entries[key];
+  var out;
+  if (entry.method === 0) out = entry.data;
+  else if (entry.method === 8) {
+    try { out = zlib.inflateRawSync(entry.data, { maxOutputLength: Math.max(1, MAX_INFLATED_BYTES - files.inflated) }); }
+    catch (err) {
+      // 上限を超えると zlib が英語の RangeError を投げるので、画面に出す言葉へ置き換える
+      throw new Error(err instanceof RangeError ? "展開後のサイズが大きすぎます。期間を区切って書き出してください" : "ZIP の中身を展開できません");
+    }
+  } else throw new Error("対応していない圧縮形式です");
+  files.inflated += out.length;
+  if (files.inflated > MAX_INFLATED_BYTES) throw new Error("展開後のサイズが大きすぎます。期間を区切って書き出してください");
+  return (files.cache[key] = out.toString("utf8"));
 }
 
 /** 目次 (.rels) の Target を、元の部品のあるフォルダから見たパスにする */
@@ -189,13 +207,16 @@ function sharedStrings(xml) {
   return out;
 }
 
-/** 日付の表示形式が付いたセル書式の番号 (cellXfs の並び順) → true */
+/** 日付・時刻の表示形式が付いたセル書式の番号 (cellXfs の並び順) → "date" / "time" / "datetime" */
 function dateStyleIndexes(xml) {
   var custom = {};
   var fmtPattern = /<numFmt\b([^>]*)\/?>/g, f;
   while ((f = fmtPattern.exec(xml))) {
     var code = (attr(f[1], "formatCode") || "").replace(/"[^"]*"|\[[^\]]*\]/g, "");
-    custom[attr(f[1], "numFmtId")] = /[ymdhs]/i.test(code);
+    // m は月にも分にも使うので、年 (y) か日 (d) があるものを日付とみなす
+    var hasDate = /[yd]/i.test(code);
+    var hasTime = /[hs]/i.test(code);
+    custom[attr(f[1], "numFmtId")] = hasDate && hasTime ? "datetime" : hasTime ? "time" : hasDate ? "date" : null;
   }
   var out = {};
   var xfs = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(xml);
@@ -203,8 +224,9 @@ function dateStyleIndexes(xml) {
   var xfPattern = /<xf\b([^>]*?)(?:\/>|>)/g, x, index = 0;
   while ((x = xfPattern.exec(xfs[1]))) {
     var id = Number(attr(x[1], "numFmtId") || 0);
-    var builtin = BUILTIN_DATE_FORMATS.some(function (range) { return id >= range[0] && id <= range[1]; });
-    if (builtin || custom[String(id)]) out[index] = true;
+    var builtin = BUILTIN_DATE_FORMATS.find(function (range) { return id >= range[0] && id <= range[1]; });
+    var kind = builtin ? builtin[2] : custom[String(id)];
+    if (kind) out[index] = kind;
     index++;
   }
   return out;
@@ -217,17 +239,22 @@ function cellValue(attrs, inner, shared, dateStyles, epoch) {
   var raw = v ? decodeXml(v[1]) : "";
   if (type === "s") return shared[Number(raw)] != null ? shared[Number(raw)] : "";
   if (type === "b") return raw === "1" ? "TRUE" : raw === "0" ? "FALSE" : raw;
-  if (type === "n" && raw !== "" && dateStyles[Number(attr(attrs, "s") || 0)] && isFinite(Number(raw))) return serialToText(Number(raw), epoch);
+  var kind = dateStyles[Number(attr(attrs, "s") || 0)];
+  if (type === "n" && raw !== "" && kind && isFinite(Number(raw))) return serialToText(Number(raw), epoch, kind);
   return raw;
 }
 
-/** Excel の日付シリアル値 → "YYYY-MM-DD HH:MM" (時刻が0なら日付だけ) */
-function serialToText(serial, epoch) {
+/**
+ * Excel の日付シリアル値 → "YYYY-MM-DD HH:MM" / "YYYY-MM-DD" / "HH:MM"。
+ * 書式が日時なら 0時ちょうど (整数のシリアル) でも時刻を残す。日付の書式でも端数があれば時刻を付ける
+ */
+function serialToText(serial, epoch, kind) {
   var d = new Date(epoch + Math.round(serial * 86400) * 1000);
   var date = d.getUTCFullYear() + "-" + pad2(d.getUTCMonth() + 1) + "-" + pad2(d.getUTCDate());
-  if (serial >= 1 && serial % 1 === 0) return date;
   var time = pad2(d.getUTCHours()) + ":" + pad2(d.getUTCMinutes());
-  return serial < 1 ? time : date + " " + time;
+  if (kind === "time" || serial < 1) return time;
+  if (kind === "datetime" || serial % 1 !== 0) return date + " " + time;
+  return date;
 }
 
 function columnIndex(ref) {

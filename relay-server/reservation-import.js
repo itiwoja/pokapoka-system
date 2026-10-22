@@ -266,6 +266,9 @@ var CSV_FIELDS = [
   ["status", ["ステータス", "状態", "status"]],
 ];
 
+// 年から書いた日付 ("2026-10-20" / "2026/10/20" / "2026年10月20日")
+var ABSOLUTE_DATE = /\d{4}\s*[\/\-.年]\s*\d{1,2}\s*[\/\-.月]\s*\d{1,2}/;
+
 // 部分一致で日時の項目に当てない列。予約の作成・更新・取消・終了の日時を来店日時と取り違えないため
 var NOT_VISIT_TIME = /作成|更新|変更|登録|受付|取消|キャンセル|終了|支払|入金|生年|誕生/;
 var TIME_FIELDS = { datetime: true, date: true, time: true };
@@ -395,11 +398,14 @@ function parseTable(rows, options) {
       return index === undefined || row.cells[index] == null ? "" : row.cells[index].trim();
     }
     var errors = [];
-    // 時間の列に日付まで入っている (TableCheck の「予約時間」) なら、日付の列より優先する。
-    // 日付の列が受付日など来店日でない場合に、来店日を取り違えないため
+    // 時間の列に年つきの日付まで入っている (TableCheck の「予約時間」) なら、日付の列より優先する。
+    // 日付の列が受付日など来店日でない場合に、来店日を取り違えないため。
+    // 「本日19:00」のような相対の書き方は、日付の列を正とする
+    var timeIsAbsolute = ABSOLUTE_DATE.test(nfkc(cell("time")));
     var startAt = (columns.datetime !== undefined && cell("datetime") ? parseDateTime(cell("datetime"), now) : null) ||
-      (cell("time") ? parseDateTime(cell("time"), now) : null) ||
-      parseDateTime(cell("date") + " " + cell("time"), now);
+      (timeIsAbsolute ? parseDateTime(cell("time"), now) : null) ||
+      parseDateTime(cell("date") + " " + cell("time"), now) ||
+      (cell("time") ? parseDateTime(cell("time"), now) : null);
     if (!startAt) errors.push("来店日時を読み取れません");
 
     var counts = {};
