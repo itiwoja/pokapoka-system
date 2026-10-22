@@ -28,8 +28,6 @@ var SCHEMA = [
   "  start_ms INTEGER NOT NULL,",
   "  adults INTEGER NOT NULL CHECK(adults >= 0),",
   "  kids INTEGER NOT NULL CHECK(kids >= 0),",
-  "  seniors INTEGER NOT NULL DEFAULT 0 CHECK(seniors >= 0),",
-  "  children INTEGER NOT NULL DEFAULT 0 CHECK(children >= 0),",
   "  name TEXT NOT NULL,",
   "  status TEXT NOT NULL CHECK(status IN ('" + STATUSES.join("','") + "')),",
   "  table_no TEXT,",
@@ -42,7 +40,7 @@ var SCHEMA = [
   "CREATE INDEX IF NOT EXISTS reservations_start_ms ON reservations(start_ms);",
 ].join("\n");
 
-// 人数の内訳を足す前 (2026-10-22 より前) に作ったファイルへ後から足す列。
+// 人数の内訳 (2026-10-22 追加)。新しいファイルにも古いファイルにも、開いたときに無ければ足す (定義はここだけ)。
 // kids は従来どおり幼児 (0〜2歳)。TableCheck の予約一覧に合わせ、シニアと子供 (幼児より上) を別に持つ
 var ADDED_COLUMNS = [
   ["seniors", "seniors INTEGER NOT NULL DEFAULT 0 CHECK(seniors >= 0)"],

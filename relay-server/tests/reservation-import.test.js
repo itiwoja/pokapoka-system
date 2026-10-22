@@ -163,6 +163,15 @@ test("Excel: TableCheck の予約一覧 (.xlsx) を CSV と同じように読む
   assert.equal(Date.parse(out.rows[1].draft.startAt), local(2026, 10, 20, 13, 30), "日付シリアルを日時として読む");
 });
 
+test("Excel: 和暦などの組み込み日付書式と、1904年基準のブックの日付シリアルを読む", function () {
+  var header = ["予約ID", "予約時間", "人数:大人", "注文"];
+  var builtin = imp.parseSpreadsheet(buildXlsx([header, ["J1", { serial: 46315.5625, builtin: true }, "2", "1 × 茶"]]), OPTS);
+  assert.equal(Date.parse(builtin.rows[0].draft.startAt), local(2026, 10, 20, 13, 30), "日本語版 Excel の組み込み書式 57");
+  // 1904年基準では同じ日時のシリアルが 1462 小さい
+  var mac = imp.parseSpreadsheet(buildXlsx([header, ["M1", { serial: 46315.5625 - 1462 }, "2", "1 × 茶"]], { date1904: true }), OPTS);
+  assert.equal(Date.parse(mac.rows[0].draft.startAt), local(2026, 10, 20, 13, 30), "Mac 版 Excel の1904年基準");
+});
+
 test("Excel: 壊れたファイルは全体を断り、CSV は先頭のバイトで見分けて従来どおり読む", function () {
   var broken = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(40)]);
   assert.match(imp.parseSpreadsheet(broken, OPTS).error, /Excelファイルを読めません/);
@@ -170,9 +179,27 @@ test("Excel: 壊れたファイルは全体を断り、CSV は先頭のバイト
   assert.equal(csv.rows[0].draft.adults, 2);
 });
 
+test("CSV: 作成日時・受付日など来店でない日時の列を来店日時と取り違えない", function () {
+  var out = imp.parseCsv("作成日時,予約日,予約時間,名前\n2026-10-01 09:00,2026-10-01,2026-10-25 18:00,山田\n", OPTS);
+  assert.equal(out.columns.datetime, undefined, "作成日時は来店日時にしない");
+  assert.equal(Date.parse(out.rows[0].draft.startAt), local(2026, 10, 25, 18, 0), "時間の列の日付を日付の列より優先する");
+  var ended = imp.parseCsv("予約時間,終了日時,名前\n2026-10-25 18:00,2026-10-25 20:00,山田\n", OPTS);
+  assert.equal(Date.parse(ended.rows[0].draft.startAt), local(2026, 10, 25, 18, 0), "終了日時は来店日時にしない");
+});
+
+test("アレルギー: 「特にありません」など否定の自由回答はアレルギーにしない", function () {
+  ["特にありません", "ありません。", "大丈夫です", "なし。", "問題ないです"].forEach(function (answer) {
+    var csv = "来店日時,予約メモ\n2026-10-14 18:30,\"質問1: アレルギーやお苦手な食材のあ… 回答1: " + answer + "\"\n";
+    assert.equal(imp.parseCsv(csv, OPTS).rows[0].draft.allergies, null, answer);
+  });
+  var csv = "来店日時,アレルギー\n2026-10-14 18:30,ありません、えびが苦手です\n";
+  assert.equal(imp.parseCsv(csv, OPTS).rows[0].draft.allergies, "ありません、えびが苦手です", "続きのある回答は残す");
+});
+
 test("CSV: 来店日時の列が無ければファイル全体を断る", function () {
   var out = imp.parseCsv("名前,人数\n山田,2\n", OPTS);
   assert.match(out.error, /来店日時の列/);
+  assert.match(imp.parseCsv("来店時間,名前\n18:30,山田\n", OPTS).error, /来店日時の列/, "日付の無い時刻だけの列は断る");
   assert.deepEqual(out.rows, []);
   assert.match(imp.parseCsv("", OPTS).error, /行がありません/);
 });

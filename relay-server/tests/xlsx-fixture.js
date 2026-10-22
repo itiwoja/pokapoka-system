@@ -51,14 +51,19 @@ function esc(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-/** rows の各セルは文字列 (共有文字列にする)、{serial} (日付書式の数値)、{inline} (インライン文字列) */
-function buildXlsx(rows) {
+/**
+ * rows の各セルは文字列 (共有文字列にする)、{serial} (独自の日付書式の数値)、
+ * {serial, builtin: true} (日本語版 Excel の組み込み日付書式 57 の数値)、{inline} (インライン文字列)。
+ * options.date1904 が真なら、Mac 版 Excel の「1904年から計算」のブックにする
+ */
+function buildXlsx(rows, options) {
+  options = options || {};
   var strings = [];
   var sheetRows = rows.map(function (cells, r) {
     return '<row r="' + (r + 1) + '">' + cells.map(function (v, c) {
       var ref = colName(c) + (r + 1);
       if (v === "") return "";
-      if (v && v.serial != null) return '<c r="' + ref + '" s="1"><v>' + v.serial + "</v></c>";
+      if (v && v.serial != null) return '<c r="' + ref + '" s="' + (v.builtin ? 2 : 1) + '"><v>' + v.serial + "</v></c>";
       if (v && v.inline != null) return '<c r="' + ref + '" t="inlineStr"><is><t>' + esc(v.inline) + "</t></is></c>";
       strings.push(v);
       return '<c r="' + ref + '" t="s"><v>' + (strings.length - 1) + "</v></c>";
@@ -68,11 +73,12 @@ function buildXlsx(rows) {
   return zip({
     "[Content_Types].xml": '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
     "xl/workbook.xml": '<?xml version="1.0"?><workbook ' + ns + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+      (options.date1904 ? '<workbookPr date1904="1"/>' : "") +
       '<sheets><sheet name="予約" sheetId="1" r:id="rId1"/></sheets></workbook>',
     "xl/_rels/workbook.xml.rels": '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
       '<Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
     "xl/styles.xml": '<?xml version="1.0"?><styleSheet ' + ns + '><numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy-mm-dd hh:mm"/></numFmts>' +
-      '<cellXfs count="2"><xf numFmtId="0"/><xf numFmtId="164" applyNumberFormat="1"/></cellXfs></styleSheet>',
+      '<cellXfs count="3"><xf numFmtId="0"/><xf numFmtId="164" applyNumberFormat="1"/><xf numFmtId="57" applyNumberFormat="1"/></cellXfs></styleSheet>',
     "xl/sharedStrings.xml": '<?xml version="1.0"?><sst ' + ns + ">" + strings.map(function (s) {
       // ふりがな (rPh) を付けておく。日本語の Excel で保存し直すと付き、本文ではないので読み飛ばす必要がある
       return '<si><t xml:space="preserve">' + esc(s) + '</t><rPh sb="0" eb="1"><t>フリガナ</t></rPh></si>';

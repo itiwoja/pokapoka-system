@@ -12,6 +12,9 @@ var zlib = require("node:zlib");
 var MAX_ENTRIES = 2000;
 var MAX_INFLATED_BYTES = 20 * 1024 * 1024;   // 展開後の合計。ZIP 爆弾よけ
 var EXCEL_EPOCH_MS = Date.UTC(1899, 11, 30);
+var EXCEL_1904_EPOCH_MS = Date.UTC(1904, 0, 1);   // Mac 版 Excel の「1904年から計算」
+// 日付・時刻の組み込み書式の番号。27〜36・50〜58 は日本語版 Excel の和暦・年月日の書式
+var BUILTIN_DATE_FORMATS = [[14, 22], [27, 36], [45, 47], [50, 58]];
 
 /** バイト列が ZIP (xlsx) かどうか */
 function isXlsx(buf) {
@@ -29,6 +32,9 @@ function readXlsxRows(buf) {
   if (sheet == null) throw new Error("シートが見つかりません");
   var shared = files["xl/sharedStrings.xml"] != null ? sharedStrings(files["xl/sharedStrings.xml"]) : [];
   var dateStyles = files["xl/styles.xml"] != null ? dateStyleIndexes(files["xl/styles.xml"]) : {};
+  var workbookPr = /<workbookPr\b([^>]*)/.exec(files["xl/workbook.xml"] || "");
+  var date1904 = workbookPr ? /^(?:1|true)$/.test(attr(workbookPr[1], "date1904") || "") : false;
+  var epoch = date1904 ? EXCEL_1904_EPOCH_MS : EXCEL_EPOCH_MS;
 
   var rows = [];
   var rowPattern = /<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g;
@@ -42,7 +48,7 @@ function readXlsxRows(buf) {
     while ((c = cellPattern.exec(m[2] || ""))) {
       var ref = attr(c[1], "r");
       column = ref ? columnIndex(ref) : column + 1;
-      cells[column] = cellValue(c[1], c[2] || "", shared, dateStyles);
+      cells[column] = cellValue(c[1], c[2] || "", shared, dateStyles, epoch);
     }
     for (var i = 0; i < cells.length; i++) if (cells[i] == null) cells[i] = "";
     if (cells.some(function (v) { return v.trim() !== ""; })) rows.push({ line: rowNumber, cells: cells });
@@ -156,26 +162,27 @@ function dateStyleIndexes(xml) {
   var xfPattern = /<xf\b([^>]*?)(?:\/>|>)/g, x, index = 0;
   while ((x = xfPattern.exec(xfs[1]))) {
     var id = Number(attr(x[1], "numFmtId") || 0);
-    if ((id >= 14 && id <= 22) || (id >= 45 && id <= 47) || custom[String(id)]) out[index] = true;
+    var builtin = BUILTIN_DATE_FORMATS.some(function (range) { return id >= range[0] && id <= range[1]; });
+    if (builtin || custom[String(id)]) out[index] = true;
     index++;
   }
   return out;
 }
 
-function cellValue(attrs, inner, shared, dateStyles) {
+function cellValue(attrs, inner, shared, dateStyles, epoch) {
   var type = attr(attrs, "t") || "n";
   if (type === "inlineStr") return richText(inner);
   var v = /<v\b[^>]*>([\s\S]*?)<\/v>/.exec(inner);
   var raw = v ? decodeXml(v[1]) : "";
   if (type === "s") return shared[Number(raw)] != null ? shared[Number(raw)] : "";
   if (type === "b") return raw === "1" ? "TRUE" : raw === "0" ? "FALSE" : raw;
-  if (type === "n" && raw !== "" && dateStyles[Number(attr(attrs, "s") || 0)] && isFinite(Number(raw))) return serialToText(Number(raw));
+  if (type === "n" && raw !== "" && dateStyles[Number(attr(attrs, "s") || 0)] && isFinite(Number(raw))) return serialToText(Number(raw), epoch);
   return raw;
 }
 
 /** Excel の日付シリアル値 → "YYYY-MM-DD HH:MM" (時刻が0なら日付だけ) */
-function serialToText(serial) {
-  var d = new Date(EXCEL_EPOCH_MS + Math.round(serial * 86400) * 1000);
+function serialToText(serial, epoch) {
+  var d = new Date(epoch + Math.round(serial * 86400) * 1000);
   var date = d.getUTCFullYear() + "-" + pad2(d.getUTCMonth() + 1) + "-" + pad2(d.getUTCDate());
   if (serial >= 1 && serial % 1 === 0) return date;
   var time = pad2(d.getUTCHours()) + ":" + pad2(d.getUTCMinutes());

@@ -308,21 +308,21 @@
   $("menuAdd").addEventListener("click", function () { addMenuRow(); });
 
   /* ---------- 登録済みの一覧 ---------- */
-  /** 合計人数と内訳 ("計5名 (大人2・シニア1・子供1・幼児1)")。0人の区分は内訳に出さない */
+  /** 合計人数と内訳 ("計5名 (大人2・シニア1・子供1・幼児1)")。0人の区分は内訳に出さない。prefix で先頭の「計」を変える */
   var PEOPLE_LABELS = [["adults", "大人"], ["seniors", "シニア"], ["children", "子供"], ["kids", "幼児"]];
-  function peopleText(rec) {
+  function peopleText(rec, prefix) {
     var total = 0, parts = [];
     PEOPLE_LABELS.forEach(function (p) {
       var n = Number(rec[p[0]]) || 0;
       total += n;
       if (n) parts.push(p[1] + n);
     });
-    return "計" + total + "名" + (parts.length ? " (" + parts.join("・") + ")" : "");
+    return (prefix == null ? "計" : prefix) + total + "名" + (parts.length ? " (" + parts.join("・") + ")" : "");
   }
   function updateTotal() {
-    $("fTotal").textContent = "合計 " + peopleText({
+    $("fTotal").textContent = peopleText({
       adults: $("fAdults").value, seniors: $("fSeniors").value, children: $("fChildren").value, kids: $("fKids").value,
-    }).slice(1);
+    }, "合計 ");
   }
   ["fAdults", "fSeniors", "fChildren", "fKids"].forEach(function (id) { $(id).addEventListener("input", updateTotal); });
 

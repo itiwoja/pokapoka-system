@@ -177,10 +177,16 @@ function parseMenuList(value, options) {
   return out;
 }
 
+/**
+ * 自由回答の「ありません」系。定型の「なし」より広く、文末の句読点や「です」も許す。
+ * アレルギーありの回答 (「えびアレルギーがあります」) は「あり」で始まらないので当たらない
+ */
+var NEGATIVE_ANSWER = /^(?:特に)?(?:なし|無し|ない|無い|ありません|ございません|大丈夫|問題(?:ない|無い|ありません|ございません))(?:です)?(?:よ|ね)?[。.!！、\s]*$/;
+
 /** 「なし」「特になし」などの否定の回答はアレルギーとして扱わない */
 function allergyNote(value) {
   var s = String(value == null ? "" : value).trim();
-  return !s || /^(?:なし|無し|無|ない|特になし|特に無し|なしです|no|none|n\/a|-|ー)$/i.test(s) ? null : s;
+  return !s || /^(?:なし|無し|無|ない|特になし|特に無し|なしです|no|none|n\/a|-|ー)$/i.test(s) || NEGATIVE_ANSWER.test(nfkc(s)) ? null : s;
 }
 
 /**
@@ -253,6 +259,10 @@ var CSV_FIELDS = [
   ["status", ["ステータス", "状態", "status"]],
 ];
 
+// 部分一致で日時の項目に当てない列。予約の作成・更新・取消・終了の日時を来店日時と取り違えないため
+var NOT_VISIT_TIME = /作成|更新|変更|登録|受付|取消|キャンセル|終了|支払|入金|生年|誕生/;
+var TIME_FIELDS = { datetime: true, date: true, time: true };
+
 function headerKey(value) {
   return nfkc(value).toLowerCase().replace(/[\s_\-]/g, "");
 }
@@ -270,7 +280,8 @@ function mapColumns(header) {
     if (columns[field[0]] !== undefined) return;
     var aliases = field[1].filter(function (alias) { return alias.length >= 2 && /[^\x00-\x7f]/.test(alias); });
     var index = keys.findIndex(function (key, i) {
-      return !used[i] && aliases.some(function (alias) { return key.indexOf(alias) >= 0; });
+      if (used[i] || (TIME_FIELDS[field[0]] && NOT_VISIT_TIME.test(key))) return false;
+      return aliases.some(function (alias) { return key.indexOf(alias) >= 0; });
     });
     if (index >= 0) { columns[field[0]] = index; used[index] = true; }
   });
@@ -356,7 +367,12 @@ function parseTable(rows, options) {
   var mappedIndexes = Object.keys(columns).map(function (field) { return columns[field]; });
   var unmapped = header.filter(function (h, i) { return h && mappedIndexes.indexOf(i) < 0; });
   var base = { columns: named, unmapped: unmapped, rows: [] };
-  if (columns.datetime === undefined && columns.time === undefined) {
+  var dataRows = rows.slice(headerIndex + 1);
+  // 日付の列が無く時間の列だけなら、時間の列に日付まで入っている (TableCheck の「予約時間」) ときだけ読める
+  var timeHasDate = columns.time !== undefined && dataRows.some(function (row) {
+    return parseDateTime(String(row.cells[columns.time] || "").trim(), now) !== null;
+  });
+  if (columns.datetime === undefined && (columns.time === undefined || (columns.date === undefined && !timeHasDate))) {
     base.error = "来店日時の列が見つかりません (「来店日時」、または「来店日」と「来店時間」(「予約時間」) の列が必要)";
     return base;
   }
@@ -365,15 +381,17 @@ function parseTable(rows, options) {
     return base;
   }
 
-  base.rows = rows.slice(headerIndex + 1).map(function (row) {
+  base.rows = dataRows.map(function (row) {
     function cell(field) {
       var index = columns[field];
       return index === undefined || row.cells[index] == null ? "" : row.cells[index].trim();
     }
     var errors = [];
-    var when = columns.datetime !== undefined && cell("datetime") ? cell("datetime") : cell("date") + " " + cell("time");
-    // 時間の列に日付まで入っている (TableCheck の「予約時間」) なら、その列だけで読む
-    var startAt = parseDateTime(when, now) || (cell("time") ? parseDateTime(cell("time"), now) : null);
+    // 時間の列に日付まで入っている (TableCheck の「予約時間」) なら、日付の列より優先する。
+    // 日付の列が受付日など来店日でない場合に、来店日を取り違えないため
+    var startAt = (columns.datetime !== undefined && cell("datetime") ? parseDateTime(cell("datetime"), now) : null) ||
+      (cell("time") ? parseDateTime(cell("time"), now) : null) ||
+      parseDateTime(cell("date") + " " + cell("time"), now);
     if (!startAt) errors.push("来店日時を読み取れません");
 
     var counts = {};
