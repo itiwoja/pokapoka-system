@@ -54,7 +54,8 @@ function esc(s) {
 /**
  * rows の各セルは文字列 (共有文字列にする)、{serial} (独自の日付書式の数値)、
  * {serial, builtin: true} (日本語版 Excel の組み込み日付書式 57 の数値)、{inline} (インライン文字列)。
- * options.date1904 が真なら、Mac 版 Excel の「1904年から計算」のブックにする
+ * options.date1904 が真なら、Mac 版 Excel の「1904年から計算」のブックにする。
+ * options.relocated が真なら、Excel 以外のツールのように部品を別の場所・名前に置き、目次 (.rels) でたどらせる
  */
 function buildXlsx(rows, options) {
   options = options || {};
@@ -70,21 +71,33 @@ function buildXlsx(rows, options) {
     }).join("") + "</row>";
   }).join("");
   var ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"';
-  return zip({
+  var dir = options.relocated ? "book/" : "xl/";
+  var sharedName = options.relocated ? "strings/Shared.xml" : "sharedStrings.xml";
+  var entries = {
     "[Content_Types].xml": '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
-    "xl/workbook.xml": '<?xml version="1.0"?><workbook ' + ns + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
-      (options.date1904 ? '<workbookPr date1904="1"/>' : "") +
-      '<sheets><sheet name="予約" sheetId="1" r:id="rId1"/></sheets></workbook>',
-    "xl/_rels/workbook.xml.rels": '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
-      '<Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
-    "xl/styles.xml": '<?xml version="1.0"?><styleSheet ' + ns + '><numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy-mm-dd hh:mm"/></numFmts>' +
-      '<cellXfs count="3"><xf numFmtId="0"/><xf numFmtId="164" applyNumberFormat="1"/><xf numFmtId="57" applyNumberFormat="1"/></cellXfs></styleSheet>',
-    "xl/sharedStrings.xml": '<?xml version="1.0"?><sst ' + ns + ">" + strings.map(function (s) {
-      // ふりがな (rPh) を付けておく。日本語の Excel で保存し直すと付き、本文ではないので読み飛ばす必要がある
-      return '<si><t xml:space="preserve">' + esc(s) + '</t><rPh sb="0" eb="1"><t>フリガナ</t></rPh></si>';
-    }).join("") + "</sst>",
-    "xl/worksheets/sheet1.xml": '<?xml version="1.0"?><worksheet ' + ns + "><sheetData>" + sheetRows + "</sheetData></worksheet>",
-  });
+  };
+  var rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/";
+  if (options.relocated) {
+    entries["_rels/.rels"] = '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="' + rel + 'officeDocument" Target="book/Workbook.xml"/></Relationships>';
+  }
+  entries[dir + (options.relocated ? "Workbook.xml" : "workbook.xml")] = '<?xml version="1.0"?><workbook ' + ns + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    (options.date1904 ? '<workbookPr date1904="1"/>' : "") +
+    '<sheets><sheet name="予約" sheetId="1" r:id="rId1"/></sheets></workbook>';
+  entries[dir + "_rels/" + (options.relocated ? "Workbook.xml" : "workbook.xml") + ".rels"] =
+    '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="' + rel + 'worksheet" Target="worksheets/sheet1.xml"/>' +
+    (options.relocated ? '<Relationship Id="rId2" Type="' + rel + 'sharedStrings" Target="' + sharedName + '"/>' +
+      '<Relationship Id="rId3" Type="' + rel + 'styles" Target="/book/Styles.xml"/>' : "") +
+    "</Relationships>";
+  entries[dir + (options.relocated ? "Styles.xml" : "styles.xml")] = '<?xml version="1.0"?><styleSheet ' + ns + '><numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy-mm-dd hh:mm"/></numFmts>' +
+    '<cellXfs count="3"><xf numFmtId="0"/><xf numFmtId="164" applyNumberFormat="1"/><xf numFmtId="57" applyNumberFormat="1"/></cellXfs></styleSheet>';
+  entries[dir + sharedName] = '<?xml version="1.0"?><sst ' + ns + ">" + strings.map(function (s) {
+    // ふりがな (rPh) を付けておく。日本語の Excel で保存し直すと付き、本文ではないので読み飛ばす必要がある
+    return '<si><t xml:space="preserve">' + esc(s) + '</t><rPh sb="0" eb="1"><t>フリガナ</t></rPh></si>';
+  }).join("") + "</sst>";
+  entries[dir + "worksheets/sheet1.xml"] = '<?xml version="1.0"?><worksheet ' + ns + "><sheetData>" + sheetRows + "</sheetData></worksheet>";
+  return zip(entries);;
 }
 
 module.exports = { buildXlsx: buildXlsx };

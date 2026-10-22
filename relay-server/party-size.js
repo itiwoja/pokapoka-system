@@ -2,9 +2,13 @@
  * party-size.js — 予約の人数の区分・合計・内訳表示を1か所にまとめる
  *
  * 人数は 大人 (adults)・シニア (seniors)・子供 (children)・幼児 (kids、0〜2歳) を分けて持ち、まとめない。
- * 合計は表示するときに4つを足す。区分を足す・名前を変えるときはここだけを直す。
- * 中継サーバー (reservation-import.js)、予約入力画面 (reservation-entry.html)、KDS (kds-a-grid.html) が共有する。
- * 画面からは <script src="relay-server/party-size.js"> で読み、window.PartySize として使う。
+ * 合計と内訳の表示はここで決め、中継サーバー (reservation-import.js)、予約入力画面 (reservation-entry.html)、
+ * KDS (kds-a-grid.html) が共有する。画面からは <script src="relay-server/party-size.js"> で読み、window.PartySize として使う。
+ *
+ * 区分を足す・名前を変えるときは、ここに加えて次も直す (それぞれ書き方の違う入口のため、ここには寄せていない)。
+ *   - reservation-import.js の PEOPLE_PATTERNS・CSV_FIELDS・TEXT_LABELS (取込で読む列名・ラベルの表記ゆれ)
+ *   - reservation-store.js の列 (ADDED_COLUMNS・validate・fromRow) と kds-bridge.js の予約の変更判定
+ *   - kds-a-grid.html の PEOPLE_FALLBACK (このファイルを読めないときの代わり) と予約入力画面の入力欄
  */
 (function (root, factory) {
   var api = factory();

@@ -200,6 +200,7 @@
     });
   }
   function errorText(result) {
+    if (result.status === 413) return "ファイルが大きすぎます (5MBまで)。期間を区切って書き出してください";
     return result.body && result.body.error ? result.body.error : "サーバーから応答がありません (" + result.status + ")";
   }
 

@@ -65,12 +65,14 @@ function readJson(req, res, cb) {
 }
 
 /** 本文をバイト列のまま読む。文字コードが UTF-8 とは限らない CSV・メールの受け取りに使う */
-function readBuffer(req, res, cb) {
+/** 本文をバイト列で読む。limit を省くと JSON と同じ上限 */
+function readBuffer(req, res, cb, limit) {
+  var max = limit || MAX_JSON_BODY_BYTES;
   var chunks = [], size = 0, ended = false;
   req.on("data", function (chunk) {
     if (ended) return;
     size += chunk.length;
-    if (size > MAX_JSON_BODY_BYTES) {
+    if (size > max) {
       ended = true;
       json(res, { ok: false, error: "payload too large" }, 413);
       return req.destroy();

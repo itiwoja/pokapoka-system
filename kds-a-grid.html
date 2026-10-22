@@ -2797,11 +2797,21 @@
     function t(key) { return LABELS[key] || key; }
 
     /* 予約の人数。合計 (大人+シニア+子供+幼児) と、大人以外がいるときの内訳 ("大2 シ1 子1 幼1")。
-       区分と略記は relay-server/party-size.js (予約入力画面・中継サーバーと共有) */
-    function peopleTotal(r) { return window.PartySize.total(r); }
+       区分と略記は relay-server/party-size.js (予約入力画面・中継サーバーと共有) に従う。
+       KDS は HTML 単体でも動く前提のため、読めなかったとき (file:// で単体で開いた等) は同じ4区分で数える */
+    var PEOPLE_FALLBACK = [["adults", "大"], ["seniors", "シ"], ["children", "子"], ["kids", "幼"]];
+    function peopleCount(r, key) { var n = Number(r && r[key]); return isFinite(n) && n > 0 ? Math.floor(n) : 0; }
+    function peopleTotal(r) {
+      if (window.PartySize) return window.PartySize.total(r);
+      return PEOPLE_FALLBACK.reduce(function (sum, p) { return sum + peopleCount(r, p[0]); }, 0);
+    }
     function peopleBreakdown(r) {
-      return window.PartySize.breakdown(r, { onlyMixed: true })
-        .map(function (p) { return p.short + p.n; }).join(" ");
+      var parts = window.PartySize
+        ? window.PartySize.breakdown(r, { onlyMixed: true }).map(function (p) { return p.short + p.n; })
+        : PEOPLE_FALLBACK.slice(1).some(function (p) { return peopleCount(r, p[0]) > 0; })
+          ? PEOPLE_FALLBACK.filter(function (p) { return peopleCount(r, p[0]) > 0; }).map(function (p) { return p[1] + peopleCount(r, p[0]); })
+          : [];
+      return parts.join(" ");
     }
 
     /* ===================== relay同期状態 (#207) =====================

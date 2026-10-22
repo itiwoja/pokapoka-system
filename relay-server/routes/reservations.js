@@ -12,6 +12,8 @@ var recordAudit = requestAudit.recordAudit;
 var BASE = "/api/reservations";
 var PREFIX = BASE + "/";
 var INBOX_PREFIX = BASE + "/inbox/";
+// CSV・.xlsx の取込で受けるファイルの上限。TableCheck の予約一覧は72列あり、期間が長いと JSON の上限 (1MB) を超えうる
+var MAX_IMPORT_FILE_BYTES = 5 * 1024 * 1024;
 
 /**
  * /api/reservations — 予約の入口。TableCheck 連携の中止 (2026-10-11) を受けた店員の持ち込み用。
@@ -164,7 +166,7 @@ function importCsv(req, res, url, context) {
       ok: true, dryRun: dryRun, columns: parsed.columns, unmapped: parsed.unmapped,
       rows: rows, saved: dryRun ? 0 : saved, valid: saved, failed: failed,
     });
-  });
+  }, MAX_IMPORT_FILE_BYTES);
 }
 
 /* ---- C. 貼り付け ---- */

@@ -33,6 +33,8 @@ test("人数: 大人・シニア・子供・幼児を分けて読み、合計だ
   assert.deepEqual(imp.parsePeople("3名"), people(3, 0, 0, 0));
   assert.deepEqual(imp.parsePeople("3名(子供1名)"), people(2, 0, 1, 0));
   assert.deepEqual(imp.parsePeople("5名(シニア1名・乳幼児1名)"), people(3, 1, 0, 1));
+  assert.deepEqual(imp.parsePeople("お子様1名を含む4名"), people(3, 0, 1, 0), "区分つきの人数を合計と取り違えない");
+  assert.deepEqual(imp.parsePeople("シニア1名・計3名"), people(2, 1, 0, 0));
   assert.deepEqual(imp.parsePeople("４"), people(4, 0, 0, 0));
   assert.equal(imp.parsePeople("未定"), null);
 });
@@ -172,6 +174,14 @@ test("Excel: 和暦などの組み込み日付書式と、1904年基準のブッ
   assert.equal(Date.parse(mac.rows[0].draft.startAt), local(2026, 10, 20, 13, 30), "Mac 版 Excel の1904年基準");
 });
 
+test("Excel: 部品の場所や名前が違うファイルも、目次 (.rels) をたどって読む", function () {
+  var rows = [["予約"], ["予約ID", "予約時間", "人数:大人", "注文"], ["R1", { serial: 46315.5625 }, "2", "1 × 茶"]];
+  var out = imp.parseSpreadsheet(buildXlsx(rows, { relocated: true }), OPTS);
+  assert.equal(out.error, undefined);
+  assert.equal(out.rows[0].draft.rid, "R1");
+  assert.equal(Date.parse(out.rows[0].draft.startAt), local(2026, 10, 20, 13, 30), "書式も別の場所から読む");
+});
+
 test("Excel: 壊れたファイルは全体を断り、CSV は先頭のバイトで見分けて従来どおり読む", function () {
   var broken = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(40)]);
   assert.match(imp.parseSpreadsheet(broken, OPTS).error, /Excelファイルを読めません/);
@@ -194,6 +204,20 @@ test("アレルギー: 「特にありません」など否定の自由回答は
   });
   var csv = "来店日時,アレルギー\n2026-10-14 18:30,ありません、えびが苦手です\n";
   assert.equal(imp.parseCsv(csv, OPTS).rows[0].draft.allergies, "ありません、えびが苦手です", "続きのある回答は残す");
+});
+
+test("アレルギー: 列・予約メモの複数行の回答・苦手なものを全部つなぎ、どれも落とさない", function () {
+  var csv = "予約\n来店日時,食事制限・アレルギー,予約メモ,苦手なもの\n2026-10-14 18:30,小麦," +
+    "\"質問1: アレルギーやお苦手な食材のあ… 回答1: えび\nかに\n落花生\nご利用回数: 初来店\",しいたけ\n";
+  var draft = imp.parseCsv(csv, OPTS).rows[0].draft;
+  assert.equal(draft.allergies, "小麦 / えび、かに、落花生 / 苦手: しいたけ");
+});
+
+test("CSV: 1行目がタイトルだけでも、タブ区切りを見分ける", function () {
+  var out = imp.parseCsv("予約\n予約時間\t名前\t人数:大人\n2026-10-14 18:30\t山田\t2\n", OPTS);
+  assert.equal(out.error, undefined);
+  assert.equal(out.rows[0].draft.name, "山田");
+  assert.equal(out.rows[0].draft.adults, 2);
 });
 
 test("CSV: 来店日時の列が無ければファイル全体を断る", function () {

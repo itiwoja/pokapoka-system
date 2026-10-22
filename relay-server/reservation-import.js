@@ -135,7 +135,11 @@ function parsePeople(value) {
     if (m) { people[p[0]] = Number(m[1]); found = true; }
   });
   if (PEOPLE_PATTERNS[0][1].test(s)) return people;
-  var total = /(\d+)\s*(?:名|人)/.exec(s) || /^\s*(\d+)\s*$/.exec(s);
+  // 区分つきの「N名」を除いてから合計を探す (「お子様1名を含む4名」の1を合計と取り違えない)
+  var rest = PEOPLE_PATTERNS.reduce(function (text, p) {
+    return text.replace(new RegExp(p[1].source + "\\s*(?:名|人)?"), " ");
+  }, s);
+  var total = /(\d+)\s*(?:名|人)/.exec(rest) || /^\s*(\d+)\s*$/.exec(rest);
   if (total) {
     people.adults = Math.max(0, Number(total[1]) - people.seniors - people.children - people.kids);
     return people;
@@ -184,17 +188,26 @@ function allergyNote(value) {
 
 /**
  * 予約フォームの質問と回答 ("質問1: アレルギーやお苦手な食材のあ… 回答1: なし") から、
- * アレルギー・苦手な食材を尋ねた質問の回答を拾う。質問文は途中で「…」と切れていることがある
+ * アレルギー・苦手な食材を尋ねた質問の回答を拾う。質問文は途中で「…」と切れていることがある。
+ * 回答は複数行にわたることがあるので、次の「質問N:」か「ラベル: 値」の行 (「ご利用回数: 初来店」など) までを読む
  */
 function allergyFromAnswers(value) {
-  var s = nfkc(value);
-  var pattern = /質問\s*(\d+)\s*:\s*([\s\S]*?)\s*回答\s*\1\s*:\s*([^\n]*?)\s*(?=質問\s*\d+\s*:|\n|$)/g;
+  var s = nfkc(value).replace(/\r\n?/g, "\n");
+  var pattern = /質問\s*(\d+)\s*:\s*([\s\S]*?)\s*回答\s*\1\s*:\s*([\s\S]*?)\s*(?=質問\s*\d+\s*:|\n[^\n:]{1,15}:|$)/g;
   var answers = [], m;
   while ((m = pattern.exec(s))) {
-    var answer = /アレルギー|苦手|食事制限/.test(m[2]) ? allergyNote(m[3]) : null;
+    var text = m[3].split(/\n+/).map(function (line) { return line.trim(); }).filter(Boolean).join("、");
+    var answer = /アレルギー|苦手|食事制限/.test(m[2]) ? allergyNote(text) : null;
     if (answer && answers.indexOf(answer) < 0) answers.push(answer);
   }
   return answers.length ? answers.join(" / ") : null;
+}
+
+/** 空と重複を除いて " / " でつなぐ。何も無ければ null */
+function joinNotes(values) {
+  var out = [];
+  values.forEach(function (v) { if (v && out.indexOf(v) < 0) out.push(v); });
+  return out.length ? out.join(" / ") : null;
 }
 
 function note(value) {
@@ -246,6 +259,7 @@ var CSV_FIELDS = [
   ["pax", ["合計人数", "人数", "pax", "partysize"]],
   ["menu", ["事前メニュー", "メニュー", "コース", "注文", "menu", "orders"]],
   ["allergies", ["アレルギー", "allergies", "allergy"]],
+  ["dislikes", ["苦手なもの", "苦手な食材", "苦手"]],
   ["request", ["ご要望", "要望", "リクエスト", "request"]],
   ["memo", ["メモ", "備考", "memo", "notes", "note"]],
   ["table", ["卓番", "卓", "テーブル", "席", "table"]],
@@ -284,8 +298,9 @@ function mapColumns(header) {
 /** RFC 4180 相当の CSV を行の配列へ (引用符・引用符内の改行に対応)。タブ区切りも受ける。各行に開始行番号を付ける */
 function parseCsvRows(text) {
   text = String(text).replace(/^﻿/, "");
-  var firstLine = text.split(/\r?\n/, 1)[0] || "";
-  var delimiter = firstLine.split("\t").length > firstLine.split(",").length ? "\t" : ",";
+  // 区切り文字は先頭の数行で判定する。1行目がタイトル行 (「予約」だけ) のことがあるため
+  var head = text.split(/\r?\n/, MAX_HEADER_SEARCH_ROWS + 1).join("\n");
+  var delimiter = head.split("\t").length > head.split(",").length ? "\t" : ",";
   var rows = [], row = [], cell = "", quoted = false, line = 1, rowLine = 1;
   function endRow() {
     row.push(cell); cell = "";
@@ -410,8 +425,9 @@ function parseTable(rows, options) {
       status: statusFrom(cell("status")),
       table: note(cell("table")),
       menu: parseMenuList(cell("menu")),
-      // アレルギーの列が空でも、予約メモの質問の回答に書かれていることがある
-      allergies: allergyNote(cell("allergies")) || allergyFromAnswers(cell("memo")),
+      // アレルギーの列・予約メモの質問の回答・苦手なものの列は、それぞれ別のことが書かれうるので全部つなぐ
+      allergies: joinNotes([allergyNote(cell("allergies")), allergyFromAnswers(cell("memo")),
+        allergyNote(cell("dislikes")) && "苦手: " + allergyNote(cell("dislikes"))]),
       request: note(cell("request")),
       memo: note(cell("memo")),
     };

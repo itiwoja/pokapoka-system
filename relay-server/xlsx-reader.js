@@ -10,7 +10,8 @@
 var zlib = require("node:zlib");
 
 var MAX_ENTRIES = 2000;
-var MAX_INFLATED_BYTES = 20 * 1024 * 1024;   // 展開後の合計。ZIP 爆弾よけ
+// 展開後の合計。ZIP 爆弾よけ。展開と走査はリクエストの処理中に同期で行うため、止まる時間も抑える
+var MAX_INFLATED_BYTES = 10 * 1024 * 1024;
 var EXCEL_EPOCH_MS = Date.UTC(1899, 11, 30);
 var EXCEL_1904_EPOCH_MS = Date.UTC(1904, 0, 1);   // Mac 版 Excel の「1904年から計算」
 // 日付・時刻の組み込み書式の番号。27〜36・50〜58 は日本語版 Excel の和暦・年月日の書式
@@ -27,12 +28,14 @@ function isXlsx(buf) {
  */
 function readXlsxRows(buf) {
   var files = unzip(buf);
-  var sheetPath = firstSheetPath(files);
-  var sheet = files[sheetPath];
+  var parts = locateParts(files);
+  var sheet = part(files, parts.sheet);
   if (sheet == null) throw new Error("シートが見つかりません");
-  var shared = files["xl/sharedStrings.xml"] != null ? sharedStrings(files["xl/sharedStrings.xml"]) : [];
-  var dateStyles = files["xl/styles.xml"] != null ? dateStyleIndexes(files["xl/styles.xml"]) : {};
-  var workbookPr = /<workbookPr\b([^>]*)/.exec(files["xl/workbook.xml"] || "");
+  var sharedXml = part(files, parts.sharedStrings);
+  var stylesXml = part(files, parts.styles);
+  var shared = sharedXml != null ? sharedStrings(sharedXml) : [];
+  var dateStyles = stylesXml != null ? dateStyleIndexes(stylesXml) : {};
+  var workbookPr = /<workbookPr\b([^>]*)/.exec(part(files, parts.workbook) || "");
   var date1904 = workbookPr ? /^(?:1|true)$/.test(attr(workbookPr[1], "date1904") || "") : false;
   var epoch = date1904 ? EXCEL_1904_EPOCH_MS : EXCEL_EPOCH_MS;
 
@@ -97,28 +100,66 @@ function unzip(buf) {
   return files;
 }
 
-/** workbook.xml の最初のシートの実体のパス。見つからなければ既定の sheet1.xml */
-function firstSheetPath(files) {
-  var fallback = "xl/worksheets/sheet1.xml";
-  var workbook = files["xl/workbook.xml"];
-  var rels = files["xl/_rels/workbook.xml.rels"];
-  if (!workbook || !rels) return fallback;
-  var sheet = /<sheet\b([^>]*)\/?>/.exec(workbook);
-  var id = sheet && (attr(sheet[1], "r:id") || attr(sheet[1], "id"));
-  if (!id) return fallback;
-  var relPattern = /<Relationship\b([^>]*)\/?>/g, r;
-  while ((r = relPattern.exec(rels))) {
-    if (attr(r[1], "Id") !== id) continue;
-    var target = attr(r[1], "Target") || "";
-    return target.charAt(0) === "/" ? target.slice(1) : "xl/" + target.replace(/^\.\//, "");
+/** ZIP 内の部品を名前で引く。部品名は大文字小文字を区別しない (OPC の決まり) */
+function part(files, name) {
+  if (name == null) return null;
+  if (files[name] != null) return files[name];
+  var lower = name.toLowerCase();
+  var key = Object.keys(files).find(function (k) { return k.toLowerCase() === lower; });
+  return key ? files[key] : null;
+}
+
+/** 目次 (.rels) の Target を、元の部品のあるフォルダから見たパスにする */
+function resolveTarget(baseDir, target) {
+  if (target.charAt(0) === "/") return target.slice(1);
+  var out = baseDir ? baseDir.split("/") : [];
+  target.split("/").forEach(function (seg) {
+    if (seg === "..") out.pop();
+    else if (seg && seg !== ".") out.push(seg);
+  });
+  return out.join("/");
+}
+
+function relationships(xml) {
+  var out = [];
+  var pattern = /<Relationship\b([^>]*)\/?>/g, r;
+  while ((r = pattern.exec(xml || ""))) out.push({ id: attr(r[1], "Id"), type: attr(r[1], "Type") || "", target: attr(r[1], "Target") || "" });
+  return out;
+}
+
+/**
+ * 目次をたどって、ブック・最初のシート・共有文字列・書式の部品の場所を決める。
+ * Excel 以外のツールで作り直したファイルは置き場所が違うことがあるため、決め打ちにしない
+ */
+function locateParts(files) {
+  var office = relationships(part(files, "_rels/.rels")).find(function (rel) { return /\/officeDocument$/.test(rel.type); });
+  var workbook = office ? resolveTarget("", office.target) : "xl/workbook.xml";
+  var dir = workbook.indexOf("/") >= 0 ? workbook.slice(0, workbook.lastIndexOf("/")) : "";
+  var rels = relationships(part(files, (dir ? dir + "/" : "") + "_rels/" + workbook.slice(dir ? dir.length + 1 : 0) + ".rels"));
+  function byType(suffix) {
+    var rel = rels.find(function (x) { return x.type.slice(-suffix.length) === suffix; });
+    return rel ? resolveTarget(dir, rel.target) : null;
   }
-  return fallback;
+  var sheet = /<sheet\b([^>]*)\/?>/.exec(part(files, workbook) || "");
+  var id = sheet && (attr(sheet[1], "r:id") || attr(sheet[1], "id"));
+  var sheetRel = id && rels.find(function (x) { return x.id === id; });
+  return {
+    workbook: workbook,
+    sheet: sheetRel ? resolveTarget(dir, sheetRel.target) : (dir ? dir + "/" : "") + "worksheets/sheet1.xml",
+    sharedStrings: byType("/sharedStrings") || (dir ? dir + "/" : "") + "sharedStrings.xml",
+    styles: byType("/styles") || (dir ? dir + "/" : "") + "styles.xml",
+  };
 }
 
 /* ---- XML ---- */
 
+// 属性名ごとの正規表現。セルごとに作り直さないよう作り置く
+var attrPatterns = {};
+
 function attr(attrs, name) {
-  var m = new RegExp("(?:^|\\s)" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*=\\s*(\"([^\"]*)\"|'([^']*)')").exec(attrs);
+  var pattern = attrPatterns[name] || (attrPatterns[name] =
+    new RegExp("(?:^|\\s)" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*=\\s*(\"([^\"]*)\"|'([^']*)')"));
+  var m = pattern.exec(attrs);
   return m ? decodeXml(m[2] != null ? m[2] : m[3]) : null;
 }
 
