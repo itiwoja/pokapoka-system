@@ -1,5 +1,7 @@
 # slip-style-designer.html 評価レポート
 
+> **現況注記（2026-10-22）**：以下は2026-07-17時点の評価・確認記録。現在は設定を `config/slip-style.json` に保存し、共有の `slip-renderer.js` でKDSと設定ツールを描画、ラスター画像を `/api/print` で印刷する。本文の「印刷経路への統合が未実装」は解消済みで、現在の未対応一覧として使わない。実機の合否をこの追記で再認定するものではない（[現行手順](../relay-server/README.md#チビ伝のレイアウト設定slip-style-designerhtml)）。
+
 - **対象**: `slip-style-designer.html`(チビ伝 印刷スタイル設定ツール)
 - **作成モデル**: Claude Sonnet 5(2026-07-17 のセッションで作成)
 - **評価日**: 2026-07-17
