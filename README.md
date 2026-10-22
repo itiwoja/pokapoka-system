@@ -85,6 +85,9 @@ npm test
                          server.js ── /api/stock(当日分) ──▶ kds-bridge.js → 予約ストックへ
 ```
 
+- 予約は**朝に1回**取り込む
+- 手入力でも予約を入れられるようにする。入れられればよい項目は時間・人数・名前・メニュー（あれば）・メモ
+- 予約を管理する画面も作る必要がある（画面の内容は未設計）
 - 予約のアレルギー（`allergies`）と要望（`request`）は、予約ストック・厨房カードへ常時表示する
 - デシャップモニター・注文端末の接続先（host/port）は **`config/config.json` に集約**（雛形: `config/config.example.json`。優先順位は 既定値 < config.json < 環境変数）
 - 起動方法・エンドポイント・LAN 配信時の注意（固定IP・ファイアウォール）は [relay-server/README.md](relay-server/README.md) を参照
