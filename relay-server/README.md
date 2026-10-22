@@ -75,7 +75,7 @@ npm start
 | 方式 | 試す手順 |
 |---|---|
 | A. 手入力 | 「手入力」タブで日時・名前・メニューを入れて「登録する」。右の一覧の「変更」「取消」も試せる |
-| B. CSV・Excel取込 | 「CSV・Excel」タブで `data/samples/sample.csv` を選び、「内容を確認する」→「取り込む」。4行のうち1行は日付が読めず取り込めない例、1行は取消の例。`data/samples/sample-tablecheck.csv` は TableCheck の予約一覧と同じ並び(タイトル行・「予約時間」・人数4区分・「1 × 品名」)の例 |
+| B. CSV・Excel取込 | 「予約取り込み」タブで `data/samples/sample.csv` を選び、「内容を確認する」→「取り込む」。4行のうち1行は日付が読めず取り込めない例、1行は取消の例。`data/samples/sample-tablecheck.csv` は TableCheck の予約一覧と同じ並び(タイトル行・「予約時間」・人数4区分・「1 × 品名」)の例 |
 | C. 貼り付け | 「貼り付け」タブに `data/samples/sample-paste.txt` の中身を貼り、「読み取ってフォームに入れる」→ 確かめて「登録する」 |
 | D. メール | 「メール」タブに取込フォルダの2通が並ぶ(1通は取消の例)。「フォームに入れる」→「登録する」。`data/samples/sample-mail.eml` を選んで1通だけ読むこともできる |
 
