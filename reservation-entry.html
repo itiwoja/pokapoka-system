@@ -158,6 +158,7 @@
   </section>
 </main>
 
+<script src="relay-server/party-size.js"></script>
 <script>
 (function () {
   "use strict";
@@ -309,15 +310,9 @@
 
   /* ---------- 登録済みの一覧 ---------- */
   /** 合計人数と内訳 ("計5名 (大人2・シニア1・子供1・幼児1)")。0人の区分は内訳に出さない。prefix で先頭の「計」を変える */
-  var PEOPLE_LABELS = [["adults", "大人"], ["seniors", "シニア"], ["children", "子供"], ["kids", "幼児"]];
   function peopleText(rec, prefix) {
-    var total = 0, parts = [];
-    PEOPLE_LABELS.forEach(function (p) {
-      var n = Number(rec[p[0]]) || 0;
-      total += n;
-      if (n) parts.push(p[1] + n);
-    });
-    return (prefix == null ? "計" : prefix) + total + "名" + (parts.length ? " (" + parts.join("・") + ")" : "");
+    var parts = PartySize.breakdown(rec).map(function (p) { return p.label + p.n; });
+    return (prefix == null ? "計" : prefix) + PartySize.total(rec) + "名" + (parts.length ? " (" + parts.join("・") + ")" : "");
   }
   function updateTotal() {
     $("fTotal").textContent = peopleText({

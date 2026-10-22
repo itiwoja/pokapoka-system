@@ -267,6 +267,12 @@ test("予約入力画面を /reservations で配信し、認証が有効ならAP
   var page = await request(open, "GET", "/reservations");
   assert.equal(page.status, 200);
   assert.match(page.raw, /予約入力/);
+  // 人数の区分は KDS・予約入力画面・中継サーバーで共有する1ファイルから読む
+  assert.match(page.raw, /<script src="relay-server\/party-size\.js"><\/script>/);
+  var shared = await request(open, "GET", "/relay-server/party-size.js");
+  assert.equal(shared.status, 200);
+  assert.match(shared.raw, /PartySize/);
+  assert.match((await request(open, "GET", "/kds")).raw, /<script src="relay-server\/party-size\.js"><\/script>/);
 
   var locked = (await startRelay(t, { env: { RELAY_TOKEN: "secret-token-1", RELAY_TRUST_LOOPBACK: "0" } })).relay;
   assert.equal((await request(locked, "GET", "/reservations")).status, 401);

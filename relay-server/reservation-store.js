@@ -62,9 +62,16 @@ function openReservationStore(filename, options) {
     if (filename !== ":memory:") db.exec("PRAGMA journal_mode=WAL");
     db.exec(SCHEMA);
     var existing = db.prepare("PRAGMA table_info(reservations)").all().map(function (c) { return c.name; });
-    ADDED_COLUMNS.forEach(function (column) {
-      if (existing.indexOf(column[0]) < 0) db.exec("ALTER TABLE reservations ADD COLUMN " + column[1]);
-    });
+    db.exec("BEGIN");
+    try {
+      ADDED_COLUMNS.forEach(function (column) {
+        if (existing.indexOf(column[0]) < 0) db.exec("ALTER TABLE reservations ADD COLUMN " + column[1]);
+      });
+      // children が無かったころは、予約入力画面の「子供」欄も CSV・貼り付け・メールの「子供」「お子様」も kids に入れていた。
+      // そのままだと小学生が「幼児」と表示されるため、列を足すときに1回だけ children へ移す
+      if (existing.length && existing.indexOf("children") < 0) db.exec("UPDATE reservations SET children = kids, kids = 0");
+      db.exec("COMMIT");
+    } catch (err) { db.exec("ROLLBACK"); throw err; }
   } catch (err) { db.close(); throw err; }
 
   var upsert = db.prepare(

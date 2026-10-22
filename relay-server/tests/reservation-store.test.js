@@ -148,9 +148,17 @@ test("人数の内訳を足す前に作ったファイルは、開いたとき�
   old.close();
 
   var s = open(t, file).store;
-  t.after(function () { fs.rmSync(dir, { recursive: true, force: true }); });
   var rec = s.get("old");
-  assert.deepEqual([rec.adults, rec.seniors, rec.children, rec.kids], [2, 0, 0, 1]);
-  var saved = s.save({ rid: "new", startAt: at(11, 19), adults: 1, seniors: 1, children: 1, menu: [{ name: "茶" }] });
-  assert.deepEqual([saved.seniors, saved.children], [1, 1]);
+  assert.deepEqual([rec.adults, rec.seniors, rec.children, rec.kids], [2, 0, 1, 0],
+    "以前は「子供」を kids に入れていたので children へ移す");
+  var saved = s.save({ rid: "new", startAt: at(11, 19), adults: 1, seniors: 1, children: 1, kids: 1, menu: [{ name: "茶" }] });
+  assert.deepEqual([saved.seniors, saved.children, saved.kids], [1, 1, 1]);
+  s.close();
+
+  // 移し替えは列を足すときの1回だけ。開き直しても新しく入れた幼児は動かさない
+  var again = open(t, file).store;
+  // t.after は登録順に動く。Windows は開いたままの SQLite を消せないため、両方を閉じる処理より後に登録する
+  t.after(function () { fs.rmSync(dir, { recursive: true, force: true }); });
+  assert.deepEqual([again.get("new").children, again.get("new").kids], [1, 1]);
+  assert.deepEqual([again.get("old").children, again.get("old").kids], [1, 0]);
 });

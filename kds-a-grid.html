@@ -2541,6 +2541,7 @@
        「プレビュー = 実際の印字」を保証する。読み込めない場合(file://で単体を開いた等)は
        従来のDOMプレビューにフォールバックするので、KDS本体は単体でも動作する -->
   <script src="slip-renderer.js"></script>
+  <script src="relay-server/party-size.js"></script>
   <script>
   "use strict";
   (function () {
@@ -2620,8 +2621,7 @@
       reorderMsg:"並べ替え中（離して確定 / 取消で戻す）", undo:"取消", reorderDone:"確定",
       reorderCommitted:"並べ替えを確定しました", restore:"戻す",
       errTime:"予約時間を入力してください", errMenu:"メニューを1つ以上選択してください",
-      errSeat:"卓番を入力してください", slipMeta:"受付", kidsLabel:"幼",
-      adultsLabel:"大", seniorsLabel:"シ", childrenLabel:"子"
+      errSeat:"卓番を入力してください", slipMeta:"受付"
     };
     /* 予約フォームのメニュー候補 (POS未接続のため静的。略称表示) */
     var MENU_OPTIONS = [
@@ -2797,16 +2797,11 @@
     function t(key) { return LABELS[key] || key; }
 
     /* 予約の人数。合計 (大人+シニア+子供+幼児) と、大人以外がいるときの内訳 ("大2 シ1 子1 幼1")。
-       kids は幼児 (0〜2歳)。TableCheck の予約一覧に合わせて4区分を分けて持ち、まとめない */
-    var PEOPLE_KEYS = [["adults", "adultsLabel"], ["seniors", "seniorsLabel"], ["children", "childrenLabel"], ["kids", "kidsLabel"]];
-    function peopleTotal(r) {
-      return PEOPLE_KEYS.reduce(function (sum, p) { return sum + (Number(r[p[0]]) || 0); }, 0);
-    }
+       区分と略記は relay-server/party-size.js (予約入力画面・中継サーバーと共有) */
+    function peopleTotal(r) { return window.PartySize.total(r); }
     function peopleBreakdown(r) {
-      var others = PEOPLE_KEYS.slice(1).some(function (p) { return Number(r[p[0]]) > 0; });
-      if (!others) return "";
-      return PEOPLE_KEYS.filter(function (p) { return Number(r[p[0]]) > 0; })
-        .map(function (p) { return t(p[1]) + Number(r[p[0]]); }).join(" ");
+      return window.PartySize.breakdown(r, { onlyMixed: true })
+        .map(function (p) { return p.short + p.n; }).join(" ");
     }
 
     /* ===================== relay同期状態 (#207) =====================

@@ -15,6 +15,7 @@ var ALLOWED_STATIC_FILES = [
   "slip-renderer.js",           // 伝票レイアウトの描画エンジン。フォーマッターとKDSで同じ絵を出すため共有する
   path.join("assets", "sounds", "shishiodoshi.ogg"), // 新規注文通知音。出典は assets/sounds/README.md
   path.join("relay-server", "kds-bridge.js"),
+  path.join("relay-server", "party-size.js"),  // 予約の人数の区分。KDS・予約入力画面・中継サーバーで共有する
 ];
 
 /**

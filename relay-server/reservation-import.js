@@ -15,12 +15,13 @@
 
 var crypto = require("node:crypto");
 var xlsxReader = require("./xlsx-reader");
+var partySize = require("./party-size");
 
 var MAX_MENU_ITEMS = 50;
 var MAX_CSV_ROWS = 500;
 var MAX_MIME_DEPTH = 5;
 var MAX_HEADER_SEARCH_ROWS = 5;   // 見出しの前にタイトル行などがあっても探す行数
-var PEOPLE_FIELDS = ["adults", "seniors", "children", "kids"];
+var PEOPLE_FIELDS = partySize.KEYS;
 
 /* ============================================================ 共通: 文字コード・日時・人数・メニュー */
 
@@ -121,21 +122,13 @@ var PEOPLE_PATTERNS = [
   ["kids", /(?:乳幼児|幼児)\s*:?\s*(\d+)/],
 ];
 
-function zeroPeople() {
-  return { adults: 0, seniors: 0, children: 0, kids: 0 };
-}
-
-function peopleTotal(people) {
-  return PEOPLE_FIELDS.reduce(function (sum, field) { return sum + (people[field] || 0); }, 0);
-}
-
 /**
  * "大人2名 シニア1名 子供1名 幼児1名" / "3名" / "3" → {adults,seniors,children,kids}。拾えなければ null。
  * 合計だけのときは、書いてあるシニア・子供・幼児を引いた残りを大人とする
  */
 function parsePeople(value) {
   var s = nfkc(value);
-  var people = zeroPeople();
+  var people = partySize.zero();
   var found = false;
   PEOPLE_PATTERNS.forEach(function (p) {
     var m = p[1].exec(s);
@@ -402,7 +395,7 @@ function parseTable(rows, options) {
         // 合計人数の列しか無いときは、シニア・子供・幼児の列の分を引いて大人とする
         PEOPLE_FIELDS.forEach(function (field) { if (field !== "adults" && counts[field] == null) counts[field] = people[field]; });
         counts.adults = /大人/.test(cell("pax")) ? people.adults
-          : Math.max(0, peopleTotal(people) - counts.seniors - counts.children - counts.kids);
+          : Math.max(0, partySize.total(people) - counts.seniors - counts.children - counts.kids);
       }
     }
     var name = guestName(cell("name"));
@@ -512,9 +505,9 @@ function parseText(text, options) {
   });
   if (Object.keys(labeled).length) {
     // 合計人数だけが分かっているときは、シニア・子供・幼児の人数を引いて大人とする
-    var total = people ? peopleTotal(people) : 0;
+    var total = people ? partySize.total(people) : 0;
     var explicitAdults = labeled.adults != null || /大人/.test(fields.people || "");
-    people = people || zeroPeople();
+    people = people || partySize.zero();
     Object.keys(labeled).forEach(function (field) { people[field] = labeled[field]; });
     if (!explicitAdults) people.adults = Math.max(0, total - people.seniors - people.children - people.kids);
   }

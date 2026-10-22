@@ -338,3 +338,13 @@ test("メール: ヘッダーの無いテキストは本文として読み、確
   assert.equal(canceled.draft.status, "canceled");
   assert.equal(canceled.draft.rid, booked.draft.rid, "取消メールが確定メールの予約を上書きできる");
 });
+
+test("人数の区分: 合計と内訳は party-size.js の1か所で決める", function () {
+  var partySize = require("../party-size");
+  var rec = { adults: 2, seniors: 1, children: 1, kids: 1 };
+  assert.deepEqual(partySize.KEYS, ["adults", "seniors", "children", "kids"]);
+  assert.equal(partySize.total(rec), 5);
+  assert.deepEqual(partySize.breakdown(rec).map(function (p) { return p.short + p.n; }), ["大2", "シ1", "子1", "幼1"]);
+  assert.deepEqual(partySize.breakdown({ adults: 4 }, { onlyMixed: true }), [], "大人だけなら KDS は合計だけ");
+  assert.equal(partySize.total({ adults: "3", kids: null }), 3, "文字列や欠けた値も数える");
+});
