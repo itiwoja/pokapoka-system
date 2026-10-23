@@ -40,7 +40,8 @@ function harness(mode) {
     renderHallViews() {}, applyMode() {}, cancelReorder() {},
     renderStock() {},   // #262: setMode が呼ぶ
     serveCueState() { return { starter: false, dessert: false }; }, setServeCue() {},   // #260: undoHallReady が呼ぶ
-    closeTableOverrideConfirm() {}, closeSeatDial() {}, lsSet() {}
+    closeTableOverrideConfirm() {}, closeSeatDial() {}, lsSet() {},
+    hideStarterUndo() {}   // #295: setMode が呼ぶ
   });
   vm.runInContext(["hideUndoToast", "undoComplete", "hideHallReadyUndo", "undoHallReady", "setMode"].map(source).join("\n"), context);
   context.undoToastEl.classList.add("show");

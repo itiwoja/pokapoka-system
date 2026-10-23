@@ -23,6 +23,7 @@ function run(next) {
     lsSet() { calls.push("lsSet"); },
     cancelReorder() {}, closeTableOverrideConfirm() {}, closeSeatDial() {},
     hideUndoToast() {}, hideHallReadyUndo() {},   // #261: setMode が呼ぶ
+    hideStarterUndo() {},   // #295: setMode が呼ぶ
     applyMode() { calls.push("applyMode"); },
     renderStock() { calls.push("renderStock:" + context.mode); }
   });
