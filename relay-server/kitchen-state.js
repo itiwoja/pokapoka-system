@@ -17,6 +17,7 @@
  *   { type:"serveCue",    id, state:{starter, dessert, starterAt, dessertAt, day} }   前菜/デザート (#288)
  *   { type:"hallReady",   id, snapshot:{orderId, table, people, completedAt, items, status, ...} }  提供準備完了 (#288)
  *   { type:"tableOverride", id, table, removed }   卓番の上書き。removed か空の table で解除 (#293)
+ *   { type:"resOrder",    id:"res-<rid>", rid, order }   予約から進行中へ移した注文 (#291)
  *
  * 前菜/デザートと提供準備完了はホールの端末が持つ状態だが、厨房とホールを別端末にすると
  * これも届かない。ホールのリロードでデザート待ちのカードが消え、厨房では前菜が未提供のまま
@@ -25,6 +26,10 @@
  * 卓番の上書き (#160) は厨房で作る表示上の上書きだが、チビ伝はホールで刷る (#226)。
  * 届かないとホールのチビ伝が元の卓番で出る (#293)。これも同じ経路で運ぶ。
  * 注文の table (上流) は変えない。
+ *
+ * 予約から進行中へ移した注文 (KDS の moveResToMain が作る "res-<rid>") は、押した端末の
+ * メモリにしか無く、再読み込みで消え、別の端末には出なかった (#291)。注文端末の注文
+ * (/api/orders) とは別に、ここで当日分を持つ。
  *
  * 全イベントが「絶対値の代入」なので、再送・重複適用しても結果が変わらない (冪等)。
  * 端末が複数タブを開いていて同じイベントが二重に届いても壊れない。
@@ -60,6 +65,7 @@ function createState(sessionId) {
     serveCue: {},
     hallReady: {},
     tableOverride: {},
+    resOrders: {},
   };
 }
 
@@ -149,6 +155,54 @@ function normalizeTableOverride(event) {
   return table;
 }
 
+/* 予約や品目の注記 (アレルギー・要望・オプション)。KDS の normalizeNoteValue と同じく
+   配列は「、」でつなぐ。空なら null */
+function note(value) {
+  if (Array.isArray(value)) {
+    value = value.filter(function (v) {
+      return (typeof v === "string" || typeof v === "number") && String(v).trim() !== "";
+    }).map(function (v) { return String(v).trim(); }).join("、");
+  }
+  return text(value, MAX_NOTE_LENGTH).trim() || null;
+}
+
+/* 予約から進行中へ移した注文 (kds-a-grid.html の moveResToMain が作る形) から、
+   KDS がカードに使う項目だけを残す。卓番と開始時刻が無いものは受け付けない
+   (moveResToMain は卓番を必須にし、経過時間は開始時刻から数えるため) */
+function normalizeResOrder(id, rid, value) {
+  if (!plainObject(value)) return null;
+  if (!Array.isArray(value.items) || value.items.length > MAX_READY_ITEMS) return null;
+  var table = text(value.table, MAX_TABLE_LENGTH).trim();
+  var start = timeOrNull(value.start);
+  if (!table || start === null) return null;
+  var items = [];
+  for (var i = 0; i < value.items.length; i++) {
+    var item = value.items[i];
+    if (!plainObject(item)) return null;
+    items.push({
+      name: text(item.name, MAX_NAME_LENGTH),
+      qty: validInt(item.qty, 1, MAX_DONE_COUNT) || 1,
+      options: note(item.options),
+      allergies: note(item.allergies || item.allergy || item.allergyInfo),
+      done: false,   // 完了は toggle (done) で運ぶ
+    });
+  }
+  return {
+    id: id,
+    rid: rid,
+    table: table,
+    type: "reserved",
+    start: start,
+    people: validInt(value.people, 0, MAX_PEOPLE) || 0,
+    adults: validInt(value.adults, 0, MAX_PEOPLE) || 0,
+    kids: validInt(value.kids, 0, MAX_PEOPLE) || 0,
+    allergies: note(value.allergies),
+    request: note(value.request),
+    memo: note(value.memo),
+    items: items,
+  };
+}
+
 /* 上限を超えた分は最も古いキーから落とす。掃除の正本は各端末側 (prune) にあるが、
    端末が落ちたまま戻らないケースで relay 側が無制限に太らないようにする */
 function capKeys(map, max) {
@@ -163,6 +217,7 @@ function forgetCard(state, id) {
   delete state.serveCue[id];
   delete state.hallReady[id];
   delete state.tableOverride[id];
+  delete state.resOrders[id];
   state.seq = state.seq.filter(function (x) { return x !== id; });
 }
 
@@ -240,6 +295,16 @@ function checkEvent(event) {
     var table = normalizeTableOverride(event);
     if (table === null) return { error: "tableOverride.table is invalid" };
     return { event: { type: "tableOverride", id: overrideId, table: table } };
+  }
+
+  if (event.type === "resOrder") {
+    var resRid = validId(event.rid);
+    if (!resRid) return { error: "resOrder.rid is invalid" };
+    var resId = validId(event.id);
+    if (!resId || resId !== "res-" + resRid) return { error: "resOrder.id is invalid" };
+    var resOrder = normalizeResOrder(resId, resRid, event.order);
+    if (!resOrder) return { error: "resOrder.order is invalid" };
+    return { event: { type: "resOrder", id: resId, order: resOrder } };
   }
 
   return { ignored: true };
@@ -321,6 +386,12 @@ function writeEvent(state, event) {
     return { ok: true };
   }
 
+  if (event.type === "resOrder") {
+    state.resOrders[id] = event.order;
+    capKeys(state.resOrders, MAX_CARDS);
+    return { ok: true };
+  }
+
   return { ok: true, ignored: true };
 }
 
@@ -376,6 +447,7 @@ function purgeStale(state, now, ttlMs) {
   state.serveCue = {};
   state.hallReady = {};
   state.tableOverride = {};
+  state.resOrders = {};
   state.rev++;
   state.updatedAt = now;
   return true;
@@ -394,6 +466,7 @@ function snapshot(state) {
     serveCue: state.serveCue,
     hallReady: state.hallReady,
     tableOverride: state.tableOverride,
+    resOrders: state.resOrders,
   };
 }
 

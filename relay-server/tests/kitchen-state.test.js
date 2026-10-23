@@ -234,6 +234,59 @@ test("カード削除とTTL切れでは卓番の上書きも片づける (#293)"
   assert.deepEqual(state.tableOverride, {});
 });
 
+/* kds-a-grid.html の moveResToMain が作る形 */
+function kdsResOrder(over) {
+  return Object.assign({
+    id: "res-r1", table: "5", type: "reserved", start: NOW, people: 3, adults: 2, kids: 1,
+    allergies: null, request: "窓側", memo: null,
+    items: [{ name: "土鍋御膳", qty: 2, options: null, allergies: null, done: false }],
+  }, over);
+}
+
+test("予約から進行中へ移した注文を畳み込み、KDSが使う項目だけを残す (#291)", function () {
+  var state = kitchen.createState("s1");
+  kitchen.applyEvents(state, [{ type: "resOrder", id: "res-r1", rid: "r1", order: kdsResOrder({
+    extra: "x", allergies: ["えび", " ", "かに"],
+    items: [{ name: "土鍋御膳", qty: 2, options: "ご飯少なめ", allergy: "小麦", done: true, extra: "x" }],
+  }) }], NOW);
+  assert.deepEqual(kitchen.snapshot(state).resOrders, { "res-r1": {
+    id: "res-r1", rid: "r1", table: "5", type: "reserved", start: NOW, people: 3, adults: 2, kids: 1,
+    allergies: "えび、かに", request: "窓側", memo: null,
+    // 完了は toggle (done) で運ぶので、注文には持たせない
+    items: [{ name: "土鍋御膳", qty: 2, options: "ご飯少なめ", allergies: "小麦", done: false }],
+  } });
+  assert.equal(state.rev, 1);
+});
+
+test("予約由来の注文の不正な形は受理しない (#291)", function () {
+  var state = kitchen.createState("s1");
+  function error(event) { return kitchen.applyEvents(state, [event], NOW).error; }
+  assert.match(error({ type: "resOrder", id: "res-", rid: "", order: kdsResOrder() }), /resOrder\.rid/);
+  // id は "res-<rid>" (サーバー由来の注文 id と重ならないようにする)
+  assert.match(error({ type: "resOrder", id: "o-1", rid: "r1", order: kdsResOrder() }), /resOrder\.id/);
+  assert.match(error({ type: "resOrder", id: "res-r2", rid: "r1", order: kdsResOrder() }), /resOrder\.id/);
+  assert.match(error({ type: "resOrder", id: "res-r1", rid: "r1", order: kdsResOrder({ table: " " }) }), /resOrder\.order/);
+  assert.match(error({ type: "resOrder", id: "res-r1", rid: "r1", order: kdsResOrder({ start: "x" }) }), /resOrder\.order/);
+  assert.match(error({ type: "resOrder", id: "res-r1", rid: "r1", order: kdsResOrder({ items: "x" }) }), /resOrder\.order/);
+  assert.match(error({ type: "resOrder", id: "res-r1", rid: "r1", order: kdsResOrder({ items: ["x"] }) }), /resOrder\.order/);
+  assert.match(error({ type: "resOrder", id: "res-r1", rid: "r1", order: [] }), /resOrder\.order/);
+  assert.equal(state.rev, 0);
+  assert.deepEqual(state.resOrders, {});
+});
+
+test("カード削除とTTL切れでは予約由来の注文も片づける (#291)", function () {
+  var state = kitchen.createState("s1");
+  kitchen.applyEvents(state, [
+    { type: "resOrder", id: "res-r1", rid: "r1", order: kdsResOrder() },
+    { type: "resOrder", id: "res-r2", rid: "r2", order: kdsResOrder({ id: "res-r2", table: "6" }) },
+  ], NOW);
+  kitchen.applyEvents(state, [{ type: "deleteOrder", id: "res-r1" }], NOW);
+  assert.deepEqual(Object.keys(state.resOrders), ["res-r2"]);
+
+  kitchen.purgeStale(state, NOW + 7200000, 3600000);
+  assert.deepEqual(state.resOrders, {});
+});
+
 test("スナップショットはrelayの起動識別子を含む (再起動の検出用)", function () {
   var snap = kitchen.snapshot(seeded());
   assert.equal(snap.sessionId, "s1");

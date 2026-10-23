@@ -295,7 +295,7 @@ cd relay-server && npm run preflight
 | `GET /api/reservations/inbox` | メールの取込フォルダの候補 `{enabled,items:[{id,receivedAt,subject,draft,warnings}]}` |
 | `DELETE /api/reservations/inbox/{id}` | 候補を登録せず片づける(`processed/` へ移す) |
 | `/api/health` | ready状態・予約の保存件数(`reservations`)・注文配信の状況(`ordersStream`) |
-| `GET /api/kitchen-state` | 厨房状態の共有スナップショット `{sessionId,rev,updatedAt,konro,done,locked,seq,deleted,serveCue,hallReady,tableOverride}`。→「厨房状態の端末間同期」 |
+| `GET /api/kitchen-state` | 厨房状態の共有スナップショット `{sessionId,rev,updatedAt,konro,done,locked,seq,deleted,serveCue,hallReady,tableOverride,resOrders}`。→「厨房状態の端末間同期」 |
 | `POST /api/kitchen-state` | 厨房状態の変更イベント投入 `{events:[...]}`。応答は `{ok,rev,sessionId}` |
 | `GET /api/orders` | KDS 注文フィード(注文端末由来)。→「注文端末との契約」 |
 | `POST /api/orders` | 注文の投入。`orderId` で冪等 |
@@ -409,6 +409,11 @@ localStorage + BroadcastChannel で同期しているが、**どちらも同一�
 卓番の上書き(`tableOverride`)も同じく、変わった卓(解除を含む)を KDS へ知らせる。`poll()` が
 読み直すので書くだけでも1秒以内に画面へ乗るが、その間にホールでチビ伝を刷ると元の卓番で出るため(#293)。
 
+予約から進行中へ移した注文(`resOrders`)は、ブリッジが `window.KDS_ORDERS` へ入れる(無いときだけ)。
+あわせてその予約を予約ストック(`kds_stock_v1`)から外し、取込実績(`kds_bridge_seen_v1`)に載せて
+`/api/stock` から戻らないようにし、KDS へ `{type:"stock"}` で知らせる。前に relay から取り込み、relay から
+消えたもの(カード削除・TTL切れ)は外す。この端末で作ってまだ relay に載っていないものは消さない(#291)。
+
 受け取るイベントは KDS の `broadcast*()` が流す形そのまま:
 
 | type | body | 意味 |
@@ -421,9 +426,11 @@ localStorage + BroadcastChannel で同期しているが、**どちらも同一�
 | `serveCue` | `{id, state:{starter, dessert, starterAt, dessertAt, day}}` | 前菜/デザートを出したか(#288) |
 | `hallReady` | `{id, snapshot:{orderId, table, people, completedAt, day, status, items, dismissedAt?, retractedAt?}}` | 提供準備完了。ホールのデザート待ちカードの根拠。取り下げ(`retracted`)より前の完了が遅れて届いても戻さない(#288) |
 | `tableOverride` | `{id, table, removed}` | 厨房の卓番の上書き(#160)。`removed:true` か空の `table` で解除。ホールのチビ伝もこの卓番で刷る。注文の `table` は変えない(#293) |
+| `resOrder` | `{id:"res-<rid>", rid, order:{table, start, people, adults, kids, allergies, request, memo, items}}` | 予約から進行中へ移した注文(#291)。KDS は「調理開始」で `{type:"moveToMain", order}` を流すだけなので、ブリッジがこの形に変えて送る。卓番と開始時刻が無いものは受け付けない |
 
 `serveCue` と `hallReady` は、KDS が使う項目だけを残して保存する(文字列は長さを切り、品目は100件まで)。
 `tableOverride` は卓番を文字列にそろえて保存する。32文字を超えるものは、切ると別の卓番になるため受理しない。
+`resOrder` は KDS がカードに使う項目だけを残す(品目は100件まで。完了は `toggle` で運ぶので品目の `done` は持たない)。
 
 設計上の判断:
 
@@ -436,8 +443,9 @@ localStorage + BroadcastChannel で同期しているが、**どちらも同一�
 - 通信断のときは手元の状態を保持する(relay が落ちても KDS は単独で動き続ける)
 - 保存はしない(#115)。`kitchen.ttlMin`(既定720分)を過ぎたら当日分を捨てる
 
-**同期の対象外**: 予約ストック(`/api/stock` が正本)と、予約→着手の移動。後者は着手した端末の
-ストックからのみ消える(別端末では残る)ため、必要になったら別途対応する。
+**同期の対象外**: 予約ストック(`/api/stock` が正本)。予約→着手の移動は #291 から対象になった。
+それまでは移した注文が押した端末のメモリにしか無く、再読み込みで消え、別の端末には出なかった。
+いまは `resOrder` で relay に載り、どの端末でもカードが出て、その予約はストックから消える。
 
 ### 注文端末との契約(POST /api/orders)
 
@@ -564,7 +572,7 @@ KDS 本体は無改修。**このサーバー経由で `/` を開くと、配信
 - 同じ `orderId` の更新でも、受付時刻を基準にする**タイマー**、`orderId` に紐づく**コンロ割当・タイマーロック・カード並び順・手動削除状態**は維持する
 - 品目完了数は `name` + `options` + `allergies` が同じ行へ追従する。数量減では新数量を上限とし、数量増では既に完了した個数だけを維持する。新規行または品名・注記・アレルギーが訂正された行は未完了にする。同内容の行が複数ある場合は出現順で対応づける
 - **KDS 内で生まれた注文(予約→着手の `res-*` カード)は残す** — 上書きするとホールが着手した
-  予約カードが次のポーリングで消えるため
+  予約カードが次のポーリングで消えるため。`res-*` は厨房状態の `resOrders` から入る(#291)
 - 通信断時は `window.KDS_ORDERS` に触らない(直前の表示を保持)
 
 ## 内部構成
