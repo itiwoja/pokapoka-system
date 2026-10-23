@@ -1,0 +1,32 @@
+.kds-seatpad-backdrop {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(17, 24, 39, 0.45);
+}
+.kds-seatpad {
+  width: 320px; max-width: calc(100vw - 32px); padding: 16px;
+  background: var(--surface); border-radius: var(--radius);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.kds-seatpad-title { font-size: 18px; font-weight: 700; color: var(--text-sub); }
+.kds-seatpad-display {
+  height: 72px; display: flex; align-items: center; justify-content: center;
+  font-size: 44px; font-weight: 800; background: var(--bg); border-radius: 10px; color: var(--text);
+}
+.kds-seatpad-display.empty { color: var(--done); font-size: 28px; font-weight: 500; }
+.kds-seatpad-zones, .kds-seatpad-grid {
+  display: grid; grid-template-columns: repeat(3, 64px); gap: 8px; justify-content: center;
+}
+.kds-seatpad-key {
+  height: 64px; width: 64px; font-size: 28px; font-weight: 700;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+}
+.kds-seatpad-key:active { background: var(--bg); }
+.kds-seatpad-key.active { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+.kds-seatpad-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.kds-seatpad-cancel, .kds-seatpad-ok {
+  height: 56px; font-size: 20px; font-weight: 700; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface);
+}
+.kds-seatpad-ok { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+.kds-seatpad-ok:disabled { background: var(--line); color: var(--done); border-color: var(--line); cursor: not-allowed; }
