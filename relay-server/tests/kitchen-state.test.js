@@ -97,6 +97,69 @@ test("最終更新からTTLを過ぎたら当日分を捨て、revは進める",
   assert.equal(state.rev, 2);
 });
 
+function readySnapshot(over) {
+  return Object.assign({
+    orderId: "o-1", id: "o-1", table: 5, people: 3, completedAt: NOW, day: "2026-08-02", status: "active",
+    items: [{ name: "土鍋御膳", qty: 2, note: "" }],
+  }, over);
+}
+
+test("前菜/デザートと提供準備完了も畳み込み、KDSが使う項目だけを残す (#288)", function () {
+  var state = kitchen.createState("s1");
+  kitchen.applyEvents(state, [
+    { type: "serveCue", id: "o-1", state: { starter: true, dessert: false, starterAt: NOW, day: "2026-08-02", extra: "x" } },
+    { type: "hallReady", id: "o-1", snapshot: readySnapshot({ extra: "x" }) },
+  ], NOW);
+  var snap = kitchen.snapshot(state);
+  assert.deepEqual(snap.serveCue, {
+    "o-1": { starter: true, dessert: false, starterAt: NOW, dessertAt: null, day: "2026-08-02" },
+  });
+  assert.deepEqual(snap.hallReady, { "o-1": {
+    orderId: "o-1", id: "o-1", table: "5", people: 3, completedAt: NOW, day: "2026-08-02", status: "active",
+    items: [{ name: "土鍋御膳", qty: 2, note: "" }],
+  } });
+  assert.equal(snap.rev, 1);
+});
+
+test("提供準備完了は、取り下げより前の完了が遅れて届いても戻さない (#288)", function () {
+  var state = kitchen.createState("s1");
+  kitchen.applyEvents(state, [{ type: "hallReady", id: "o-1",
+    snapshot: readySnapshot({ status: "retracted", retractedAt: NOW + 10 }) }], NOW);
+  var result = kitchen.applyEvents(state, [{ type: "hallReady", id: "o-1", snapshot: readySnapshot() }], NOW);
+  assert.equal(result.applied, 0);
+  assert.equal(state.hallReady["o-1"].status, "retracted");
+
+  // 取り下げの後にもう一度全品完了したものは受け取る
+  kitchen.applyEvents(state, [{ type: "hallReady", id: "o-1", snapshot: readySnapshot({ completedAt: NOW + 20 }) }], NOW);
+  assert.equal(state.hallReady["o-1"].status, "active");
+});
+
+test("前菜/デザートと提供準備完了の不正な形は受理しない (#288)", function () {
+  var state = kitchen.createState("s1");
+  assert.match(kitchen.applyEvents(state, [{ type: "serveCue", id: "", state: {} }], NOW).error, /serveCue\.id/);
+  assert.match(kitchen.applyEvents(state, [{ type: "serveCue", id: "o-1", state: [] }], NOW).error, /serveCue\.state/);
+  assert.match(kitchen.applyEvents(state, [{ type: "hallReady", id: "o-1", snapshot: readySnapshot({ status: "done" }) }], NOW).error,
+    /hallReady\.snapshot/);
+  assert.match(kitchen.applyEvents(state, [{ type: "hallReady", id: "o-1", snapshot: readySnapshot({ items: "x" }) }], NOW).error,
+    /hallReady\.snapshot/);
+  assert.equal(state.rev, 0);
+});
+
+test("カード削除とTTL切れでは前菜/デザートと提供準備完了も片づける (#288)", function () {
+  var state = seeded();
+  kitchen.applyEvents(state, [
+    { type: "serveCue", id: "o-1", state: { starter: true } },
+    { type: "hallReady", id: "o-1", snapshot: readySnapshot() },
+    { type: "serveCue", id: "o-2", state: { dessert: true } },
+  ], NOW);
+  kitchen.applyEvents(state, [{ type: "deleteOrder", id: "o-1" }], NOW);
+  assert.deepEqual(Object.keys(state.serveCue), ["o-2"]);
+  assert.deepEqual(state.hallReady, {});
+
+  kitchen.purgeStale(state, NOW + 7200000, 3600000);
+  assert.deepEqual(state.serveCue, {});
+});
+
 test("スナップショットはrelayの起動識別子を含む (再起動の検出用)", function () {
   var snap = kitchen.snapshot(seeded());
   assert.equal(snap.sessionId, "s1");
