@@ -32,6 +32,7 @@ function harness(mode) {
     LS_MODE: "mode", setTimeout, clearTimeout,
     saveDone() { calls.push("saveDone"); },
     removeLatestServeRecord() { calls.push("removeLatestServeRecord"); },   // #204: undoComplete が呼ぶ
+    cancelKonroRelease() { calls.push("cancelKonroRelease"); },   // #298: undoComplete が呼ぶ
     broadcastToggle() { calls.push("broadcastToggle"); },
     poll() { calls.push("poll"); },
     saveHallReady() { calls.push("saveHallReady"); },

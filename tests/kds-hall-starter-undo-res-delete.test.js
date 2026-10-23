@@ -131,6 +131,8 @@ function resHarness() {
     seatDrafts: {},
     t: k => ({ del: "削除", seatPh: "卓番", go: "調理開始", soon: "まもなく", people: "名", kidsLabel: "幼" }[k] || k),
     buildReservationNotes() { return null; }, buildRiceCue() { return null; },
+    // main の buildResCard は人数を peopleTotal / peopleBreakdown で組む (relay-server/party-size.js と共有)
+    peopleTotal(r) { return (r.adults || 0) + (r.kids || 0); }, peopleBreakdown() { return ""; },
     openSeatDial() {}, moveResToMain() {},
     deleteRes(rid) { deleted.push(rid); },
   });

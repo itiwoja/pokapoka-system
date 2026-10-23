@@ -14,6 +14,17 @@
  *   { type:"timerLock",   id, locked }
  *   { type:"order",       seq:[cardId,...] }
  *   { type:"deleteOrder", id }
+ *   { type:"serveCue",    id, state:{starter, dessert, starterAt, dessertAt, day} }   前菜/デザート (#288)
+ *   { type:"hallReady",   id, snapshot:{orderId, table, people, completedAt, items, status, ...} }  提供準備完了 (#288)
+ *   { type:"tableOverride", id, table, removed }   卓番の上書き。removed か空の table で解除 (#293)
+ *
+ * 前菜/デザートと提供準備完了はホールの端末が持つ状態だが、厨房とホールを別端末にすると
+ * これも届かない。ホールのリロードでデザート待ちのカードが消え、厨房では前菜が未提供のまま
+ * 見えていた (#288)。同じ経路で運ぶ。
+ *
+ * 卓番の上書き (#160) は厨房で作る表示上の上書きだが、チビ伝はホールで刷る (#226)。
+ * 届かないとホールのチビ伝が元の卓番で出る (#293)。これも同じ経路で運ぶ。
+ * 注文の table (上流) は変えない。
  *
  * 全イベントが「絶対値の代入」なので、再送・重複適用しても結果が変わらない (冪等)。
  * 端末が複数タブを開いていて同じイベントが二重に届いても壊れない。
@@ -28,6 +39,13 @@ var MAX_ITEM_INDEX = 999;
 var MAX_DONE_COUNT = 999;
 var MAX_SEQ = 500;
 var MAX_CARDS = 500;              // 1日の注文数として十分に余裕のある上限 (無制限肥大の防止)
+var MAX_READY_ITEMS = 100;
+var MAX_TABLE_LENGTH = 32;
+var MAX_DAY_LENGTH = 10;          // "YYYY-MM-DD"
+var MAX_NAME_LENGTH = 200;
+var MAX_NOTE_LENGTH = 500;
+var MAX_PEOPLE = 999;
+var HALL_READY_STATUSES = { active: true, dismissed: true, retracted: true };
 
 function createState(sessionId) {
   return {
@@ -39,6 +57,9 @@ function createState(sessionId) {
     locked: {},
     seq: [],
     deleted: {},
+    serveCue: {},
+    hallReady: {},
+    tableOverride: {},
   };
 }
 
@@ -55,6 +76,79 @@ function validInt(value, min, max) {
   return n;
 }
 
+/* 時刻 (epoch ms)。無い・壊れているものは null にする (表示や並べ替えに使うだけなので落とさない) */
+function timeOrNull(value) {
+  if (value == null) return null;
+  var n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function plainObject(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+/* KDS が表示に使う文字列。型の違い (卓番が数値など) は文字列にそろえ、長すぎるものは切る */
+function text(value, max) {
+  if (value == null) return "";
+  if (typeof value !== "string" && typeof value !== "number") return "";
+  return String(value).slice(0, max);
+}
+
+/* 前菜/デザートの状態 (kds-a-grid.html の setServeCue が作る形) から既知の項目だけを残す */
+function normalizeServeCue(value) {
+  if (!plainObject(value)) return null;
+  return {
+    starter: !!value.starter,
+    dessert: !!value.dessert,
+    starterAt: timeOrNull(value.starterAt),
+    dessertAt: timeOrNull(value.dessertAt),
+    day: text(value.day, MAX_DAY_LENGTH),
+  };
+}
+
+/* 提供準備完了の snapshot (kds-a-grid.html の ensureHallReadySnapshot が作る形) から、
+   ホールの表示とデザート待ちの判定 (isDessertWaiting) に使う項目だけを残す */
+function normalizeHallReady(id, value) {
+  if (!plainObject(value) || !HALL_READY_STATUSES[value.status]) return null;
+  if (!Array.isArray(value.items) || value.items.length > MAX_READY_ITEMS) return null;
+  var items = [];
+  for (var i = 0; i < value.items.length; i++) {
+    var item = value.items[i];
+    if (!plainObject(item)) return null;
+    items.push({
+      name: text(item.name, MAX_NAME_LENGTH),
+      qty: validInt(item.qty, 1, MAX_DONE_COUNT) || 1,
+      note: text(item.note, MAX_NOTE_LENGTH),
+    });
+  }
+  var snapshot = {
+    orderId: id,
+    id: id,
+    table: text(value.table, MAX_TABLE_LENGTH),
+    people: validInt(value.people, 0, MAX_PEOPLE) || 0,
+    completedAt: timeOrNull(value.completedAt),
+    day: text(value.day, MAX_DAY_LENGTH),
+    status: value.status,
+    items: items,
+  };
+  var dismissedAt = timeOrNull(value.dismissedAt);
+  var retractedAt = timeOrNull(value.retractedAt);
+  if (dismissedAt !== null) snapshot.dismissedAt = dismissedAt;
+  if (retractedAt !== null) snapshot.retractedAt = retractedAt;
+  return snapshot;
+}
+
+/* 卓番の上書き (kds-a-grid.html の broadcastTableOverride が送る形)。解除なら ""、
+   不正な形なら null。KDS は6文字までしか入力させないので、上限を超えるものは切らずに受理しない
+   (切ると別の卓番になる) */
+function normalizeTableOverride(event) {
+  if (event.removed || event.table == null) return "";
+  if (typeof event.table !== "string" && typeof event.table !== "number") return null;
+  var table = String(event.table).trim();
+  if (table.length > MAX_TABLE_LENGTH) return null;
+  return table;
+}
+
 /* 上限を超えた分は最も古いキーから落とす。掃除の正本は各端末側 (prune) にあるが、
    端末が落ちたまま戻らないケースで relay 側が無制限に太らないようにする */
 function capKeys(map, max) {
@@ -66,6 +160,9 @@ function forgetCard(state, id) {
   delete state.konro[id];
   delete state.done[id];
   delete state.locked[id];
+  delete state.serveCue[id];
+  delete state.hallReady[id];
+  delete state.tableOverride[id];
   state.seq = state.seq.filter(function (x) { return x !== id; });
 }
 
@@ -142,6 +239,44 @@ function applyEvent(state, event) {
     return { ok: true };
   }
 
+  if (event.type === "serveCue") {
+    var serveId = validId(event.id);
+    if (!serveId) return { error: "serveCue.id is invalid" };
+    var serve = normalizeServeCue(event.state);
+    if (!serve) return { error: "serveCue.state is invalid" };
+    state.serveCue[serveId] = serve;
+    capKeys(state.serveCue, MAX_CARDS);
+    return { ok: true };
+  }
+
+  if (event.type === "hallReady") {
+    var readyId = validId(event.id);
+    if (!readyId) return { error: "hallReady.id is invalid" };
+    var ready = normalizeHallReady(readyId, event.snapshot);
+    if (!ready) return { error: "hallReady.snapshot is invalid" };
+    // 取り下げ (未完了へ戻した) より前の完了が遅れて届いても戻さない。
+    // KDS の BroadcastChannel 受信 (msg.type === "hallReady") と同じ規則
+    var current = state.hallReady[readyId];
+    if (current && current.status === "retracted" && ready.status !== "retracted" &&
+        Number(ready.completedAt || 0) <= Number(current.retractedAt || 0)) {
+      return { ok: true, ignored: true };
+    }
+    state.hallReady[readyId] = ready;
+    capKeys(state.hallReady, MAX_CARDS);
+    return { ok: true };
+  }
+
+  if (event.type === "tableOverride") {
+    var overrideId = validId(event.id);
+    if (!overrideId) return { error: "tableOverride.id is invalid" };
+    var table = normalizeTableOverride(event);
+    if (table === null) return { error: "tableOverride.table is invalid" };
+    if (table) state.tableOverride[overrideId] = table;
+    else delete state.tableOverride[overrideId];
+    capKeys(state.tableOverride, MAX_CARDS);
+    return { ok: true };
+  }
+
   return { ok: true, ignored: true };
 }
 
@@ -176,6 +311,9 @@ function purgeStale(state, now, ttlMs) {
   state.locked = {};
   state.seq = [];
   state.deleted = {};
+  state.serveCue = {};
+  state.hallReady = {};
+  state.tableOverride = {};
   state.rev++;
   state.updatedAt = now;
   return true;
@@ -191,6 +329,9 @@ function snapshot(state) {
     locked: state.locked,
     seq: state.seq,
     deleted: state.deleted,
+    serveCue: state.serveCue,
+    hallReady: state.hallReady,
+    tableOverride: state.tableOverride,
   };
 }
 

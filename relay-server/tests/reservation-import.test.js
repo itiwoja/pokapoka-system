@@ -3,6 +3,7 @@
 var test = require("node:test");
 var assert = require("node:assert/strict");
 var imp = require("../reservation-import");
+var buildXlsx = require("./xlsx-fixture").buildXlsx;
 
 // 2026-10-13 12:00 (サーバーのローカル時刻) を「今」とする
 var NOW = new Date(2026, 9, 13, 12, 0, 0);
@@ -22,11 +23,19 @@ test("日時: 表記ゆれを受け、年が無ければ今年、半年以上前
   assert.equal(imp.parseDateTime("18:30", NOW), null, "日付が無い");
 });
 
-test("人数: 内訳があれば内訳、合計だけなら大人に寄せる", function () {
-  assert.deepEqual(imp.parsePeople("大人2名 子供1名"), { adults: 2, kids: 1 });
-  assert.deepEqual(imp.parsePeople("3名"), { adults: 3, kids: 0 });
-  assert.deepEqual(imp.parsePeople("3名(子供1名)"), { adults: 2, kids: 1 });
-  assert.deepEqual(imp.parsePeople("４"), { adults: 4, kids: 0 });
+function people(adults, seniors, children, kids) {
+  return { adults: adults, seniors: seniors, children: children, kids: kids };
+}
+
+test("人数: 大人・シニア・子供・幼児を分けて読み、合計だけなら残りを大人に寄せる", function () {
+  assert.deepEqual(imp.parsePeople("大人2名 子供1名"), people(2, 0, 1, 0));
+  assert.deepEqual(imp.parsePeople("大人2名 シニア1名 子供1名 幼児1名"), people(2, 1, 1, 1), "まとめない");
+  assert.deepEqual(imp.parsePeople("3名"), people(3, 0, 0, 0));
+  assert.deepEqual(imp.parsePeople("3名(子供1名)"), people(2, 0, 1, 0));
+  assert.deepEqual(imp.parsePeople("5名(シニア1名・乳幼児1名)"), people(3, 1, 0, 1));
+  assert.deepEqual(imp.parsePeople("お子様1名を含む4名"), people(3, 0, 1, 0), "区分つきの人数を合計と取り違えない");
+  assert.deepEqual(imp.parsePeople("シニア1名・計3名"), people(2, 1, 0, 0));
+  assert.deepEqual(imp.parsePeople("４"), people(4, 0, 0, 0));
   assert.equal(imp.parsePeople("未定"), null);
 });
 
@@ -34,6 +43,9 @@ test("メニュー: 数量の書き方の違いを受け、requireQty では数�
   assert.deepEqual(imp.parseMenuList("土鍋御膳 x2、うなぎ×1\n・茶 3個\nプリン"), [
     { name: "土鍋御膳", qty: 2 }, { name: "うなぎ", qty: 1 }, { name: "茶", qty: 3 }, { name: "プリン", qty: 1 },
   ]);
+  assert.deepEqual(imp.parseMenuList("1 × 鰻と和牛レアすき極上土鍋御膳, 2 × 山城牛のカニクラ土鍋御膳"), [
+    { name: "鰻と和牛レアすき極上土鍋御膳", qty: 1 }, { name: "山城牛のカニクラ土鍋御膳", qty: 2 },
+  ], "TableCheck は数量を先に書く");
   assert.deepEqual(imp.parseMenuList("よろしくお願いします\n土鍋御膳 x2", { requireQty: true }), [{ name: "土鍋御膳", qty: 2 }]);
 });
 
@@ -57,7 +69,8 @@ test("CSV: 列名から項目を判別し、引用符内の改行とカンマを
   assert.equal(Date.parse(first.draft.startAt), local(2026, 10, 14, 18, 30));
   assert.equal(first.draft.name, "山田 太郎", "敬称は外す");
   assert.equal(first.draft.adults, 2);
-  assert.equal(first.draft.kids, 1);
+  assert.equal(first.draft.children, 1, "「子供」は幼児 (kids) と分けて持つ");
+  assert.equal(first.draft.kids, 0);
   assert.deepEqual(first.draft.menu, [{ name: "土鍋御膳", qty: 2 }, { name: "うなぎ", qty: 1 }]);
   assert.equal(first.draft.allergies, "えび");
   assert.equal(first.draft.request, "窓側, 静かな席");
@@ -75,14 +88,158 @@ test("CSV: 来店日時の1列・合計人数・タブ区切りを受け、予�
   var a = imp.parseCsv(tsv, OPTS).rows[0].draft;
   var b = imp.parseCsv(tsv, OPTS).rows[0].draft;
   assert.equal(a.adults, 2, "合計3名から子供1名を引く");
-  assert.equal(a.kids, 1);
+  assert.equal(a.children, 1);
   assert.match(a.rid, /^csv-[0-9a-f]{16}$/);
   assert.equal(a.rid, b.rid, "再取込で二重登録にならない");
+});
+
+/*
+ * TableCheck の予約一覧の形 (2026-10-22 に店から受け取った .xlsx の見出しと値の書き方)。
+ * 名前・電話番号などは架空の値に置き換えている。列は実物の72列のうち取込に関わるものと、使わない列の例
+ */
+var TC_HEADER = ["店舗", "予約ID", "予約時間", "滞在時間", "人数:大人", "人数:シニア", "人数:子供", "人数:幼児",
+  "テーブル", "名前", "電話", "Eメール", "注文", "予約メモ", "ステータス", "食事制限・アレルギー", "苦手なもの",
+  "開始日", "開始時刻", "注文合計金額", "顧客メモ"];
+var TC_ROWS = [
+  ["土鍋飯ぽかぽかminatogawa", "TEST01", "2026-10-20 11:00", "1時間 30分", "4", "0", "0", "1",
+    "A1/2", "てすと たろう", "090-0000-0000", "", "", "", "確認", "", "", "2026-10-20", "11:00", "0", ""],
+  ["土鍋飯ぽかぽかminatogawa", "TEST02", "2026-10-20 13:30", "1時間 30分", "2", "1", "1", "0",
+    "B5", "しさく はなこ", "070-0000-0000", "test@example.com",
+    "1 × 鰻と和牛レアすき極上土鍋御膳, 2 × 山城牛のカニクラ土鍋御膳",
+    "質問1: アレルギーやお苦手な食材のあ… 回答1: えび\nご利用回数: 初来店", "確認", "", "", "2026-10-20", "13:30", "13520.0", ""],
+  ["土鍋飯ぽかぽかminatogawa", "TEST03", "2026-10-20 18:00", "2時間", "2", "0", "0", "0",
+    "C1", "とりけし", "", "", "1 × 炙り鰻のひつまぶし土鍋御膳", "質問1: アレルギーやお苦手な食材のあ… 回答1: なし",
+    "キャンセル", "", "", "2026-10-20", "18:00", "0", ""],
+];
+
+function csvLine(cells) {
+  return cells.map(function (c) { return /[",\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; }).join(",");
+}
+
+function assertTableCheckRows(out) {
+  assert.equal(out.error, undefined);
+  assert.equal(out.columns.time, "予約時間");
+  assert.equal(out.columns.seniors, "人数:シニア");
+  assert.equal(out.columns.kids, "人数:幼児");
+  assert.ok(out.unmapped.indexOf("電話") >= 0 && out.unmapped.indexOf("Eメール") >= 0, "連絡先は取り込まない");
+  assert.equal(out.rows.length, 3, "タイトル行と見出し行は予約に数えない");
+
+  var first = out.rows[0];
+  assert.equal(first.line, 3, "タイトル行・見出し行を含めた行番号");
+  assert.deepEqual(first.errors, []);
+  assert.equal(first.draft.rid, "TEST01");
+  assert.equal(Date.parse(first.draft.startAt), local(2026, 10, 20, 11, 0));
+  assert.deepEqual([first.draft.adults, first.draft.seniors, first.draft.children, first.draft.kids], [4, 0, 0, 1]);
+  assert.equal(first.draft.table, "A1/2");
+  assert.equal(first.draft.status, "booked", "「確認」は予約済み");
+  assert.deepEqual(first.draft.menu, [], "電話予約で注文なし");
+
+  var second = out.rows[1].draft;
+  assert.deepEqual([second.adults, second.seniors, second.children, second.kids], [2, 1, 1, 0], "まとめない");
+  assert.deepEqual(second.menu, [
+    { name: "鰻と和牛レアすき極上土鍋御膳", qty: 1 }, { name: "山城牛のカニクラ土鍋御膳", qty: 2 },
+  ]);
+  assert.equal(second.allergies, "えび", "予約メモの質問の回答から拾う");
+  assert.match(second.memo, /ご利用回数: 初来店/);
+  assert.equal(JSON.stringify(out.rows).indexOf("090-"), -1, "電話番号は下書きに入らない");
+  assert.equal(JSON.stringify(out.rows).indexOf("example.com"), -1, "メールアドレスは下書きに入らない");
+
+  assert.equal(out.rows[2].draft.status, "canceled");
+  assert.equal(out.rows[2].draft.allergies, null, "回答「なし」はアレルギーにしない");
+}
+
+test("CSV: TableCheck の予約一覧 (1行目がタイトル、日時が「予約時間」1列) を読む", function () {
+  var csv = ["予約", csvLine(TC_HEADER)].concat(TC_ROWS.map(csvLine)).join("\r\n") + "\r\n";
+  assertTableCheckRows(imp.parseCsv(csv, OPTS));
+});
+
+test("Excel: TableCheck の予約一覧 (.xlsx) を CSV と同じように読む", function () {
+  var rows = [["予約"], TC_HEADER].concat(TC_ROWS.map(function (r) { return r.slice(); }));
+  // Excel で保存し直すと日時が日付シリアルの数値になり、セルがインライン文字列になることがある
+  rows[3][2] = { serial: 46315.5625 };   // 2026-10-20 13:30
+  rows[4][9] = { inline: "とりけし" };
+  var buf = buildXlsx(rows);
+  var out = imp.parseSpreadsheet(buf, OPTS);
+  assertTableCheckRows(out);
+  assert.equal(out.rows[1].draft.name, "しさく はなこ", "ふりがなは名前に混ぜない");
+  assert.equal(Date.parse(out.rows[1].draft.startAt), local(2026, 10, 20, 13, 30), "日付シリアルを日時として読む");
+});
+
+test("Excel: 和暦などの組み込み日付書式と、1904年基準のブックの日付シリアルを読む", function () {
+  var header = ["予約ID", "予約時間", "人数:大人", "注文"];
+  var builtin = imp.parseSpreadsheet(buildXlsx([header, ["J1", { serial: 46315.5625, builtin: true }, "2", "1 × 茶"]]), OPTS);
+  assert.equal(Date.parse(builtin.rows[0].draft.startAt), local(2026, 10, 20, 13, 30), "日本語版 Excel の組み込み書式 57");
+  // 1904年基準では同じ日時のシリアルが 1462 小さい
+  var mac = imp.parseSpreadsheet(buildXlsx([header, ["M1", { serial: 46315.5625 - 1462 }, "2", "1 × 茶"]], { date1904: true }), OPTS);
+  assert.equal(Date.parse(mac.rows[0].draft.startAt), local(2026, 10, 20, 13, 30), "Mac 版 Excel の1904年基準");
+});
+
+test("Excel: 部品の場所や名前が違うファイルも、目次 (.rels) をたどって読む", function () {
+  var rows = [["予約"], ["予約ID", "予約時間", "人数:大人", "注文"], ["R1", { serial: 46315.5625 }, "2", "1 × 茶"]];
+  var out = imp.parseSpreadsheet(buildXlsx(rows, { relocated: true }), OPTS);
+  assert.equal(out.error, undefined);
+  assert.equal(out.rows[0].draft.rid, "R1");
+  assert.equal(Date.parse(out.rows[0].draft.startAt), local(2026, 10, 20, 13, 30), "書式も別の場所から読む");
+});
+
+test("Excel: 日時の書式なら0時ちょうどでも時刻を残し、右端の列は読み飛ばす", function () {
+  var rows = [["予約時間", "名前"], [{ serial: 46315 }, "山田", { ref: "XFD", inline: "右端" }]];
+  var out = imp.parseSpreadsheet(buildXlsx(rows), OPTS);
+  assert.deepEqual(out.rows[0].errors, []);
+  assert.equal(Date.parse(out.rows[0].draft.startAt), local(2026, 10, 20, 0, 0), "2026-10-20 00:00");
+  assert.equal(out.unmapped.length, 0, "1000列目より右は読まない");
+});
+
+test("Excel: 行が多すぎるファイルは、読み切る前に断る", function () {
+  var rows = [["予約時間", "名前"]];
+  for (var i = 0; i < 5001; i++) rows.push(["2026-10-20 18:00", "山田" + i]);
+  assert.match(imp.parseSpreadsheet(buildXlsx(rows), OPTS).error, /行数が多すぎます/);
+});
+
+test("Excel: 壊れたファイルは全体を断り、CSV は先頭のバイトで見分けて従来どおり読む", function () {
+  var broken = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(40)]);
+  assert.match(imp.parseSpreadsheet(broken, OPTS).error, /Excelファイルを読めません/);
+  var csv = imp.parseSpreadsheet(Buffer.from("来店日時,名前,大人\n2026-10-14 18:30,山田,2\n", "utf8"), OPTS);
+  assert.equal(csv.rows[0].draft.adults, 2);
+});
+
+test("CSV: 作成日時・受付日など来店でない日時の列を来店日時と取り違えない", function () {
+  var out = imp.parseCsv("作成日時,予約日,予約時間,名前\n2026-10-01 09:00,2026-10-01,2026-10-25 18:00,山田\n", OPTS);
+  assert.equal(out.columns.datetime, undefined, "作成日時は来店日時にしない");
+  assert.equal(Date.parse(out.rows[0].draft.startAt), local(2026, 10, 25, 18, 0), "時間の列の日付を日付の列より優先する");
+  var relative = imp.parseCsv("予約日,時間,名前\n2026-10-25,本日19:00,田中\n", OPTS);
+  assert.equal(Date.parse(relative.rows[0].draft.startAt), local(2026, 10, 25, 19, 0), "相対の書き方なら日付の列を正とする");
+  var ended = imp.parseCsv("予約時間,終了日時,名前\n2026-10-25 18:00,2026-10-25 20:00,山田\n", OPTS);
+  assert.equal(Date.parse(ended.rows[0].draft.startAt), local(2026, 10, 25, 18, 0), "終了日時は来店日時にしない");
+});
+
+test("アレルギー: 「特にありません」など否定の自由回答はアレルギーにしない", function () {
+  ["特にありません", "ありません。", "大丈夫です", "なし。", "問題ないです"].forEach(function (answer) {
+    var csv = "来店日時,予約メモ\n2026-10-14 18:30,\"質問1: アレルギーやお苦手な食材のあ… 回答1: " + answer + "\"\n";
+    assert.equal(imp.parseCsv(csv, OPTS).rows[0].draft.allergies, null, answer);
+  });
+  var csv = "来店日時,アレルギー\n2026-10-14 18:30,ありません、えびが苦手です\n";
+  assert.equal(imp.parseCsv(csv, OPTS).rows[0].draft.allergies, "ありません、えびが苦手です", "続きのある回答は残す");
+});
+
+test("アレルギー: 列・予約メモの複数行の回答・苦手なものを全部つなぎ、どれも落とさない", function () {
+  var csv = "予約\n来店日時,食事制限・アレルギー,予約メモ,苦手なもの\n2026-10-14 18:30,小麦," +
+    "\"質問1: アレルギーやお苦手な食材のあ… 回答1: えび\nかに\n落花生\nご利用回数: 初来店\",しいたけ\n";
+  var draft = imp.parseCsv(csv, OPTS).rows[0].draft;
+  assert.equal(draft.allergies, "小麦 / えび、かに、落花生 / 苦手: しいたけ");
+});
+
+test("CSV: 1行目がタイトルだけでも、タブ区切りを見分ける", function () {
+  var out = imp.parseCsv("予約\n予約時間\t名前\t人数:大人\n2026-10-14 18:30\t山田\t2\n", OPTS);
+  assert.equal(out.error, undefined);
+  assert.equal(out.rows[0].draft.name, "山田");
+  assert.equal(out.rows[0].draft.adults, 2);
 });
 
 test("CSV: 来店日時の列が無ければファイル全体を断る", function () {
   var out = imp.parseCsv("名前,人数\n山田,2\n", OPTS);
   assert.match(out.error, /来店日時の列/);
+  assert.match(imp.parseCsv("来店時間,名前\n18:30,山田\n", OPTS).error, /来店日時の列/, "日付の無い時刻だけの列は断る");
   assert.deepEqual(out.rows, []);
   assert.match(imp.parseCsv("", OPTS).error, /行がありません/);
 });
@@ -114,7 +271,8 @@ test("貼り付け: ラベル付きの行を読み、複数行のメニューを
   assert.equal(Date.parse(out.draft.startAt), local(2026, 10, 14, 18, 30));
   assert.equal(out.draft.name, "山田 太郎");
   assert.equal(out.draft.adults, 2);
-  assert.equal(out.draft.kids, 1);
+  assert.equal(out.draft.children, 1);
+  assert.equal(out.draft.kids, 0);
   assert.deepEqual(out.draft.menu, [{ name: "土鍋御膳", qty: 2 }, { name: "うなぎ", qty: 1 }]);
   assert.equal(out.draft.allergies, "えび、かに");
   assert.equal(out.draft.request, "窓側の席を希望");
@@ -219,4 +377,14 @@ test("メール: ヘッダーの無いテキストは本文として読み、確
   assert.equal(canceled.subject, "予約キャンセルのお知らせ");
   assert.equal(canceled.draft.status, "canceled");
   assert.equal(canceled.draft.rid, booked.draft.rid, "取消メールが確定メールの予約を上書きできる");
+});
+
+test("人数の区分: 合計と内訳は party-size.js の1か所で決める", function () {
+  var partySize = require("../party-size");
+  var rec = { adults: 2, seniors: 1, children: 1, kids: 1 };
+  assert.deepEqual(partySize.KEYS, ["adults", "seniors", "children", "kids"]);
+  assert.equal(partySize.total(rec), 5);
+  assert.deepEqual(partySize.breakdown(rec).map(function (p) { return p.short + p.n; }), ["大2", "シ1", "子1", "幼1"]);
+  assert.deepEqual(partySize.breakdown({ adults: 4 }, { onlyMixed: true }), [], "大人だけなら KDS は合計だけ");
+  assert.equal(partySize.total({ adults: "3", kids: null }), 3, "文字列や欠けた値も数える");
 });

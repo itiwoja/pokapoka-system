@@ -1,0 +1,53 @@
+.kds-stove { display: grid; grid-template-rows: 56px 1fr 180px; grid-template-columns: 1fr 300px; height: 100%; overflow: hidden; }
+.kds-stove-clock { position: fixed; top: 12px; left: 20px; font-size: 28px; font-weight: 800; }
+.kds-stove-hd { grid-column: 2; grid-row: 1; align-self: center; font-size: 16px; color: var(--text-sub); padding-right: 20px; text-align: right; }
+.kds-stove-over { color: var(--alert); }
+
+.kds-stove-grid { grid-column: 1; grid-row: 2; display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: 1fr 1fr; gap: 14px; padding: 8px 20px; min-height: 0; }
+.kds-stove-slot { position: relative; background: var(--surface); border: 0; border-radius: 16px; padding: 14px; display: flex; flex-direction: column; min-width: 0; min-height: 44px; cursor: pointer; text-align: center; }
+.kds-stove-slot--empty { background: transparent; border: 2px dashed var(--line); }
+.kds-stove-slot--target { border-color: var(--text); }
+.kds-stove-num { position: absolute; top: 10px; left: 14px; font-size: 16px; font-weight: 800; color: var(--text-sub); }
+.kds-stove-ring { width: 110px; height: 110px; border-radius: 50%; margin: 22px auto 8px; display: grid; place-items: center; font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; background: conic-gradient(var(--text) var(--p), var(--line) 0); }
+.kds-stove-ring > span { width: 88px; height: 88px; border-radius: 50%; background: var(--surface); display: grid; place-items: center; }
+.kds-stove-slot--red .kds-stove-ring { background: conic-gradient(var(--alert) var(--p), var(--line) 0); }
+.kds-stove-what { font-size: 22px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kds-stove-tbl { font-size: 16px; color: var(--text-sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kds-stove-allergy { color: var(--alert); }
+
+.kds-stove-tray { grid-column: 1; grid-row: 3; margin: 0 20px 16px; background: var(--surface); border-radius: 16px; padding: 12px 16px; display: flex; gap: 12px; align-items: center; overflow: hidden; }
+.kds-stove-tray h2 { margin: 0 16px 0 0; font-size: 16px; color: var(--text-sub); writing-mode: vertical-rl; letter-spacing: .2em; }
+.kds-stove-none { color: var(--text-sub); font-size: 16px; }
+.kds-stove-tok { background: var(--surface); border: 2px solid var(--text); border-radius: 12px; padding: 10px 14px; font-size: 20px; font-weight: 700; white-space: nowrap; text-align: left; min-height: 64px; cursor: pointer; }
+.kds-stove-tok b { display: block; font-size: 14px; color: var(--text-sub); }
+.kds-stove-tok--sel { border-width: 5px; padding: 7px 11px; }
+
+.kds-stove-side { grid-column: 2; grid-row: 2 / 4; padding: 8px 20px 16px 0; display: flex; flex-direction: column; gap: 10px; overflow: hidden; min-height: 0; }
+.kds-stove-tables { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; min-height: 0; flex: 1; }
+.kds-stove-tb { background: var(--surface); border: 0; border-radius: 14px; padding: 10px 14px; display: flex; gap: 12px; align-items: center; text-align: left; cursor: pointer; min-height: 64px; flex: none; }
+.kds-stove-tb-t { font-size: 32px; font-weight: 800; min-width: 48px; }
+.kds-stove-tb-s { flex: 1; font-size: 15px; color: var(--text-sub); min-width: 0; }
+.kds-stove-tb-s b { display: block; color: var(--text); font-size: 17px; }
+.kds-stove-tb--ready { box-shadow: inset 0 0 0 3px var(--ok); }
+
+.kds-stove-rsv { flex: none; opacity: .75; display: flex; flex-direction: column; gap: 4px; max-height: 140px; overflow-y: auto; color: var(--reserved); font-size: 15px; }
+.kds-stove-rsv-row { display: flex; align-items: center; gap: 8px; }
+.kds-stove-rsv-time { font-weight: 800; }
+.kds-stove-rsv-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kds-stove-rsv-btn { min-height: 44px; min-width: 56px; border: 1px solid var(--reserved); background: transparent; border-radius: 10px; color: var(--reserved); font-weight: 700; cursor: pointer; }
+
+.kds-stove-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .3); display: grid; place-items: center; z-index: 20; }
+.kds-stove-pop { background: var(--surface); border-radius: 16px; width: min(520px, 92vw); max-height: 86vh; overflow-y: auto; padding: 16px; }
+.kds-stove-pop-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.kds-stove-pop-table { flex: 1; font-size: 36px; font-weight: 800; }
+.kds-stove-btn { min-height: 44px; min-width: 72px; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; font-weight: 700; cursor: pointer; }
+.kds-stove-err { color: var(--alert); font-size: 16px; margin-bottom: 6px; }
+.kds-stove-pop-items { display: flex; flex-direction: column; gap: 8px; }
+.kds-stove-item { display: flex; gap: 14px; align-items: center; min-height: 64px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); text-align: left; cursor: pointer; }
+.kds-stove-item--done { color: var(--done); text-decoration: line-through; }
+.kds-stove-item-qty { font-size: 28px; font-weight: 800; min-width: 32px; text-align: center; }
+.kds-stove-item-body { display: flex; flex-direction: column; min-width: 0; }
+.kds-stove-item-name { font-size: 22px; font-weight: 700; }
+.kds-stove-item-prog { margin-left: 10px; font-size: 18px; color: var(--text-sub); }
+.kds-stove-item-sub { font-size: 16px; color: var(--text-sub); }
+.kds-stove-item-allergy { font-size: 16px; font-weight: 700; color: var(--alert); }

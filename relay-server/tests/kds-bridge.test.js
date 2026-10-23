@@ -314,3 +314,11 @@ test("同期状態の集約は経路別の障害を隠さず、全経路停止�
   assert.equal(safe.snapshot(1).channels.orders.error, "通信エラー");
   assert.doesNotMatch(JSON.stringify(safe.snapshot(1)), /secret-value/);
 });
+
+test("シニア・子供の項目が無い以前の予約ストックは、サーバーの 0 と同じとみなして上書きしない", function () {
+  // 2026-10-22 より前に端末へ保存した予約ストックには seniors・children が無い
+  var out = mergeStock([rec("abc123")], { "abc123": 1 }, [rec("abc123", { seniors: 0, children: 0 })]);
+  assert.equal(out.changed, false);
+  var updated = mergeStock([rec("abc123")], { "abc123": 1 }, [rec("abc123", { seniors: 1, children: 0 })]);
+  assert.equal(updated.changed, true, "人数の内訳が変われば上書きする");
+});

@@ -41,6 +41,9 @@
   var LS_LOCKED = "kds_locked_v1";
   var LS_ORDER = "kds_order_v1";
   var LS_DELETED = "kds_deleted_v1";
+  var LS_SERVE_CUE = "kds_serve_cue_v1";     // 前菜/デザートの提供 (#288)
+  var LS_HALL_READY = "kds_hall_ready_v1";   // 提供準備完了 snapshot。ホールのデザート待ちカードの根拠 (#288)
+  var LS_TABLE_OVERRIDE = "kds_table_override_v1"; // 厨房の卓番の上書き。ホールのチビ伝もこの卓番で刷る (#293)
   var LS_SERVER_ORDERS = "kds_server_orders_v1"; // 前回フィード。再読込・通信断をまたぐ品目状態移行に使う
   var BC_NAME = "kds_sync";
   var POLL_MS = 5000;                        // 店内 LAN なので短くてよい
@@ -53,7 +56,8 @@
   var SYNC_DELAYED_MS = 10000;               // 一時的な失敗では警告せず、10秒継続で遅延
   var SYNC_OFFLINE_MS = 30000;               // 30秒成功が無ければオフライン
   var SYNC_CHANNELS = ["reservations", "orders", "kitchen"];
-  var KITCHEN_EVENTS = { konro: 1, toggle: 1, timerLock: 1, order: 1, deleteOrder: 1 };
+  var KITCHEN_EVENTS = { konro: 1, toggle: 1, timerLock: 1, order: 1, deleteOrder: 1, serveCue: 1, hallReady: 1,
+    tableOverride: 1 };
 
   var bc = null; // ブラウザで動く時だけ末尾で生成 (Node にも BroadcastChannel があり、生成するとテストプロセスが終了しなくなる)
 
@@ -277,9 +281,10 @@
       if (byRid[rid]) {                      // 既存 → 内容が変わっていれば上書き (updated 反映)
         var cur = byRid[rid];
         if (JSON.stringify({ a: cur.time, b: cur.adults, c: cur.kids, d: cur.name, e: cur.menu,
-          f: cur.allergies, g: cur.request, h: cur.memo }) !==
+          // シニア・子供は 2026-10-22 に足した。それより前に保存した予約ストックには無いので 0 とみなして比べる
+          f: cur.allergies, g: cur.request, h: cur.memo, i: Number(cur.seniors) || 0, j: Number(cur.children) || 0 }) !==
             JSON.stringify({ a: r.time, b: r.adults, c: r.kids, d: r.name, e: r.menu,
-              f: r.allergies, g: r.request, h: r.memo })) {
+              f: r.allergies, g: r.request, h: r.memo, i: Number(r.seniors) || 0, j: Number(r.children) || 0 })) {
           r.seenAt = cur.seenAt || r.seenAt; // 30分前通知の再発火を避けるため取込時刻は維持
           byRid[rid] = r; changed = true;
         }
@@ -465,6 +470,7 @@
 
   function onLocalKitchenEvent(msg) {
     if (!msg || !KITCHEN_EVENTS[msg.type]) return;
+    if (msg.fromRelay) return;   // relay から取り込んだ変更を KDS へ知らせたもの。送り返さない
     kitchenQueue.enqueue(msg);
   }
 
@@ -497,6 +503,19 @@
     });
     var seq = load(LS_ORDER, []);
     if (Array.isArray(seq) && seq.length) events.push({ type: "order", seq: seq.map(String) });
+    var serveCue = load(LS_SERVE_CUE, {}) || {};
+    Object.keys(serveCue).forEach(function (id) {
+      if (serveCue[id] && typeof serveCue[id] === "object") events.push({ type: "serveCue", id: id, state: serveCue[id] });
+    });
+    var hallReady = load(LS_HALL_READY, {}) || {};
+    Object.keys(hallReady).forEach(function (id) {
+      if (hallReady[id] && typeof hallReady[id] === "object") events.push({ type: "hallReady", id: id, snapshot: hallReady[id] });
+    });
+    var overrides = load(LS_TABLE_OVERRIDE, {}) || {};
+    Object.keys(overrides).forEach(function (id) {
+      var table = overrideTable(overrides[id]);
+      if (table) events.push({ type: "tableOverride", id: id, table: table, removed: false });
+    });
 
     if (!events.length) return false;
     kitchenQueue.enqueueAll(events);
@@ -510,6 +529,70 @@
     save(LS_LOCKED, snap.locked || {});
     save(LS_ORDER, Array.isArray(snap.seq) ? snap.seq : []);
     save(LS_DELETED, snap.deleted || {});
+    // 前菜/デザート・提供準備完了・卓番の上書きを運ばない古い relay なら、手元の状態を消さない
+    if (isPlainObject(snap.serveCue)) adoptServeCues(snap.serveCue);
+    if (isPlainObject(snap.hallReady)) adoptHallReady(snap.hallReady);
+    if (isPlainObject(snap.tableOverride)) adoptTableOverrides(snap.tableOverride);
+  }
+
+  function isPlainObject(value) {
+    return !!value && typeof value === "object" && !Array.isArray(value);
+  }
+
+  /* 前菜/デザートと提供準備完了は、KDS の poll() が localStorage を読み直さない
+     (前菜/デザート) か、読み直してもカードの帯が作り直されない。そこで localStorage へ
+     書いたうえで、変わった卓だけを KDS の BroadcastChannel 受信へ渡す。受信側は他タブの
+     操作と同じ処理 (帯の差し替え・デザートを出した卓のカードを消す) をする (#288)。
+     fromRelay を付け、他タブのブリッジが relay へ送り返さないようにする。 */
+  function notifyKds(message) {
+    if (!bc) return;
+    message.fromRelay = true;
+    try { bc.postMessage(message); } catch (e) {}
+  }
+
+  function adoptServeCues(next) {
+    var prev = load(LS_SERVE_CUE, {}) || {};
+    save(LS_SERVE_CUE, next);
+    Object.keys(next).forEach(function (id) {
+      var before = prev[id] || {};
+      var after = next[id] || {};
+      // 時刻の付き方の違いだけなら知らせない (帯を作り直すと長押しの途中を切ってしまう)
+      if (!!before.starter === !!after.starter && !!before.dessert === !!after.dessert) return;
+      notifyKds({ type: "serveCue", id: id, state: after });
+    });
+  }
+
+  function adoptHallReady(next) {
+    var prev = load(LS_HALL_READY, {}) || {};
+    save(LS_HALL_READY, next);
+    Object.keys(next).forEach(function (id) {
+      var before = prev[id] || {};
+      var after = next[id] || {};
+      if (before.status === after.status && Number(before.completedAt) === Number(after.completedAt)) return;
+      notifyKds({ type: "hallReady", id: id, snapshot: after });
+    });
+  }
+
+  /* 上書きの卓番。空・壊れた値は「上書きなし」(KDS の effectiveTable と同じ見方) */
+  function overrideTable(value) {
+    if (typeof value !== "string" && typeof value !== "number") return "";
+    return String(value).trim();
+  }
+
+  /* 卓番の上書きは KDS の poll() が毎秒 localStorage を読み直すので、書くだけでも1秒以内に
+     画面へ乗る。ただその間にホールでチビ伝を刷ると元の卓番で出るため、前菜/デザートと同じく
+     変わった卓だけを KDS へ知らせ、すぐに作り直させる。解除 (relay から消えた卓) も知らせる (#293) */
+  function adoptTableOverrides(next) {
+    var prev = load(LS_TABLE_OVERRIDE, {}) || {};
+    save(LS_TABLE_OVERRIDE, next);
+    var ids = Object.keys(next);
+    Object.keys(prev).forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); });
+    ids.forEach(function (id) {
+      var before = overrideTable(prev[id]);
+      var after = overrideTable(next[id]);
+      if (before === after) return;
+      notifyKds({ type: "tableOverride", id: id, table: after || null, removed: !after });
+    });
   }
 
   async function tickKitchen() {

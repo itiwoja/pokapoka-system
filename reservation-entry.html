@@ -8,7 +8,7 @@
   予約入力画面 (中継サーバーが /reservations で配信する)。
   TableCheck API 連携の中止 (2026-10-11) を受け、店員が予約を持ち込む入口を4つ並べる。
     A. 手入力      フォームから1件ずつ
-    B. CSV取込     管理画面から出した CSV をまとめて
+    B. CSV取込     管理画面から出した CSV、または TableCheck の予約一覧 (.xlsx) をまとめて
     C. 貼り付け    予約詳細の文面を貼ってフォームへ流し込む
     D. メール      取込フォルダの通知メール、または貼り付けたメールをフォームへ流し込む
   C と D は読み取った内容をフォームに入れるだけで、登録ボタンを押すまで保存しない。
@@ -69,7 +69,7 @@
   <section>
     <div class="tabs" role="tablist">
       <button type="button" role="tab" data-tab="form" aria-selected="true">手入力</button>
-      <button type="button" role="tab" data-tab="csv" aria-selected="false">CSV取込</button>
+      <button type="button" role="tab" data-tab="csv" aria-selected="false">予約取り込み</button>
       <button type="button" role="tab" data-tab="paste" aria-selected="false">貼り付け</button>
       <button type="button" role="tab" data-tab="mail" aria-selected="false">メール</button>
     </div>
@@ -85,9 +85,12 @@
         <label for="fName">予約者名</label><input type="text" id="fName" maxlength="500">
         <div class="row">
           <div><label for="fAdults">大人</label><input type="number" id="fAdults" min="0" value="2" inputmode="numeric"></div>
-          <div><label for="fKids">子供</label><input type="number" id="fKids" min="0" value="0" inputmode="numeric"></div>
-          <div><label for="fTable">卓番(決まっていれば)</label><input type="text" id="fTable" maxlength="500"></div>
+          <div><label for="fSeniors">シニア</label><input type="number" id="fSeniors" min="0" value="0" inputmode="numeric"></div>
+          <div><label for="fChildren">子供</label><input type="number" id="fChildren" min="0" value="0" inputmode="numeric"></div>
+          <div><label for="fKids">幼児(0〜2歳)</label><input type="number" id="fKids" min="0" value="0" inputmode="numeric"></div>
         </div>
+        <p class="hint" id="fTotal" aria-live="polite"></p>
+        <label for="fTable">卓番(決まっていれば)</label><input type="text" id="fTable" maxlength="500">
         <label>事前メニュー(無い予約は厨房画面に出ません)</label>
         <div id="menuRows"></div>
         <div class="actions" style="margin-top:8px"><button type="button" class="plain" id="menuAdd">＋ 品目を追加</button></div>
@@ -105,9 +108,9 @@
 
     <!-- B. CSV取込 -->
     <div class="pane" data-pane="csv" hidden>
-      <h2>CSVをまとめて取り込む</h2>
-      <p class="hint">1行目を見出しとして読みます。「来店日時」(または「来店日」と「来店時間」)の列が必要です。名前・人数・メニュー・アレルギーなどは、列名から自動で判別します。同じCSVを2回取り込んでも二重登録にはなりません。</p>
-      <input type="file" id="csvFile" accept=".csv,.tsv,.txt,text/csv">
+      <h2>CSV・Excelをまとめて取り込む</h2>
+      <p class="hint">CSV か、TableCheck の予約一覧の Excel (.xlsx) を選んでください。見出しの行を探して読みます (上にタイトル行があってもかまいません)。「来店日時」(または「来店日」と「来店時間」、TableCheck では「予約時間」)の列が必要です。名前・人数 (大人・シニア・子供・幼児)・メニュー・アレルギーなどは、列名から自動で判別します。電話番号やメールアドレスは取り込みません。同じファイルを2回取り込んでも二重登録にはなりません。</p>
+      <input type="file" id="csvFile" accept=".csv,.tsv,.txt,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
       <div class="actions">
         <button type="button" class="plain" id="csvCheck" disabled>内容を確認する</button>
         <button type="button" class="primary" id="csvImport" disabled>取り込む</button>
@@ -155,6 +158,7 @@
   </section>
 </main>
 
+<script src="relay-server/party-size.js"></script>
 <script>
 (function () {
   "use strict";
@@ -196,6 +200,7 @@
     });
   }
   function errorText(result) {
+    if (result.status === 413) return "ファイルが大きすぎます (5MBまで)。期間を区切って書き出してください";
     return result.body && result.body.error ? result.body.error : "サーバーから応答がありません (" + result.status + ")";
   }
 
@@ -230,6 +235,7 @@
     $("formTitle").textContent = "予約を登録";
     $("formSubmit").textContent = "登録する";
     setMsg($("formWarn"), "", "warn");
+    updateTotal();
   }
 
   /** 予約または下書きをフォームへ入れる。asNew が真なら rid を持たせつつ新規登録として扱う */
@@ -243,7 +249,10 @@
     } else { $("fDate").value = ""; $("fTime").value = ""; }
     $("fName").value = rec.name && rec.name !== "(名前なし)" ? rec.name : "";
     $("fAdults").value = rec.adults != null ? rec.adults : 0;
+    $("fSeniors").value = rec.seniors != null ? rec.seniors : 0;
+    $("fChildren").value = rec.children != null ? rec.children : 0;
     $("fKids").value = rec.kids != null ? rec.kids : 0;
+    updateTotal();
     $("fTable").value = rec.table || "";
     $("fAllergies").value = rec.allergies || "";
     $("fRequest").value = rec.request || "";
@@ -268,7 +277,8 @@
     });
     var body = {
       startAt: localIso($("fDate").value, $("fTime").value),
-      name: $("fName").value, adults: parseInt($("fAdults").value, 10) || 0, kids: parseInt($("fKids").value, 10) || 0,
+      name: $("fName").value, adults: parseInt($("fAdults").value, 10) || 0, seniors: parseInt($("fSeniors").value, 10) || 0,
+      children: parseInt($("fChildren").value, 10) || 0, kids: parseInt($("fKids").value, 10) || 0,
       table: $("fTable").value, menu: menu,
       allergies: $("fAllergies").value, request: $("fRequest").value, memo: $("fMemo").value,
       status: editing.status,
@@ -300,6 +310,18 @@
   $("menuAdd").addEventListener("click", function () { addMenuRow(); });
 
   /* ---------- 登録済みの一覧 ---------- */
+  /** 合計人数と内訳 ("計5名 (大人2・シニア1・子供1・幼児1)")。0人の区分は内訳に出さない。prefix で先頭の「計」を変える */
+  function peopleText(rec, prefix) {
+    var parts = PartySize.breakdown(rec).map(function (p) { return p.label + p.n; });
+    return (prefix == null ? "計" : prefix) + PartySize.total(rec) + "名" + (parts.length ? " (" + parts.join("・") + ")" : "");
+  }
+  function updateTotal() {
+    $("fTotal").textContent = peopleText({
+      adults: $("fAdults").value, seniors: $("fSeniors").value, children: $("fChildren").value, kids: $("fKids").value,
+    }, "合計 ");
+  }
+  ["fAdults", "fSeniors", "fChildren", "fKids"].forEach(function (id) { $(id).addEventListener("input", updateTotal); });
+
   function summary(rec) {
     var parts = [(rec.menu || []).map(function (m) { return m.name + " ×" + m.qty; }).join("、") || "(メニューなし)"];
     if (rec.allergies) parts.push("アレルギー: " + rec.allergies);
@@ -321,7 +343,7 @@
         var tr = el("tr", null, rec.status === "booked" ? "" : "off");
         tr.appendChild(el("td", timeStr(new Date(rec.startAt))));
         tr.appendChild(el("td", rec.name + (STATUS_LABEL[rec.status] ? " (" + STATUS_LABEL[rec.status] + ")" : "")));
-        tr.appendChild(el("td", "大人" + rec.adults + (rec.kids ? " 子供" + rec.kids : "")));
+        tr.appendChild(el("td", peopleText(rec)));
         tr.appendChild(el("td", summary(rec)));
         var ops = el("td"); ops.style.textDecoration = "none"; ops.style.whiteSpace = "nowrap";
         var edit = el("button", "変更", "plain"); edit.type = "button";
@@ -352,7 +374,7 @@
   $("listToday").addEventListener("click", function () { $("listDate").value = dateStr(new Date()); loadList(); });
 
   /* ---------- B. CSV取込 ---------- */
-  var FIELD_LABEL = { rid: "予約ID", datetime: "来店日時", date: "来店日", time: "来店時間", name: "名前", adults: "大人", kids: "子供", pax: "人数", menu: "メニュー", allergies: "アレルギー", request: "要望", memo: "メモ", table: "卓番", status: "状態" };
+  var FIELD_LABEL = { rid: "予約ID", datetime: "来店日時", date: "来店日", time: "来店時間", name: "名前", adults: "大人", seniors: "シニア", children: "子供", kids: "幼児", pax: "人数", menu: "メニュー", allergies: "アレルギー", request: "要望", memo: "メモ", table: "卓番", status: "状態" };
 
   function renderCsv(body) {
     var box = $("csvPreview");
@@ -372,7 +394,7 @@
       tr.appendChild(el("td", String(row.line)));
       tr.appendChild(el("td", when));
       tr.appendChild(el("td", rec.name || "(名前なし)"));
-      tr.appendChild(el("td", "大人" + (rec.adults || 0) + (rec.kids ? " 子供" + rec.kids : "")));
+      tr.appendChild(el("td", peopleText(rec)));
       tr.appendChild(el("td", summary(rec)));
       tr.appendChild(el("td", row.ok ? (rec.status === "canceled" ? "取消として取込" : "OK") : row.errors.join(" / ")));
       tbody.appendChild(tr);
@@ -385,7 +407,8 @@
     var file = $("csvFile").files[0];
     if (!file) return;
     $("csvCheck").disabled = $("csvImport").disabled = true;
-    api("POST", API + "/import/csv" + (dryRun ? "?dryRun=1" : ""), file, { "Content-Type": "text/csv" }).then(function (result) {
+    // サーバーは中身の先頭で CSV か Excel かを見分ける。Content-Type は目安として付けるだけ
+    api("POST", API + "/import/csv" + (dryRun ? "?dryRun=1" : ""), file, { "Content-Type": file.type || "application/octet-stream" }).then(function (result) {
       var body = result.body || {};
       if (result.status !== 200) { setMsg($("csvMsg"), errorText(result), "err"); renderCsv(body); return; }
       renderCsv(body);
@@ -440,7 +463,7 @@
           var d = item.draft;
           var when = d.startAt ? dateStr(new Date(d.startAt)) + " " + timeStr(new Date(d.startAt)) : "(日時不明)";
           card.appendChild(el("div", (d.status === "canceled" ? "【取消】" : "") + when + " / " + (d.name || "(名前不明)") +
-            " / 大人" + d.adults + (d.kids ? " 子供" + d.kids : "") + " / " + summary(d)));
+            " / " + peopleText(d) + " / " + summary(d)));
           if (item.warnings.length) card.appendChild(el("div", item.warnings.join("\n"), "msg warn"));
         }
         var actions = el("div", null, "actions"); actions.style.marginTop = "8px";

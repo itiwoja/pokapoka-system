@@ -1,0 +1,30 @@
+.kds-rail-view{display:flex;flex-direction:column;height:100vh;background:var(--bg);color:var(--text);font-family:var(--font);overflow:hidden}
+.kds-rail-clock{position:fixed;top:12px;left:20px;font-size:28px;font-weight:800;z-index:2}
+.kds-rail-bar{flex:none;margin:64px 20px 0;height:10px;background:var(--text);border-radius:5px;position:relative;z-index:1}
+.kds-rail-stage{position:relative;flex:1;min-height:0;margin:0 20px}
+.kds-rail-line10{position:absolute;left:0;right:0;border-top:2px dashed var(--alert);pointer-events:none}
+.kds-rail-line10 span{position:absolute;right:0;top:-24px;color:var(--alert);font-weight:700;font-size:16px}
+.kds-rail-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--done);pointer-events:none}
+/* この案に限り横スクロール可。バーは出さない */
+.kds-rail-strips{position:relative;height:100%;display:flex;gap:14px;align-items:flex-start;overflow:auto;scrollbar-width:none}
+.kds-rail-strips::-webkit-scrollbar{display:none}
+.kds-rail-spacer{flex:1}
+.kds-rail-strip{flex:none;width:150px;background:var(--surface);border-radius:0 0 12px 12px;padding:12px 12px 8px;position:relative;box-shadow:0 2px 0 var(--line);transition:margin-top .6s linear}
+.kds-rail-strip::before{content:"";position:absolute;left:50%;top:-10px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:var(--text)}
+.kds-rail-strip.finishing{opacity:.4}
+.kds-rail-t{font-size:40px;font-weight:800;line-height:1}
+.kds-rail-age{font-size:15px;color:var(--text-sub);margin:2px 0 10px}
+.kds-rail-it{display:block;width:100%;min-height:44px;text-align:left;font:inherit;font-size:20px;font-weight:700;color:var(--text);background:none;border:0;border-top:1px solid var(--line);padding:8px 0;cursor:pointer}
+.kds-rail-it small{display:block;font-size:15px;font-weight:600;color:var(--text-sub)}
+.kds-rail-it small.al,.kds-rail-note.al{color:var(--alert)}
+.kds-rail-it.done{color:var(--done);text-decoration:line-through}
+.kds-rail-it.pressing{background:var(--bg)}
+.kds-rail-it.static{cursor:default}
+.kds-rail-q{font-size:14px;color:var(--text-sub);margin-right:4px}
+.kds-rail-prog{font-size:14px;color:var(--text-sub)}
+.kds-rail-note{font-size:15px;font-weight:600;color:var(--text-sub);border-top:1px solid var(--line);padding:6px 0}
+.kds-rail-k{position:absolute;top:10px;right:10px;min-height:0;font:inherit;font-size:14px;font-weight:800;color:var(--text);background:none;border:2px solid var(--text);border-radius:6px;padding:0 5px;cursor:pointer}
+.kds-rail-foot{display:flex;gap:4px;justify-content:flex-end;border-top:1px solid var(--line)}
+.kds-rail-mini{min-height:44px;padding:0 8px;font:inherit;font-size:14px;color:var(--text-sub);background:none;border:0;cursor:pointer}
+.kds-rail-strip.res{opacity:.55}
+.kds-rail-strip.res .kds-rail-t{font-size:30px;color:var(--reserved)}

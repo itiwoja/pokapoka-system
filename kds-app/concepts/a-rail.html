@@ -1,0 +1,33 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><link rel="stylesheet" href="common.css"><style>
+body{display:flex;flex-direction:column}
+.rail{position:relative;margin:64px 20px 0;height:10px;background:var(--text);border-radius:5px}
+.strips{position:relative;flex:1;margin:0 20px;display:flex;gap:14px;align-items:flex-start}
+.line10{position:absolute;left:0;right:0;top:420px;border-top:2px dashed var(--alert);}
+.line10 span{position:absolute;right:0;top:-24px;color:var(--alert);font-weight:700;font-size:16px}
+.strip{width:150px;background:var(--surface);border-radius:0 0 12px 12px;padding:12px 12px 14px;position:relative;box-shadow:0 2px 0 var(--line)}
+.strip::before{content:"";position:absolute;left:50%;top:-10px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:var(--text)}
+.t{font-size:40px;font-weight:800;line-height:1}
+.age{font-size:15px;color:var(--sub);margin:2px 0 10px}
+.it{font-size:20px;font-weight:700;padding:8px 0;border-top:1px solid var(--line)}
+.it small{display:block;font-size:15px;font-weight:600}
+.it .al{color:var(--alert)}
+.it.done{color:var(--done);text-decoration:line-through}
+.k{position:absolute;top:10px;right:10px;font-size:14px;font-weight:800;border:2px solid var(--text);border-radius:6px;padding:0 5px}
+.res{opacity:.55}.res .t{font-size:30px;color:var(--gold)}
+.q{font-size:14px;color:var(--sub);margin-right:4px}
+</style></head><body>
+<div class="clock">10:43</div>
+<div class="rail"></div>
+<div class="strips">
+  <div class="line10"><span>10分</span></div>
+  <div class="strip" style="margin-top:430px"><div class="k">3</div><div class="t">3</div><div class="age">28:21</div><div class="it"><span class="q">2</span>鯛めし<small>大盛り</small></div><div class="it"><span class="q">2</span>味噌汁</div><div class="it"><span class="q">1</span>だし巻き玉子<small class="al">卵</small></div></div>
+  <div class="strip" style="margin-top:360px"><div class="t">7</div><div class="age">24:21</div><div class="it"><span class="q">1</span>鶏めし<small>ごはん少なめ</small></div><div class="it done"><span class="q">1</span>サラダ</div></div>
+  <div class="strip" style="margin-top:300px"><div class="k">5</div><div class="t">12</div><div class="age">22:21</div><div class="it"><span class="q">3</span>牛すき釜飯</div><div class="it"><span class="q">3</span>漬物</div></div>
+  <div class="strip" style="margin-top:220px"><div class="t">5</div><div class="age">20:21</div><div class="it"><span class="q">1</span>海鮮釜飯<small class="al">えび・かに</small></div><div class="it"><span class="q">1</span>茶碗蒸し</div></div>
+  <div class="strip" style="margin-top:130px"><div class="t">A2</div><div class="age">8:21</div><div class="it"><span class="q">2</span>きのこ釜飯<small>取り分け皿</small></div><div class="it"><span class="q">1</span>唐揚げ</div></div>
+  <div class="strip" style="margin-top:40px"><div class="t">9</div><div class="age">1:21</div><div class="it"><span class="q">1</span>鯛めし</div><div class="it"><span class="q">1</span>デザート<small>先出し</small></div></div>
+  <div style="flex:1"></div>
+  <div class="strip res" style="margin-top:0"><div class="t">10:47</div><div class="age">山田 5名</div><div class="it"><span class="q">4</span>鯛めし</div><div class="it"><span class="q">1</span>お子様セット</div><div class="it"><small class="al">アレルギー: そば</small></div></div>
+  <div class="strip res" style="margin-top:0"><div class="t">11:47</div><div class="age">佐藤 2名</div><div class="it"><span class="q">2</span>牛すき釜飯</div></div>
+</div>
+</body></html>

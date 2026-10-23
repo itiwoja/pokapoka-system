@@ -1,0 +1,21 @@
+.kds-topbar-wrap { flex: none; }
+.kds-topbar {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  background: var(--bg);
+}
+.kds-topbar-clock { font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.kds-topbar-counts { display: flex; gap: 24px; font-size: 18px; color: var(--text-sub); }
+.kds-topbar-count b { font-size: 24px; color: var(--text); font-variant-numeric: tabular-nums; margin-left: 4px; }
+.kds-topbar-count--alert, .kds-topbar-count--alert b { color: var(--alert); font-weight: 800; }
+.kds-topbar-offline {
+  background: var(--alert);
+  color: var(--surface);
+  text-align: center;
+  font-size: 18px;
+  font-weight: 700;
+  padding: 10px 16px;
+}
