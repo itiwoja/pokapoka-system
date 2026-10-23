@@ -283,6 +283,7 @@ cd relay-server && npm run preflight
 | パス | 内容 |
 |---|---|
 | `/` , `/kds-a-grid.html` | KDS 本体(配信時にブリッジを1行注入) |
+| `/kds-next` | React 版 KDS(`kds-next.html`。ブリッジは自身で読むため注入しない)。`kds-app/` のビルドで生成。現行 `/kds` は受け入れまで残す |
 | `/api/stock` | KDS 予約ストック形式 `[{rid,time,adults,seniors,children,kids,name,menu[],allergies?,request?,seenAt}]`。人数は大人・シニア・子供・幼児(`kids`、0〜2歳)を分けて持ち、合計は KDS が4つを足して出す。`allergies` はアレルギー、`request` は要望の注記。当日の `booked` だけで、メニュー無し(席だけ)予約は含まない |
 | `/reservations` | 予約入力画面(`reservation-entry.html`)。→「予約の入口」 |
 | `GET /api/reservations?date=YYYY-MM-DD` | 指定日(省略時は当日)の予約一覧 `{date,reservations[]}`。取消済みも含む |
