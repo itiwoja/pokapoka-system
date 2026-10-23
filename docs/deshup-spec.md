@@ -86,7 +86,7 @@
 - 予約メニューを既存の `itemCategory` で判定し、rice品目を1品以上含み予約時刻まで30分以内（時刻超過を含む）の全予約へ独立した「炊飯準備」cueを表示する。非rice・31分以上には表示せず、同時表示件数に上限を設けない。cue状態はrid単位で `kds_rice_cue_v1` に保存し、確認操作はキッチンだけに許可する。
 - 厨房限定卓番overrideは `kds_table_override_v1` にorder id単位で保存する。`effectiveTable(order)` を表示・伝票preview・hall-ready snapshot・コンロ所有卓表示にだけ適用し、`window.KDS_ORDERS`、`order.table`、relay/POS/TableCheck、`/api/seats` は変更しない。重複候補は初回決定で保存せず警告し、同一候補の「重複を許可して変更」を2回目の決定として保存する。候補変更、モーダル閉鎖、モード変更で確認状態を解除する。
 - 全品目完了時はカード消去前に `kds_hall_ready_v1` へorder id単位のsnapshot（effective卓番、完了時刻、品目要約）をidempotentに作る。cueはホール専用で、dismissed tombstoneは当日中保持する。dismissは専用6秒undoでactiveへ戻せ、既存厨房完了undoとはstate/timerを共有しない。
-- 炊飯準備cue（`kds_rice_cue_v1`）と卓番override（`kds_table_override_v1`）は `kds_sync` の同一originタブ間だけで同期し、relayへ送らない。提供準備完了（`kds_hall_ready_v1`）と前菜/デザート（`kds_serve_cue_v1`）は、厨房とホールを別端末にするとデザート待ちのカードが消えるため、#288 で `KITCHEN_EVENTS` に加え、`/api/kitchen-state` 経由で別端末とも同期する。#155最終選定、#152完全版、上流書戻しは別計画とする。
+- 炊飯準備cue（`kds_rice_cue_v1`）は `kds_sync` の同一originタブ間だけで同期し、relayへ送らない。提供準備完了（`kds_hall_ready_v1`）と前菜/デザート（`kds_serve_cue_v1`）は、厨房とホールを別端末にするとデザート待ちのカードが消えるため、#288 で `KITCHEN_EVENTS` に加え、`/api/kitchen-state` 経由で別端末とも同期する。卓番override（`kds_table_override_v1`）も、チビ伝はホールで刷る（#226）ため別端末では元の卓番で出ていたので、#293 で同じ経路に加える。運ぶのは表示上の上書きだけで、`order.table`・relayの注文・`/api/seats` は変えない。#155最終選定、#152完全版、上流書戻しは別計画とする。
 
 ## Issue #204 現行版への確認済み記録の適用範囲
 

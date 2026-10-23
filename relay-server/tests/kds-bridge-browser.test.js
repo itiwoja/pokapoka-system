@@ -331,6 +331,55 @@ test("前菜/デザートと提供準備完了も種として送り、取り込�
   assert.equal(bridge.stored("kds_hall_ready_v1").o2.status, "active");
 });
 
+test("卓番の上書きも種として送り、取り込んだ変更と解除を KDS へ知らせて送り返さない (#293)", async function () {
+  var snapshot = { sessionId: "s1", rev: 0, konro: {}, done: {}, locked: {}, seq: [], deleted: {},
+    serveCue: {}, hallReady: {}, tableOverride: {} };
+  var bridge = startBridge({
+    "GET /api/kitchen-state": function () { return { status: 200, body: snapshot }; },
+    "POST /api/kitchen-state": ok({ ok: true, rev: 1, sessionId: "s1" }),
+  }, { storage: {
+    // 空・壊れた値は「上書きなし」なので種にしない
+    kds_table_override_v1: JSON.stringify({ o1: "12", o2: "", o3: { table: "9" } }),
+  } });
+  await settle();
+
+  assert.deepEqual(bridge.posts("/api/kitchen-state"), [{ events: [
+    { type: "tableOverride", id: "o1", table: "12", removed: false },
+  ] }]);
+
+  // 別端末 (厨房) で o2 の卓番を 14 に変えた
+  snapshot = { sessionId: "s1", rev: 3, konro: {}, done: {}, locked: {}, seq: [], deleted: {},
+    serveCue: {}, hallReady: {}, tableOverride: { o1: "12", o2: "14" } };
+  await bridge.tick("tickKitchen");
+  assert.deepEqual(bridge.stored("kds_table_override_v1"), { o1: "12", o2: "14" });
+  // 変わった卓だけを、KDS の BroadcastChannel 受信 (msg.type === "tableOverride") が扱う形で知らせる
+  assert.deepEqual(plain(bridge.channel.posted), [
+    { type: "tableOverride", id: "o2", table: "14", removed: false, fromRelay: true },
+  ]);
+
+  // 別端末で o1 の上書きを解除した (relay から消えた卓も知らせる)
+  snapshot = { sessionId: "s1", rev: 4, konro: {}, done: {}, locked: {}, seq: [], deleted: {},
+    serveCue: {}, hallReady: {}, tableOverride: { o2: "14" } };
+  await bridge.tick("tickKitchen");
+  assert.deepEqual(bridge.stored("kds_table_override_v1"), { o2: "14" });
+  assert.deepEqual(plain(bridge.channel.posted.slice(1)), [
+    { type: "tableOverride", id: "o1", table: null, removed: true, fromRelay: true },
+  ]);
+
+  // 他タブのブリッジが知らせを受けても relay へ送り返さない。この端末での変更は送る
+  bridge.channel.onmessage({ data: plain(bridge.channel.posted[0]) });
+  bridge.channel.onmessage({ data: { type: "tableOverride", id: "o2", table: "15", removed: false } });
+  await waitUntil(function () { return bridge.posts("/api/kitchen-state").length > 1; });
+  assert.deepEqual(bridge.posts("/api/kitchen-state")[1], { events: [
+    { type: "tableOverride", id: "o2", table: "15", removed: false },
+  ] });
+
+  // 卓番の上書きを運ばない古い relay の応答では、手元の上書きを消さない
+  snapshot = { sessionId: "s1", rev: 5, konro: {}, done: {}, locked: {}, seq: [], deleted: {} };
+  await bridge.tick("tickKitchen");
+  assert.deepEqual(bridge.stored("kds_table_override_v1"), { o2: "14" });
+});
+
 test("KDS の操作イベントを relay へ送り、着席は予約者名付きで座席占有へ登録する", async function () {
   var bridge = startBridge({
     "GET /api/stock": ok([reservation("r1")]),

@@ -43,6 +43,7 @@
   var LS_DELETED = "kds_deleted_v1";
   var LS_SERVE_CUE = "kds_serve_cue_v1";     // 前菜/デザートの提供 (#288)
   var LS_HALL_READY = "kds_hall_ready_v1";   // 提供準備完了 snapshot。ホールのデザート待ちカードの根拠 (#288)
+  var LS_TABLE_OVERRIDE = "kds_table_override_v1"; // 厨房の卓番の上書き。ホールのチビ伝もこの卓番で刷る (#293)
   var LS_SERVER_ORDERS = "kds_server_orders_v1"; // 前回フィード。再読込・通信断をまたぐ品目状態移行に使う
   var BC_NAME = "kds_sync";
   var POLL_MS = 5000;                        // 店内 LAN なので短くてよい
@@ -55,7 +56,8 @@
   var SYNC_DELAYED_MS = 10000;               // 一時的な失敗では警告せず、10秒継続で遅延
   var SYNC_OFFLINE_MS = 30000;               // 30秒成功が無ければオフライン
   var SYNC_CHANNELS = ["reservations", "orders", "kitchen"];
-  var KITCHEN_EVENTS = { konro: 1, toggle: 1, timerLock: 1, order: 1, deleteOrder: 1, serveCue: 1, hallReady: 1 };
+  var KITCHEN_EVENTS = { konro: 1, toggle: 1, timerLock: 1, order: 1, deleteOrder: 1, serveCue: 1, hallReady: 1,
+    tableOverride: 1 };
 
   var bc = null; // ブラウザで動く時だけ末尾で生成 (Node にも BroadcastChannel があり、生成するとテストプロセスが終了しなくなる)
 
@@ -509,6 +511,11 @@
     Object.keys(hallReady).forEach(function (id) {
       if (hallReady[id] && typeof hallReady[id] === "object") events.push({ type: "hallReady", id: id, snapshot: hallReady[id] });
     });
+    var overrides = load(LS_TABLE_OVERRIDE, {}) || {};
+    Object.keys(overrides).forEach(function (id) {
+      var table = overrideTable(overrides[id]);
+      if (table) events.push({ type: "tableOverride", id: id, table: table, removed: false });
+    });
 
     if (!events.length) return false;
     kitchenQueue.enqueueAll(events);
@@ -522,9 +529,10 @@
     save(LS_LOCKED, snap.locked || {});
     save(LS_ORDER, Array.isArray(snap.seq) ? snap.seq : []);
     save(LS_DELETED, snap.deleted || {});
-    // 前菜/デザートと提供準備完了を運ばない古い relay なら、手元の状態を消さない
+    // 前菜/デザート・提供準備完了・卓番の上書きを運ばない古い relay なら、手元の状態を消さない
     if (isPlainObject(snap.serveCue)) adoptServeCues(snap.serveCue);
     if (isPlainObject(snap.hallReady)) adoptHallReady(snap.hallReady);
+    if (isPlainObject(snap.tableOverride)) adoptTableOverrides(snap.tableOverride);
   }
 
   function isPlainObject(value) {
@@ -562,6 +570,28 @@
       var after = next[id] || {};
       if (before.status === after.status && Number(before.completedAt) === Number(after.completedAt)) return;
       notifyKds({ type: "hallReady", id: id, snapshot: after });
+    });
+  }
+
+  /* 上書きの卓番。空・壊れた値は「上書きなし」(KDS の effectiveTable と同じ見方) */
+  function overrideTable(value) {
+    if (typeof value !== "string" && typeof value !== "number") return "";
+    return String(value).trim();
+  }
+
+  /* 卓番の上書きは KDS の poll() が毎秒 localStorage を読み直すので、書くだけでも1秒以内に
+     画面へ乗る。ただその間にホールでチビ伝を刷ると元の卓番で出るため、前菜/デザートと同じく
+     変わった卓だけを KDS へ知らせ、すぐに作り直させる。解除 (relay から消えた卓) も知らせる (#293) */
+  function adoptTableOverrides(next) {
+    var prev = load(LS_TABLE_OVERRIDE, {}) || {};
+    save(LS_TABLE_OVERRIDE, next);
+    var ids = Object.keys(next);
+    Object.keys(prev).forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); });
+    ids.forEach(function (id) {
+      var before = overrideTable(prev[id]);
+      var after = overrideTable(next[id]);
+      if (before === after) return;
+      notifyKds({ type: "tableOverride", id: id, table: after || null, removed: !after });
     });
   }
 

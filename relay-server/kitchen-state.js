@@ -16,10 +16,15 @@
  *   { type:"deleteOrder", id }
  *   { type:"serveCue",    id, state:{starter, dessert, starterAt, dessertAt, day} }   前菜/デザート (#288)
  *   { type:"hallReady",   id, snapshot:{orderId, table, people, completedAt, items, status, ...} }  提供準備完了 (#288)
+ *   { type:"tableOverride", id, table, removed }   卓番の上書き。removed か空の table で解除 (#293)
  *
  * 前菜/デザートと提供準備完了はホールの端末が持つ状態だが、厨房とホールを別端末にすると
  * これも届かない。ホールのリロードでデザート待ちのカードが消え、厨房では前菜が未提供のまま
  * 見えていた (#288)。同じ経路で運ぶ。
+ *
+ * 卓番の上書き (#160) は厨房で作る表示上の上書きだが、チビ伝はホールで刷る (#226)。
+ * 届かないとホールのチビ伝が元の卓番で出る (#293)。これも同じ経路で運ぶ。
+ * 注文の table (上流) は変えない。
  *
  * 全イベントが「絶対値の代入」なので、再送・重複適用しても結果が変わらない (冪等)。
  * 端末が複数タブを開いていて同じイベントが二重に届いても壊れない。
@@ -54,6 +59,7 @@ function createState(sessionId) {
     deleted: {},
     serveCue: {},
     hallReady: {},
+    tableOverride: {},
   };
 }
 
@@ -132,6 +138,17 @@ function normalizeHallReady(id, value) {
   return snapshot;
 }
 
+/* 卓番の上書き (kds-a-grid.html の broadcastTableOverride が送る形)。解除なら ""、
+   不正な形なら null。KDS は6文字までしか入力させないので、上限を超えるものは切らずに受理しない
+   (切ると別の卓番になる) */
+function normalizeTableOverride(event) {
+  if (event.removed || event.table == null) return "";
+  if (typeof event.table !== "string" && typeof event.table !== "number") return null;
+  var table = String(event.table).trim();
+  if (table.length > MAX_TABLE_LENGTH) return null;
+  return table;
+}
+
 /* 上限を超えた分は最も古いキーから落とす。掃除の正本は各端末側 (prune) にあるが、
    端末が落ちたまま戻らないケースで relay 側が無制限に太らないようにする */
 function capKeys(map, max) {
@@ -145,6 +162,7 @@ function forgetCard(state, id) {
   delete state.locked[id];
   delete state.serveCue[id];
   delete state.hallReady[id];
+  delete state.tableOverride[id];
   state.seq = state.seq.filter(function (x) { return x !== id; });
 }
 
@@ -248,6 +266,17 @@ function applyEvent(state, event) {
     return { ok: true };
   }
 
+  if (event.type === "tableOverride") {
+    var overrideId = validId(event.id);
+    if (!overrideId) return { error: "tableOverride.id is invalid" };
+    var table = normalizeTableOverride(event);
+    if (table === null) return { error: "tableOverride.table is invalid" };
+    if (table) state.tableOverride[overrideId] = table;
+    else delete state.tableOverride[overrideId];
+    capKeys(state.tableOverride, MAX_CARDS);
+    return { ok: true };
+  }
+
   return { ok: true, ignored: true };
 }
 
@@ -284,6 +313,7 @@ function purgeStale(state, now, ttlMs) {
   state.deleted = {};
   state.serveCue = {};
   state.hallReady = {};
+  state.tableOverride = {};
   state.rev++;
   state.updatedAt = now;
   return true;
@@ -301,6 +331,7 @@ function snapshot(state) {
     deleted: state.deleted,
     serveCue: state.serveCue,
     hallReady: state.hallReady,
+    tableOverride: state.tableOverride,
   };
 }
 
