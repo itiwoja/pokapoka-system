@@ -250,6 +250,12 @@
     return lineH * lines.length;
   }
 
+  /** 品目のアレルギー1行の文言 (#294)。KDS の旧式伝票 (DOM) も同じ文言を使う。空なら "" */
+  function allergyLine(text) {
+    var s = text == null ? "" : String(text).trim();
+    return s ? "【アレルギー】" + s : "";
+  }
+
   /** 品目リスト1つ分を測る/描く。戻り値は高さ(ドット) */
   function drawItems(ctx, measure, el, order, x, y) {
     var items = (order && order.items) || [];
@@ -278,6 +284,13 @@
       var sub = { align: el.align, font: el.font, bold: false, lineHeight: el.lineHeight };
       if (el.qtyShow && el.qtyPos === "below") {
         total += drawLines(ctx, measure, sub, el.qtySize, qty, x + el.noteIndent, y + total, el.w - el.noteIndent);
+      }
+      // アレルギーは備考 (noteSize) に混ぜず、品名と同じ大きさの太字で独立した行にする (#294)。
+      // 紙は色が出ないので、見出しと大きさで備考と見分ける。幅は備考と同じく字下げした枠で折り返す
+      var allergy = allergyLine(it && it.allergy);
+      if (el.noteShow && allergy) {
+        var strong = { align: el.align, font: el.font, bold: true, lineHeight: el.lineHeight };
+        total += drawLines(ctx, measure, strong, el.size, allergy, x + el.noteIndent, y + total, el.w - el.noteIndent);
       }
       var note = it && it.note ? String(it.note) : "";
       if (el.noteShow && note) {
@@ -333,7 +346,8 @@
 
   /**
    * canvas にテンプレートを描画する (canvas のサイズもここで確定させる)。
-   * order は { store, table, meta, people, kind, orderNo, date, time, items:[{name,qty,note}] }
+   * order は { store, table, meta, people, kind, orderNo, date, time, items:[{name,qty,note,allergy}] }
+   * (allergy は任意。あれば品名と同じ大きさの独立した行で描く #294)
    */
   function renderToCanvas(canvas, tpl, order) {
     tpl = normalizeTemplate(tpl);
@@ -396,6 +410,7 @@
     normalizeTemplate: normalizeTemplate,
     isTemplate: isTemplate,
     fillFields: fillFields,
+    allergyLine: allergyLine,
     layout: layout,
     renderToCanvas: renderToCanvas,
     canvasToRaster: canvasToRaster,

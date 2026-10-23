@@ -848,6 +848,9 @@
     -webkit-line-clamp: 2;
     line-clamp: 2;
   }
+  /* 品目のアレルギーは予約のアレルギー (.order-note.allergy) と同じ見た目 (上の規則)。
+     安全情報なので備考のような2行の省略はしない (#294) */
+  .item-main .item-allergy { margin-top: 4px; padding: 4px 8px; }
   /* 署名: 黒塗り四角 + 白数字 (Okage) */
   .item-qty  {
     --qty-box-size: 34px;
@@ -871,7 +874,8 @@
 
   /* 完了状態: 打ち消し線 + 減光 (色だけに頼らず線で示す) */
   .item.done .item-name { text-decoration: line-through; text-decoration-thickness: 2px; color: var(--text-secondary); }
-  .item.done .item-opt  { text-decoration: line-through; opacity: .7; }
+  .item.done .item-opt,
+  .item.done .item-allergy { text-decoration: line-through; opacity: .7; }
   .item.done .item-qty  { opacity: .4; }
   .item.done .check {
     background: var(--u-ok);
@@ -1235,15 +1239,16 @@
   .reservation-notes, .order-notes {
     display: flex; flex-direction: column; gap: 5px; margin-top: 8px;
   }
-  .reservation-note, .order-note {
+  /* 注文の品目に付いたアレルギー (.item-allergy) も、備考 (.item-opt) と分けて同じ強調で出す (#294) */
+  .reservation-note, .order-note, .item-allergy {
     display: flex; align-items: flex-start; gap: 7px; padding: 7px 9px;
     border-left: 4px solid var(--border-strong); background: var(--bg-raise);
     color: var(--text-primary); font-size: 14px; font-weight: 700; line-height: 1.35;
     overflow-wrap: anywhere;
   }
-  .reservation-note .label, .order-note .label { flex: 0 0 auto; font-weight: 900; }
-  .reservation-note .value, .order-note .value { min-width: 0; white-space: pre-wrap; }
-  .reservation-note.allergy, .order-note.allergy {
+  .reservation-note .label, .order-note .label, .item-allergy .label { flex: 0 0 auto; font-weight: 900; }
+  .reservation-note .value, .order-note .value, .item-allergy .value { min-width: 0; white-space: pre-wrap; }
+  .reservation-note.allergy, .order-note.allergy, .item-allergy {
     border-left-color: #b42318; background: #fff1f0; color: #7a1c16;
   }
   .reservation-note.request, .order-note.request {
@@ -1408,6 +1413,8 @@
   .slip li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; font-size: 22px; line-height: 1.3; font-weight: 700; padding: 5px 0; }   /* 品名22px+ (#11 のAA基準に合わせる) */
   .slip li .o { flex-basis: 100%; font-size: 13px; font-weight: 500; color: #333; }
   .slip li .q { font-family: var(--font-num); }
+  /* アレルギーは品名と同じ大きさ・太さで独立した行にする。紙は色が出ないので見出しと大きさで分ける (#294) */
+  .slip li .a { flex-basis: 100%; padding-left: 1em; font-weight: 700; color: #000; }
   /* レイアウト設定(自由配置)がある場合はこの印字イメージだけを見せる。
      感熱ヘッドのドットをそのまま拡大表示したいので補間しない */
   .slip-canvas { display: none; width: 100%; height: auto; image-rendering: pixelated; }
@@ -2055,7 +2062,7 @@
   .res-card.late { border-left-color: var(--u-alert); }
   .res-soon-badge { border-radius: 0; border: 1px solid rgba(0,0,0,.3); }
   .res-menu { border-top: 1px solid var(--border-soft); }
-  .reservation-note, .order-note { border-radius: 0; }
+  .reservation-note, .order-note, .item-allergy { border-radius: 0; }
   /* 卓番ボタン = JComboBox (右端に ▼ の矢印ボタン) */
   .res-seat { position: relative; padding-left: 6px; padding-right: 28px; white-space: nowrap; font-weight: 700; }
   .res-seat::after {
@@ -2969,10 +2976,35 @@
       return String(value).trim();
     }
 
+    /* 品目の備考 (options) とアレルギーを別々に取り出す。カードとチビ伝はアレルギーを
+       備考と分けて強調する (#294)。1本にまとめた itemNotesText は、構造シグネチャ・レーン表示・
+       実機のテキスト印字など、まだ分けていない所のために残す。 */
+    function itemOptionText(item) {
+      return normalizeNoteValue(item.options);
+    }
+    function itemAllergyText(item) {
+      return normalizeNoteValue(item.allergies || item.allergy || item.allergyInfo);
+    }
+    /* 品目のアレルギー1件ぶんの表示。予約のアレルギー (.order-note.allergy) と同じ
+       「見出し + 値」の形にする。品目ボタンの中に入るので span で組む。 */
+    function buildItemAllergy(text) {
+      if (!text) return null;
+      var wrap = document.createElement("span");
+      wrap.className = "item-allergy";
+      var label = document.createElement("span");
+      label.className = "label";
+      label.textContent = "アレルギー";
+      var value = document.createElement("span");
+      value.className = "value";
+      value.textContent = text;
+      wrap.appendChild(label);
+      wrap.appendChild(value);
+      return wrap;
+    }
     function itemNotesText(item) {
       var notes = [];
-      var optionText = normalizeNoteValue(item.options);
-      var allergyText = normalizeNoteValue(item.allergies || item.allergy || item.allergyInfo);
+      var optionText = itemOptionText(item);
+      var allergyText = itemAllergyText(item);
       if (optionText) notes.push(optionText);
       if (allergyText) notes.push("アレルギー: " + allergyText);
       return notes.join(" / ");
@@ -3696,11 +3728,14 @@
         nm.className = "item-name";
         nm.textContent = it.name != null ? String(it.name) : "";
         main.appendChild(nm);
-        var notesText = itemNotesText(it);
-        if (notesText) {
+        // アレルギーは品名のすぐ下に、備考とは別の要素で強調して出す (#294)
+        var allergyEl = buildItemAllergy(itemAllergyText(it));
+        if (allergyEl) main.appendChild(allergyEl);
+        var optionText = itemOptionText(it);
+        if (optionText) {
           var op = document.createElement("span");
           op.className = "item-opt";
-          op.textContent = notesText;
+          op.textContent = optionText;
           main.appendChild(op);
         }
 
@@ -5506,10 +5541,23 @@
         orderNo: order.id != null ? String(order.id) : "",
         date: now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate()),
         time: pad(now.getHours()) + ":" + pad(now.getMinutes()),
-        items: (order.items || []).map(function (it) {
-          return { name: it.name, qty: Number(it.qty) || 1, note: itemNotesText(it) };
-        }),
+        items: (order.items || []).map(slipItemData),
       };
+    }
+
+    /* 描画エンジンへ渡す品目1件。エンジンがアレルギーの行を描けるときだけ、アレルギーを
+       備考と分けて渡す (品名と同じ大きさの独立した行になる #294)。読み込んだエンジンが古くて
+       描けないときは従来どおり1本の注記に入れ、アレルギーが紙から消えないようにする。 */
+    function slipItemData(it) {
+      var R = window.SlipRenderer;
+      if (R && typeof R.allergyLine === "function") {
+        return { name: it.name, qty: Number(it.qty) || 1, note: itemOptionText(it), allergy: itemAllergyText(it) };
+      }
+      return { name: it.name, qty: Number(it.qty) || 1, note: itemNotesText(it) };
+    }
+    function slipAllergyLine(text) {
+      var R = window.SlipRenderer;
+      return R && typeof R.allergyLine === "function" ? R.allergyLine(text) : "【アレルギー】" + text;
     }
 
     /* 印字用の .slip DOM を組み立てる。画面には出さない。
@@ -5539,11 +5587,13 @@
       (order.items || []).forEach(function (it) {
         var li = document.createElement("li");
         var nm = document.createElement("span");
-        var slipNotes = itemNotesText(it);
+        var slipNotes = itemOptionText(it);
+        var slipAllergy = itemAllergyText(it);
+        var showNotes = !st || st.noteShow !== false;
         nm.textContent = it.name;
         if (st && st.itemSize) nm.style.fontSize = st.itemSize + "px";
         if (st) nm.style.fontWeight = st.itemBold === false ? "400" : "700";
-        if (slipNotes && (!st || st.noteShow !== false)) {
+        if (slipNotes && showNotes) {
           var o = document.createElement("span");
           o.className = "o";
           o.textContent = " (" + slipNotes + ")";
@@ -5554,6 +5604,14 @@
         q.textContent = slipQtyText(st, Number(it.qty) || 1);
         li.appendChild(nm);
         li.appendChild(q);
+        // アレルギーは括弧書きの備考に混ぜず、品名と同じ大きさの独立した行にする (#294)
+        if (slipAllergy && showNotes) {
+          var a = document.createElement("span");
+          a.className = "a";
+          a.textContent = slipAllergyLine(slipAllergy);
+          if (st && st.itemSize) a.style.fontSize = st.itemSize + "px";
+          li.appendChild(a);
+        }
         if (st && st.itemGap != null) li.style.paddingTop = li.style.paddingBottom = (st.itemGap / 2) + "px";
         slipItemsEl.appendChild(li);
       });
@@ -5700,6 +5758,8 @@
           meta: slipMetaEl.textContent,
           store: slipStoreEl.textContent,
           style: loadSlipStyle() || undefined,   // 設定ツールのスタイルを実機印字にも反映 (relay側で許容値へ丸める)
+          // 実機のテキスト印字 (relay-server/printer.js) はアレルギーの欄を持たないため、
+          // ここは従来どおり備考とアレルギーを1本の注記で送る (#294 では変えていない)
           items: (order.items || []).map(function (it) {
             return { name: it.name, qty: Number(it.qty) || 1, note: itemNotesText(it) };
           }),
