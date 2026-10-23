@@ -79,6 +79,33 @@ test("送信側のバグは黙って飲み込まず400相当のエラーにす�
   assert.equal(state.rev, 0, "エラー時に rev を進めない");
 });
 
+test("誤りが1件でも混ざった一束は丸ごと受け付けず、状態もrevも変えない (#297)", function () {
+  var state = seeded();
+  var before = JSON.stringify(kitchen.snapshot(state));
+  var result = kitchen.applyEvents(state, [
+    { type: "konro", id: "o-2", num: 2, state: "white" },
+    { type: "deleteOrder", id: "o-1" },
+    { type: "tableOverride", id: "o-2", table: "12", removed: false },
+    { type: "toggle", id: "o-2", index: 0, doneCount: 1.5 },
+  ], NOW + 1000);
+  // 誤りのあるイベントの番号を返す。それより前のイベントも畳み込まない
+  assert.match(result.error, /^events\[3\]: toggle\.doneCount/);
+  assert.equal(JSON.stringify(kitchen.snapshot(state)), before);
+  assert.equal(state.rev, 1);
+  assert.equal(state.updatedAt, NOW);
+
+  // 誤りの無い一束は今までどおり受け付ける (未知の type は数えずに無視する)
+  var accepted = kitchen.applyEvents(state, [
+    { type: "konro", id: "o-2", num: 2, state: "white" },
+    { type: "somethingNew", id: "o-2" },
+    { type: "deleteOrder", id: "o-1" },
+  ], NOW + 1000);
+  assert.equal(accepted.applied, 2);
+  assert.equal(state.rev, 2);
+  assert.deepEqual(state.konro, { "o-2": { "2": "white" } });
+  assert.deepEqual(state.deleted, { "o-1": true });
+});
+
 test("未知のtypeは受理して無視する (KDS側の拡張を止めない)", function () {
   var state = kitchen.createState("s1");
   var result = kitchen.applyEvents(state, [{ type: "somethingNew", id: "o-1" }], NOW);

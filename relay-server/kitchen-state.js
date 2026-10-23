@@ -167,11 +167,12 @@ function forgetCard(state, id) {
 }
 
 /**
- * イベント1件を状態へ畳み込む。戻り値は { ok:true } か { error }。
+ * イベント1件を検査し、状態へ書く形にそろえる。戻り値は { event } (そろえたイベント)、
+ * { ignored:true }、{ error } のどれか。状態を読まないので、一束の全件を書く前に検査できる (#297)。
  * 未知の type は「この relay が知らないだけ」なので受理して無視する (KDS 側の拡張を止めない)。
  */
-function applyEvent(state, event) {
-  if (!event || typeof event !== "object" || Array.isArray(event)) return { error: "event must be an object" };
+function checkEvent(event) {
+  if (!plainObject(event)) return { error: "event must be an object" };
 
   if (event.type === "konro") {
     var konroId = validId(event.id);
@@ -180,17 +181,7 @@ function applyEvent(state, event) {
     if (num === null) return { error: "konro.num is invalid" };
     var konroState = typeof event.state === "string" ? event.state.trim() : "";
     if (!konroState || konroState.length > MAX_STATE_LENGTH) return { error: "konro.state is invalid" };
-    if (konroState === KONRO_DEFAULT) {
-      if (state.konro[konroId]) {
-        delete state.konro[konroId][String(num)];
-        if (!Object.keys(state.konro[konroId]).length) delete state.konro[konroId];
-      }
-    } else {
-      if (!state.konro[konroId]) state.konro[konroId] = {};
-      state.konro[konroId][String(num)] = konroState;
-      capKeys(state.konro, MAX_CARDS);
-    }
-    return { ok: true };
+    return { event: { type: "konro", id: konroId, num: num, state: konroState } };
   }
 
   if (event.type === "toggle") {
@@ -200,21 +191,13 @@ function applyEvent(state, event) {
     if (index === null) return { error: "toggle.index is invalid" };
     var count = validInt(event.doneCount, 0, MAX_DONE_COUNT);
     if (count === null) return { error: "toggle.doneCount is invalid" };
-    // KDS 側と同じく「id -> 個数の配列」。歯抜けは JSON 化で null になるが、
-    // 取り込み側の normalizeDoneCount() が null を 0 として吸収する
-    if (!Array.isArray(state.done[doneId])) state.done[doneId] = [];
-    state.done[doneId][index] = count;
-    capKeys(state.done, MAX_CARDS);
-    return { ok: true };
+    return { event: { type: "toggle", id: doneId, index: index, doneCount: count } };
   }
 
   if (event.type === "timerLock") {
     var lockId = validId(event.id);
     if (!lockId) return { error: "timerLock.id is invalid" };
-    if (event.locked) state.locked[lockId] = true;
-    else delete state.locked[lockId];
-    capKeys(state.locked, MAX_CARDS);
-    return { ok: true };
+    return { event: { type: "timerLock", id: lockId, locked: !!event.locked } };
   }
 
   if (event.type === "order") {
@@ -226,17 +209,13 @@ function applyEvent(state, event) {
       if (!seqId) return { error: "order.seq[" + i + "] is invalid" };
       if (seq.indexOf(seqId) < 0) seq.push(seqId);
     }
-    state.seq = seq;
-    return { ok: true };
+    return { event: { type: "order", seq: seq } };
   }
 
   if (event.type === "deleteOrder") {
     var delId = validId(event.id);
     if (!delId) return { error: "deleteOrder.id is invalid" };
-    state.deleted[delId] = true;
-    capKeys(state.deleted, MAX_CARDS);
-    forgetCard(state, delId);
-    return { ok: true };
+    return { event: { type: "deleteOrder", id: delId } };
   }
 
   if (event.type === "serveCue") {
@@ -244,9 +223,7 @@ function applyEvent(state, event) {
     if (!serveId) return { error: "serveCue.id is invalid" };
     var serve = normalizeServeCue(event.state);
     if (!serve) return { error: "serveCue.state is invalid" };
-    state.serveCue[serveId] = serve;
-    capKeys(state.serveCue, MAX_CARDS);
-    return { ok: true };
+    return { event: { type: "serveCue", id: serveId, state: serve } };
   }
 
   if (event.type === "hallReady") {
@@ -254,16 +231,7 @@ function applyEvent(state, event) {
     if (!readyId) return { error: "hallReady.id is invalid" };
     var ready = normalizeHallReady(readyId, event.snapshot);
     if (!ready) return { error: "hallReady.snapshot is invalid" };
-    // 取り下げ (未完了へ戻した) より前の完了が遅れて届いても戻さない。
-    // KDS の BroadcastChannel 受信 (msg.type === "hallReady") と同じ規則
-    var current = state.hallReady[readyId];
-    if (current && current.status === "retracted" && ready.status !== "retracted" &&
-        Number(ready.completedAt || 0) <= Number(current.retractedAt || 0)) {
-      return { ok: true, ignored: true };
-    }
-    state.hallReady[readyId] = ready;
-    capKeys(state.hallReady, MAX_CARDS);
-    return { ok: true };
+    return { event: { type: "hallReady", id: readyId, snapshot: ready } };
   }
 
   if (event.type === "tableOverride") {
@@ -271,8 +239,84 @@ function applyEvent(state, event) {
     if (!overrideId) return { error: "tableOverride.id is invalid" };
     var table = normalizeTableOverride(event);
     if (table === null) return { error: "tableOverride.table is invalid" };
-    if (table) state.tableOverride[overrideId] = table;
-    else delete state.tableOverride[overrideId];
+    return { event: { type: "tableOverride", id: overrideId, table: table } };
+  }
+
+  return { ignored: true };
+}
+
+/**
+ * checkEvent でそろえたイベントを状態へ書く。戻り値は { ok:true } か、
+ * 書かずに済ませたとき { ok:true, ignored:true }。
+ */
+function writeEvent(state, event) {
+  var id = event.id;
+
+  if (event.type === "konro") {
+    if (event.state === KONRO_DEFAULT) {
+      if (state.konro[id]) {
+        delete state.konro[id][String(event.num)];
+        if (!Object.keys(state.konro[id]).length) delete state.konro[id];
+      }
+    } else {
+      if (!state.konro[id]) state.konro[id] = {};
+      state.konro[id][String(event.num)] = event.state;
+      capKeys(state.konro, MAX_CARDS);
+    }
+    return { ok: true };
+  }
+
+  if (event.type === "toggle") {
+    // KDS 側と同じく「id -> 個数の配列」。歯抜けは JSON 化で null になるが、
+    // 取り込み側の normalizeDoneCount() が null を 0 として吸収する
+    if (!Array.isArray(state.done[id])) state.done[id] = [];
+    state.done[id][event.index] = event.doneCount;
+    capKeys(state.done, MAX_CARDS);
+    return { ok: true };
+  }
+
+  if (event.type === "timerLock") {
+    if (event.locked) state.locked[id] = true;
+    else delete state.locked[id];
+    capKeys(state.locked, MAX_CARDS);
+    return { ok: true };
+  }
+
+  if (event.type === "order") {
+    state.seq = event.seq;
+    return { ok: true };
+  }
+
+  if (event.type === "deleteOrder") {
+    state.deleted[id] = true;
+    capKeys(state.deleted, MAX_CARDS);
+    forgetCard(state, id);
+    return { ok: true };
+  }
+
+  if (event.type === "serveCue") {
+    state.serveCue[id] = event.state;
+    capKeys(state.serveCue, MAX_CARDS);
+    return { ok: true };
+  }
+
+  if (event.type === "hallReady") {
+    var ready = event.snapshot;
+    // 取り下げ (未完了へ戻した) より前の完了が遅れて届いても戻さない。
+    // KDS の BroadcastChannel 受信 (msg.type === "hallReady") と同じ規則
+    var current = state.hallReady[id];
+    if (current && current.status === "retracted" && ready.status !== "retracted" &&
+        Number(ready.completedAt || 0) <= Number(current.retractedAt || 0)) {
+      return { ok: true, ignored: true };
+    }
+    state.hallReady[id] = ready;
+    capKeys(state.hallReady, MAX_CARDS);
+    return { ok: true };
+  }
+
+  if (event.type === "tableOverride") {
+    if (event.table) state.tableOverride[id] = event.table;
+    else delete state.tableOverride[id];
     capKeys(state.tableOverride, MAX_CARDS);
     return { ok: true };
   }
@@ -281,19 +325,37 @@ function applyEvent(state, event) {
 }
 
 /**
+ * イベント1件を検査して状態へ畳み込む。戻り値は { ok:true } か { error }。
+ */
+function applyEvent(state, event) {
+  var checked = checkEvent(event);
+  if (checked.error) return { error: checked.error };
+  if (checked.ignored) return { ok: true, ignored: true };
+  return writeEvent(state, checked.event);
+}
+
+/**
  * イベント列をまとめて適用する。1件でも受理されれば rev を進める。
  * 不正なイベントは受理せずエラーを返す (送信側のバグを黙って飲み込まない)。
+ * 書く前に全件を検査し、1件でも誤りがあれば一束ごと受け付けない (状態も rev も変えない)。
+ * 誤りより前の分だけを畳み込み、rev を進めずに返すと、他の端末は次に rev が進むまで
+ * その変更を取り込めない。送った端末は同じ一束を送り直し続けていた (#297)。
  */
 function applyEvents(state, events, now) {
   if (!Array.isArray(events)) return { error: "events must be an array" };
   if (!events.length) return { error: "events must not be empty" };
   if (events.length > 200) return { error: "events must contain at most 200 entries" };
 
-  var applied = 0;
+  var checked = [];
   for (var i = 0; i < events.length; i++) {
-    var result = applyEvent(state, events[i]);
+    var result = checkEvent(events[i]);
     if (result.error) return { error: "events[" + i + "]: " + result.error };
-    if (!result.ignored) applied++;
+    if (!result.ignored) checked.push(result.event);
+  }
+
+  var applied = 0;
+  for (var j = 0; j < checked.length; j++) {
+    if (!writeEvent(state, checked[j]).ignored) applied++;
   }
   if (applied) {
     state.rev++;
