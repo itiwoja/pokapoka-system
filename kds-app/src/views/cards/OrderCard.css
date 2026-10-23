@@ -1,0 +1,110 @@
+.kds-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--radius);
+  overflow: hidden;
+  --lv: var(--ok);
+}
+.kds-card--warn { --lv: var(--warn); }
+.kds-card--alert { --lv: var(--alert); }
+.kds-card-band { height: 4px; background: var(--lv); }
+/* 10分超は色に頼らず、数字の太さと濃さでも分かるようにする */
+.kds-card--alert .kds-card-elapsed { color: var(--text); font-weight: 800; }
+.kds-card--fresh { animation: kds-card-fresh 1.2s ease-out; }
+@keyframes kds-card-fresh { 0%, 40% { background: var(--fresh); } 100% { background: var(--surface); } }
+.kds-card--finishing > :not(.kds-konro-backdrop):not(.kds-konro-picker) { opacity: 0.45; }
+
+.kds-card-head { display: flex; align-items: baseline; gap: 10px; padding: 12px 16px 4px; }
+.kds-card-table { font-size: 36px; font-weight: 800; line-height: 1.1; }
+.kds-card-reserved { font-size: 14px; font-weight: 700; color: var(--reserved); }
+.kds-card-finishing { font-size: 13px; color: var(--text-sub); }
+.kds-card-head { align-items: center; }
+/* 経過時間は色を付けない。急ぎ具合はカード上辺の帯の色で伝える */
+.kds-card-elapsed {
+  margin-left: auto;
+  color: var(--text-sub);
+  font-size: 24px;
+  font-weight: 600;
+  font-weight: 800;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+
+.kds-card-note { padding: 0 14px 6px; font-size: 16px; color: var(--text-sub); overflow-wrap: anywhere; }
+.kds-card-note--allergy { font-weight: 700; color: var(--alert); }
+
+.kds-card-items { display: flex; flex-direction: column; padding: 0 6px; }
+.kds-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.kds-item-qty {
+  flex: none;
+  min-width: 28px;
+  text-align: center;
+  font-size: 24px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.kds-item-body { display: flex; flex-direction: column; min-width: 0; }
+.kds-item-name { font-size: 22px; font-weight: 700; line-height: 1.3; }
+.kds-item-progress { margin-left: 10px; font-size: 18px; color: var(--text-sub); font-variant-numeric: tabular-nums; }
+/* 補足は品名に埋もれないよう本文色で出す。打ち消し (抜き・なし) は太字、アレルギーは赤太字 */
+.kds-item-sub { font-size: 18px; color: var(--text); }
+.kds-item-sub--strong { font-weight: 800; }
+.kds-item-allergy { font-size: 18px; font-weight: 800; color: var(--alert); }
+.kds-item--done .kds-item-name { text-decoration: line-through; color: var(--done); }
+.kds-item--done .kds-item-sub, .kds-item--done .kds-item-allergy, .kds-item--done .kds-item-progress { color: var(--done); }
+.kds-item--done .kds-item-qty { color: var(--done); }
+.kds-item--flash { animation: kds-item-flash 0.25s ease-out; }
+@keyframes kds-item-flash { 0% { opacity: 0.3; } 100% { opacity: 1; } }
+
+/* 長押しの進捗帯 (押下0.2秒後から、成立までの0.6秒で伸びる #153) */
+.kds-item-bar { position: absolute; left: 0; bottom: 0; height: 4px; width: 0; background: var(--lv, var(--accent)); }
+.kds-item--pressing .kds-item-bar { animation: kds-item-press 0.6s linear forwards; }
+@keyframes kds-item-press { from { width: 0; } to { width: 100%; } }
+
+.kds-card-error { margin: 4px 14px 0; font-size: 16px; font-weight: 700; color: var(--alert); }
+.kds-card-foot { display: flex; align-items: center; gap: 4px; padding: 0 8px 6px; }
+.kds-card-chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+.kds-chip {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 18px;
+  font-weight: 800;
+  border: 2px solid var(--text);
+}
+.kds-chip--white { background: var(--surface); color: var(--text); }
+.kds-chip--red { background: var(--alert); border-color: var(--alert); color: var(--surface); }
+.kds-card-btn {
+  flex: none;
+  min-width: 64px;
+  height: 48px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-sub);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.kds-card-btn:disabled { opacity: 0.4; cursor: default; }
+.kds-card-btn:active { background: var(--bg); }

@@ -381,3 +381,11 @@ test("捨てた操作は同期状態に件数と時刻を残し、後で成功�
   assert.equal(later.rejectedCount, 3);
   assert.equal(later.lastRejectedAt, 5);
 });
+
+test("シニア・子供の項目が無い以前の予約ストックは、サーバーの 0 と同じとみなして上書きしない", function () {
+  // 2026-10-22 より前に端末へ保存した予約ストックには seniors・children が無い
+  var out = mergeStock([rec("abc123")], { "abc123": 1 }, [rec("abc123", { seniors: 0, children: 0 })]);
+  assert.equal(out.changed, false);
+  var updated = mergeStock([rec("abc123")], { "abc123": 1 }, [rec("abc123", { seniors: 1, children: 0 })]);
+  assert.equal(updated.changed, true, "人数の内訳が変われば上書きする");
+});

@@ -683,7 +683,7 @@
   }
   .people .n { font-family: var(--font-num); font-size: 17px; }
   .people .unit { opacity: .85; font-size: 12px; margin-left: 1px; }
-  .people .kids-inline { opacity: .85; font-size: 12px; font-weight: 800; }
+  .people .kids-inline { opacity: .85; font-size: 12px; font-weight: 800; margin-left: 4px; white-space: nowrap; }
 
   /* 経過時間 = バナー内の特大数字 (砂時計付き) */
   .elapsed {
@@ -2541,6 +2541,7 @@
        「プレビュー = 実際の印字」を保証する。読み込めない場合(file://で単体を開いた等)は
        従来のDOMプレビューにフォールバックするので、KDS本体は単体でも動作する -->
   <script src="slip-renderer.js"></script>
+  <script src="relay-server/party-size.js"></script>
   <script>
   "use strict";
   (function () {
@@ -2620,7 +2621,7 @@
       reorderMsg:"並べ替え中（離して確定 / 取消で戻す）", undo:"取消", reorderDone:"確定",
       reorderCommitted:"並べ替えを確定しました", restore:"戻す",
       errTime:"予約時間を入力してください", errMenu:"メニューを1つ以上選択してください",
-      errSeat:"卓番を入力してください", slipMeta:"受付", kidsLabel:"幼"
+      errSeat:"卓番を入力してください", slipMeta:"受付"
     };
     /* 予約フォームのメニュー候補 (POS未接続のため静的。略称表示) */
     var MENU_OPTIONS = [
@@ -2794,6 +2795,24 @@
 
     /* ===================== ユーティリティ ===================== */
     function t(key) { return LABELS[key] || key; }
+
+    /* 予約の人数。合計 (大人+シニア+子供+幼児) と、大人以外がいるときの内訳 ("大2 シ1 子1 幼1")。
+       区分と略記は relay-server/party-size.js (予約入力画面・中継サーバーと共有) に従う。
+       KDS は HTML 単体でも動く前提のため、読めなかったとき (file:// で単体で開いた等) は同じ4区分で数える */
+    var PEOPLE_FALLBACK = [["adults", "大"], ["seniors", "シ"], ["children", "子"], ["kids", "幼"]];
+    function peopleCount(r, key) { var n = Number(r && r[key]); return isFinite(n) && n > 0 ? Math.floor(n) : 0; }
+    function peopleTotal(r) {
+      if (window.PartySize) return window.PartySize.total(r);
+      return PEOPLE_FALLBACK.reduce(function (sum, p) { return sum + peopleCount(r, p[0]); }, 0);
+    }
+    function peopleBreakdown(r) {
+      var parts = window.PartySize
+        ? window.PartySize.breakdown(r, { onlyMixed: true }).map(function (p) { return p.short + p.n; })
+        : PEOPLE_FALLBACK.slice(1).some(function (p) { return peopleCount(r, p[0]) > 0; })
+          ? PEOPLE_FALLBACK.filter(function (p) { return peopleCount(r, p[0]) > 0; }).map(function (p) { return p[1] + peopleCount(r, p[0]); })
+          : [];
+      return parts.join(" ");
+    }
 
     /* ===================== relay同期状態 (#207) =====================
        ブリッジからのイベントとwindow初期値の両方を受け取れるようにする。
@@ -3723,12 +3742,12 @@
       badge.textContent = order.type === "reserved" ? t("reserved") : t("new");
       var people = document.createElement("span");
       people.className = "people";
-      // 予約→配膳では大人/幼児の内訳を保持して表示 (POS由来で内訳が無ければ合計のみ)
-      var kidsN = Number(order.kids) || 0;
+      // 予約→配膳では合計に添えて大人/シニア/子供/幼児の内訳を表示 (POS由来で内訳が無ければ合計のみ)
       if (order.adults != null) {
-        people.innerHTML = '<span class="n">' + (Number(order.adults) || 0) +
+        var breakdown = peopleBreakdown(order);
+        people.innerHTML = '<span class="n">' + peopleTotal(order) +
           '</span><span class="unit">' + t("people") + '</span>' +
-          (kidsN > 0 ? '<span class="kids-inline">' + t("kidsLabel") + kidsN + '</span>' : '');
+          (breakdown ? '<span class="kids-inline">' + breakdown + '</span>' : '');
       } else {
         people.innerHTML = '<span class="n">' + Number(order.people || 0) +
           '</span><span class="unit js-unit">' + t("people") + '</span>';
@@ -4762,7 +4781,7 @@
       renderHallViews();
     }
     /* 前菜/デザートcueの帯を作る (#222)。
-       人数は order.people (= 大人+子供の合計。子供にも前菜を出す運用のため全員分)。 */
+       人数は order.people (= 大人+シニア+子供+幼児の合計。子供にも前菜を出す運用のため全員分)。 */
     function buildServeCue(orderId, kind, people) {
       var state = serveCueState(orderId);
       var served = kind === "starter" ? state.starter : state.dessert;
@@ -4945,8 +4964,9 @@
       time.textContent = r.time || "--:--";
       var people = document.createElement("span");
       people.className = "res-people";
-      var kidsStr = (Number(r.kids) > 0) ? '<span class="kids">' + t("kidsLabel") + " " + Number(r.kids) + "</span>" : "";
-      people.innerHTML = '<span class="n">' + (Number(r.adults) || 0) + "</span>" + t("people") + kidsStr;
+      var breakdown = peopleBreakdown(r);
+      var kidsStr = breakdown ? '<span class="kids">' + breakdown + "</span>" : "";
+      people.innerHTML = '<span class="n">' + peopleTotal(r) + "</span>" + t("people") + kidsStr;
       top.appendChild(time);
       top.appendChild(people);
 
@@ -5136,7 +5156,7 @@
       time.textContent = reservation.time || "--:--";
       var people = document.createElement("span");
       people.className = "hall-stock-name";
-      people.textContent = (reservation.name || "—") + " " + (Number(reservation.adults) || 0) + t("people");
+      people.textContent = (reservation.name || "—") + " " + peopleTotal(reservation) + t("people");
       top.appendChild(time); top.appendChild(people); card.appendChild(top);
       var list = document.createElement("ul");
       list.className = "hall-stock-menu";
@@ -5265,8 +5285,10 @@
         table: seat,
         type: "reserved",
         start: Date.now(),
-        people: (Number(r.adults) || 0) + (Number(r.kids) || 0),
-        adults: Number(r.adults) || 0,   // 内訳を保持 (配膳カードで「N名 幼M」表示)
+        people: peopleTotal(r),
+        adults: Number(r.adults) || 0,   // 内訳を保持 (配膳カードで「N名 大a シs 子c 幼k」表示)
+        seniors: Number(r.seniors) || 0,
+        children: Number(r.children) || 0,
         kids: Number(r.kids) || 0,
         // 予約由来の安全情報・要望を、進行中カードにも引き継ぐ。
         allergies: r.allergies || null,
