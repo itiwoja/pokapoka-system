@@ -1,0 +1,31 @@
+.kds-konro-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+.kds-konro-picker {
+  position: absolute;
+  z-index: 11;
+  right: 8px;
+  bottom: 64px;
+  padding: 8px;
+  background: var(--surface);
+  border: 2px solid var(--text-sub);
+  border-radius: var(--radius);
+}
+.kds-konro-grid { display: grid; grid-template-columns: repeat(5, 48px); gap: 6px; }
+.kds-konro-cell {
+  height: 48px;
+  border-radius: 10px;
+  border: 2px solid var(--line);
+  background: var(--surface);
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.kds-konro-cell--white { border-color: var(--text); }
+.kds-konro-cell--red { border-color: var(--alert); background: var(--alert); color: var(--surface); }
+.kds-konro-cell--elsewhere { opacity: 0.35; }

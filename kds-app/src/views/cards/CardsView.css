@@ -1,0 +1,2 @@
+.kds-app { display: flex; flex-direction: column; height: 100%; }
+.kds-app-body { flex: 1; display: flex; min-height: 0; }

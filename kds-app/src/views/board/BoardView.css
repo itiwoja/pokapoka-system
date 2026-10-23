@@ -1,0 +1,38 @@
+/* 案C「一枚の板」: 白一枚に1卓1行。囲み・カードなし */
+.kds-bd { background: var(--surface); min-height: 100%; height: 100%; overflow-y: auto; padding: 0 32px 24px; }
+.kds-bd-head { display: flex; align-items: baseline; gap: 20px; padding: 12px 0; }
+.kds-bd-clock { font-size: 28px; font-weight: 800; }
+.kds-bd-count { font-size: 16px; font-weight: 600; color: var(--text-sub); }
+.kds-bd-empty { margin: 80px 0; text-align: center; font-size: 24px; color: var(--done); }
+
+.kds-bd-row { display: grid; grid-template-columns: 120px 1fr 110px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line); position: relative; }
+.kds-bd-row.late::before { content: ""; position: absolute; left: -32px; top: 0; bottom: 0; width: 10px; background: var(--text); }
+.kds-bd-row--finishing { opacity: 0.4; }
+
+.kds-bd-left { display: flex; flex-direction: column; align-items: flex-start; }
+.kds-bd-table { min-height: 56px; min-width: 56px; padding: 0; border: 0; background: none; font-size: 48px; font-weight: 800; line-height: 1; text-align: left; cursor: pointer; }
+.kds-bd-konro { font-size: 16px; font-weight: 600; color: var(--text-sub); margin-top: 4px; }
+.kds-bd-konro--red { color: var(--alert); font-weight: 800; }
+
+.kds-bd-notes { display: flex; flex-wrap: wrap; gap: 4px 20px; font-size: 17px; font-weight: 600; color: var(--text-sub); padding-bottom: 4px; }
+.kds-bd-al { color: var(--alert); }
+.kds-bd-items { display: flex; flex-wrap: wrap; gap: 0 20px; }
+.kds-bd-item { display: inline-flex; align-items: baseline; gap: 6px; min-height: 64px; padding: 0 8px; border: 0; background: none; font-size: 24px; font-weight: 700; text-align: left; cursor: pointer; align-content: center; align-items: center; }
+.kds-bd-item i { font-style: normal; font-size: 18px; color: var(--text-sub); }
+.kds-bd-item small { font-size: 17px; font-weight: 600; color: var(--text-sub); }
+.kds-bd-item small.kds-bd-al { color: var(--alert); }
+.kds-bd-item--done { color: var(--done); text-decoration: line-through; }
+.kds-bd-item--done i, .kds-bd-item--done small { color: var(--done); }
+.kds-bd-item--pressing { background: var(--bg); }
+
+.kds-bd-right { display: flex; flex-direction: row; align-items: center; justify-content: flex-end; gap: 10px; min-height: 64px; }
+.kds-bd-age { font-size: 24px; font-weight: 600; color: var(--text-sub); font-variant-numeric: tabular-nums; line-height: 1; }
+.late .kds-bd-age { color: var(--text); font-weight: 800; }
+.kds-bd-slip { min-height: 44px; min-width: 48px; padding: 0 8px; border: 0; background: none; font-size: 15px; font-weight: 600; color: var(--text-sub); cursor: pointer; }
+.kds-bd-err { font-size: 14px; color: var(--alert); }
+
+.kds-bd-hr { margin: 28px 0 8px; font-size: 16px; color: var(--text-sub); letter-spacing: 0.2em; }
+.kds-bd-rtime { font-size: 30px; font-weight: 800; color: var(--reserved); line-height: 1; }
+.kds-bd-rinfo { display: flex; flex-wrap: wrap; gap: 4px 28px; font-size: 20px; font-weight: 700; color: var(--text-sub); min-height: 56px; align-items: center; }
+.kds-bd-rinfo i { font-style: normal; font-size: 16px; margin-right: 6px; }
+.kds-bd-soon { font-size: 24px; font-weight: 600; color: var(--text-sub); line-height: 1; min-height: 56px; }
