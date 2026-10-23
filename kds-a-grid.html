@@ -2180,6 +2180,23 @@
     background: var(--sw-grad-pressed);
     box-shadow: inset 1px 1px 2px rgba(0,0,0,.25);
   }
+  /* 「コンロ割当」⇔「閉じる」で幅が変わると、右寄せの隣の「卓番」が横へずれ、
+     閉じようとして卓番のテンキーを開いてしまう (#295)。長いほうの文言を高さ0の見えない
+     行として常に重ね、ボタンの幅を「どちらの文言でも同じ (長いほうの幅)」にする。
+     px で固定しないのは、端末のフォント (Arial+MS UI Gothic / Noto Sans CJK など) で
+     文言の幅が変わるため。下の content は JS の kToggle の文言と合わせる。 */
+  .card-sub .konro-toggle {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .card-sub .konro-toggle::after {
+    content: "コンロ割当";
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+  }
 
   /* ---------- 前菜の未提供帯 (キッチンは読取専用): 1行の細い帯に ---------- */
   body:not(.mode-hall) .card .serve-cue[data-serve-kind="starter"].readonly {
@@ -2647,6 +2664,7 @@
     var seatDialRid = null;         // 卓番ダイヤルモーダルが編集中の予約rid (null=非表示)
     var seatDialBuf = "";           // 卓番ダイヤルで入力中の値 (「A1」形式 = ゾーン英字+番号)
     var SEAT_MAX_LEN = 6;           // 旧 res-seat の maxLength を踏襲
+    var seatDialReplaceNext = false; // 卓番上書き: 次の数字キーで今の卓番を置き換える (追記しない #295)
     var mode = "kitchen";          // 権限モード
     var view = "grid";             // #13 表示モード (grid / lane)
     var lockedTimers = {};         // タイマーロック状態 { orderId: true }
@@ -3840,6 +3858,7 @@
       kToggle.addEventListener("click", function () {
         var open = konro.classList.toggle("expanded");
         kToggle.setAttribute("aria-expanded", open ? "true" : "false");
+        // 文言を変えたら CSS の .card-sub .konro-toggle::after も合わせる (幅を固定するため #295)
         kToggle.textContent = open ? "閉じる" : "コンロ割当";
       });
       // サブ行: 種別チップ + 受付 + 卓番 + 停 + コンロ割当 + 伝
@@ -5736,7 +5755,10 @@
 
     /* ===================== 卓番ダイヤル (フリーテキスト入力の誤入力防止 #118) ===================== */
     /* 卓番号は要件定義書の「A1」形式(ゾーン英字+番号)。ゾーンタップで新規入力を開始し、
-       以降の番号タップは末尾に追記する。 */
+       以降の番号タップは末尾に追記する。
+       厨房の卓番上書きは今の卓番を表示したまま開き、最初の番号タップでその値を置き換える
+       (卓11で「1」を押すと「1」。追記して「111」にしない #295)。⌫・全消・ゾーンを先に押したら
+       以降は通常の追記に戻る。予約の「調理開始」は下書きの続きを打つため従来どおり追記する。 */
     function renderSeatDialDisplay() {
       if (seatDialBuf) {
         seatDialDisplayEl.textContent = seatDialBuf;
@@ -5755,6 +5777,7 @@
       seatDialContext = "reservation";
       seatDialRid = String(rid);
       seatDialBuf = seatDrafts[seatDialRid] || "";
+      seatDialReplaceNext = false;
       renderSeatDialDisplay();
       document.body.classList.add("seat-dial-open");
     }
@@ -5766,6 +5789,7 @@
       seatDialRid = String(orderId);
       var entry = cards[seatDialRid];
       seatDialBuf = entry && entry.order ? effectiveTable(entry.order) : (tableOverrideMap[seatDialRid] || "");
+      seatDialReplaceNext = seatDialBuf !== "";   // 今の卓番は見せたまま、最初の番号タップで置き換える (#295)
       renderSeatDialDisplay();
       document.body.classList.add("seat-dial-open");
     }
@@ -5774,6 +5798,7 @@
       document.body.classList.remove("seat-dial-open");
       seatDialRid = null;
       seatDialBuf = "";
+      seatDialReplaceNext = false;
       seatDialContext = "reservation";
     }
 
@@ -5929,16 +5954,31 @@
 
     /* ゾーンタップ = 新規入力開始 (「A1」の英字部分をセットし、番号部分はリセット) */
     function onSeatZoneTap(zone) {
+      seatDialReplaceNext = false;
       seatDialBuf = zone;
       renderSeatDialDisplay();
     }
     function onSeatDigitTap(digit) {
+      // 卓番上書きの最初の番号は今の卓番を置き換える。長さの上限より先に判定し、
+      // 6桁の卓番でも1回目のタップで打ち直せるようにする (#295)
+      if (seatDialReplaceNext) {
+        seatDialReplaceNext = false;
+        seatDialBuf = "";
+      }
       if (seatDialBuf.length >= SEAT_MAX_LEN) return;
       seatDialBuf += digit;
       renderSeatDialDisplay();
     }
-    function onSeatBackspace() { seatDialBuf = seatDialBuf.slice(0, -1); renderSeatDialDisplay(); }
-    function onSeatClear() { seatDialBuf = ""; renderSeatDialDisplay(); }
+    function onSeatBackspace() {
+      seatDialReplaceNext = false;   // ⌫ は今の卓番を手直しする操作。以降の番号は追記する
+      seatDialBuf = seatDialBuf.slice(0, -1);
+      renderSeatDialDisplay();
+    }
+    function onSeatClear() {
+      seatDialReplaceNext = false;
+      seatDialBuf = "";
+      renderSeatDialDisplay();
+    }
 
     /* ===================== 注文削除 ===================== */
     /* カードの有無・次回のフィード掃除に依存せず、削除時点で資源を解放する (#234)。
