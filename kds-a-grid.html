@@ -2710,6 +2710,7 @@
     var bc = null;
     var undoInfo = null;           // { id, index } 全完了直後の取り消し対象
     var undoTimer = null;
+    var konroReleaseTimers = {};   // { orderId: timeoutId } 全完了後、「戻す」の猶予が過ぎたらコンロ・タイマーを外す (#298)
     var khRows = [];               // HUD の列 [{kind:"white"|"red", label, cells:[DOM]}] (#145)
     var printerIp = "";            // チビ伝 実機プリンターIP (未設定ならブラウザ印刷のまま #144)
     var currentSlipOrder = null;   // チビ伝プレビュー表示中の注文 (印刷ボタン押下時に参照)
@@ -4441,6 +4442,7 @@
         // キッチンからは CSS で隠れるので、厨房から見た挙動は従来どおり。
         entry.el.classList.add("all-done");
         showUndoToast(entry.order, index);
+        scheduleKonroRelease(id);        // 「戻す」の猶予が過ぎたらコンロ・タイマーを外す (#298)
       } else if (wasAllDone) {
         removeLatestServeRecord(id);
       }
@@ -4489,6 +4491,7 @@
       if (mode !== "kitchen") { hideUndoToast(); return; }   // ホールでは厨房の完了undoを実行しない (#261)
       var id = undoInfo.id, idx = undoInfo.index;
       hideUndoToast();
+      cancelKonroRelease(id);            // 戻した卓のコンロ・タイマーは外さない (#298)
       if (!doneMap[id]) doneMap[id] = [];
       var cur = Number(doneMap[id][idx]) || 0;
       doneMap[id][idx] = Math.max(0, cur - 1);   // 最後の1個分だけ未完了へ戻す (#153)
@@ -4496,6 +4499,46 @@
       removeLatestServeRecord(id);
       broadcastToggle(id, idx, doneMap[id][idx]);
       poll();                            // 配膳カードを復帰させる
+    }
+
+    /* ===================== 全完了した卓のコンロ・タイマーを外す (#298) ===================== */
+    /* 全完了のカードはホールでデザートを出すまで残る (#228) ため、カードの消去を待つと
+       コンロ・タイマーがヘッダーに残り、別の卓の割り当てを塞いでいた。厨房で全品完了に
+       してから「戻す」の猶予 (UNDO_TOAST_MS) が過ぎた時点で外す。猶予中に「戻す」されたら
+       (他タブで未完了に戻された場合も) 外さない。外すのは完了操作をしたタブだけで、
+       broadcastKonro (skeleton) で他タブ・中継サーバー (kds-bridge) へ伝える。
+       蒸らしでタイマーを残す運用 (#161) は未決のため、ここでは扱わない。 */
+    function scheduleKonroRelease(id) {
+      var key = String(id);
+      cancelKonroRelease(key);
+      konroReleaseTimers[key] = setTimeout(function () {
+        delete konroReleaseTimers[key];
+        releaseKonroOfCompleted(key);
+      }, UNDO_TOAST_MS);
+    }
+    function cancelKonroRelease(id) {
+      var key = String(id);
+      if (!konroReleaseTimers[key]) return;
+      clearTimeout(konroReleaseTimers[key]);
+      delete konroReleaseTimers[key];
+    }
+    function releaseKonroOfCompleted(id) {
+      var key = String(id);
+      var entry = cards[key];
+      if (entry && !isAllDone(entry)) return;   // 未完了に戻った卓は外さない
+      var nums = konroMap[key] ? Object.keys(konroMap[key]) : [];
+      if (!nums.length) return;
+      nums.forEach(function (num) {
+        setKonroState(key, num, KONRO_DEFAULT);
+        broadcastKonro(key, Number(num), KONRO_DEFAULT);
+      });
+      saveKonro();
+      refreshAllKonro();
+      updateKonroHud();
+    }
+    /* 知らせに使う種別の名前。HUD の列見出しと同じ (white=コンロ / red=タイマー) */
+    function konroKindName(kind) {
+      return kind === "red" ? t("konroHudTimer") : t("konroHudKonro");
     }
 
     /* ===================== 操作: コンロ番号タップ ===================== */
@@ -4506,6 +4549,16 @@
       // ここでも判定する (#114)。進める先が無ければ何もしない。
       var next = nextKonroState(id, num, cur);
       if (next === cur) return;
+      // 読み飛ばしの結果この卓の割り当てが外れるときは、どの卓が埋めているかを知らせる (#298)。
+      // 例) 卓6のコンロ4を押す → タイマー4は卓3が使用中なので飛ばして「未使用」になる
+      var natural = KONRO_CYCLE[cur] || KONRO_DEFAULT;
+      if (cur !== KONRO_DEFAULT && next === KONRO_DEFAULT && natural !== KONRO_DEFAULT) {
+        var blocker = konroOwnerId(num, id, natural);
+        if (blocker) {
+          showPrintToast(konroKindName(natural) + num + "は卓" + (ownerTable(blocker) || "?") +
+            "が使用中のため、" + konroKindName(cur) + num + "を外しました");
+        }
+      }
       setKonroState(id, num, next);
       saveKonro();                                  // LS 即時保存 (正本)
       broadcastKonro(id, num, next);                // 他タブへ同期
