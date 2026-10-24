@@ -769,3 +769,28 @@ test("自由配置レイアウトの保存とラスター印字(/api/slip-style,
   assert.equal(textJobs.length, 1);
   assert.equal(textJobs[0].style.paperWidth, 80, "レイアウトではなく既定スタイルで印字する");
 });
+
+test("控えの書込みが失敗した注文は、同じ内容の再送で控えに書き直される", async function () {
+  var real = require("../order-store").openOrderStore(":memory:");
+  var failNext = true;
+  var logs = [];
+  var store = Object.assign({}, real, {
+    put: function (order) {
+      if (failNext) { failNext = false; throw new Error("disk full"); }
+      return real.put(order);
+    },
+  });
+  var relay = createTestRelay({ orderStore: store, log: function (m) { logs.push(m); } });
+  relay.start();
+  await events.once(relay.server, "listening");
+  var body = JSON.stringify({ orderId: "retry-1", table: "5", items: [{ name: "茶", qty: 1 }] });
+  var opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: body };
+  assert.equal((await requestRaw(relay.server, "/api/orders", opts)).status, 201);
+  assert.equal(real.count(), 0, "1回目の書込みは失敗");
+  assert.ok(logs.some(function (m) { return m.indexOf("注文の控えを保存できない") >= 0; }));
+  var again = await requestRaw(relay.server, "/api/orders", opts);
+  assert.equal(JSON.parse(again.text).duplicate, true);
+  assert.equal(real.count(), 1, "同じ内容の再送で控えに入る");
+  await relay.stop();
+  real.close();
+});
