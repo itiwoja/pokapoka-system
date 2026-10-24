@@ -33,6 +33,9 @@ function createConfig(env, options) {
     kitchenTtlMs: normalizeInterval(src.KITCHEN_TTL_MIN, 720, 1, 1440) * 60000,
     // 注文の保持上限。常駐プロセスなので、掃除しないと日跨ぎで前日の注文が残る (#115)
     orderTtlMs: normalizeInterval(src.ORDER_TTL_MIN, 720, 1, 1440) * 60000,
+    // 注文の控えを置く SQLite ファイル (リポジトリ直下からの相対可)。空なら起動スクリプトの既定
+    // (data/orders.sqlite)。再起動で当日の注文が KDS から消えないための控えで、履歴は持たない
+    orderDbFile: src.ORDER_DB_FILE ? String(src.ORDER_DB_FILE) : null,
     // 未設定なら認証なし (従来どおり)。店内Wi-Fiを客と共用する場合に設定する (#174)
     authToken: auth.normalizeToken(src.RELAY_TOKEN),
     // ミニPC自身(ループバック)を信頼するか。既定は信頼する — QRでトークンを配る導線が

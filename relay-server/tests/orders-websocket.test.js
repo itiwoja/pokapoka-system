@@ -114,3 +114,28 @@ test("接続前の注文は最初のsnapshotに入り、TTL切れを取消配信
   assert.equal(cancelled.type, "order.cancelled");
   assert.equal(cancelled.sequence, first.sequence + 1);
 });
+
+test("再起動後に控えから読み戻した注文は最初のsnapshotに入り、refreshで作成配信されない", { timeout: 5000 }, async t => {
+  const http = require("node:http");
+  const { attachOrdersWebSocket } = require("../orders-websocket");
+  // createRelay の起動時と同じく、attach より前に orders へ注文が入っている状態
+  const orders = new Map([["restored", { id: "restored", table: "2", type: "new", start: Date.now(), people: 1, items: [] }]]);
+  const server = http.createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const sent = [];
+  const stream = attachOrdersWebSocket(server, orders,
+    { orderTtlMs: 720 * 60000, authToken: "", authTrustLoopback: true }, () => {},
+    { send(type) { sent.push(type); } });
+  t.after(() => { stream.close(); server.close(); });
+  stream.refresh();
+  assert.deepEqual(sent, [], "読み戻し済みの注文を order.created として流さない");
+  const base = "http://127.0.0.1:" + server.address().port;
+  const socket = new WS(base.replace("http:", "ws:") + "/ws/orders", { origin: base });
+  t.after(() => socket.terminate());
+  const first = JSON.parse((await once(socket, "message"))[0]);
+  assert.equal(first.type, "orders.snapshot");
+  assert.deepEqual(first.orders.map(o => o.orderId), ["restored"]);
+  stream.refresh();
+  assert.equal(sent.includes("order.created"), false);
+});
