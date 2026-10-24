@@ -12,6 +12,7 @@
 | パス | 内容 |
 |---|---|
 | `kds-a-grid.html` | **KDS（デシャップ）画面本体**。フレームワーク不使用のHTML。伝票描画・人数計算はローカルJSを参照 |
+| `kds-app/` | **デシャップ画面の React 版**（React + Vite）。ビルドで `kds-next.html` を生成し、中継サーバーが `/kds-next` で配信。現行の `/kds` は受け入れまで残す（[README](kds-app/README.md)） |
 | `reservation-entry.html` | **予約入力画面**（`/reservations`）。手入力・CSV／Excel取込・貼り付け・メールの試作と予約一覧・変更・取消 |
 | `relay-server/` | **店内中継サーバー**。注文の受付と KDS の Web 配信（[詳細 README](relay-server/README.md)）。TableCheck **API** 連携は中止（旧API取得処理は [`archive/tablecheck/`](archive/tablecheck/README.md) へ退避）。予約ファイル取込は現行機能 |
 | `order-client.js` | 注文端末の送信・端末保存・受付確認・再送（[組み込み手順](docs/注文端末_通信モジュール組み込み.md)） |

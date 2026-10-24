@@ -284,6 +284,7 @@ cd relay-server && npm run preflight
 | パス | 内容 |
 |---|---|
 | `/` , `/kds` , `/kds-a-grid.html` | KDS 本体(配信時にブリッジを注入) |
+| `/kds-next` | React 版 KDS(`kds-next.html`。ブリッジは自身で読むため注入しない)。`kds-app/` のビルドで生成。現行 `/kds` は受け入れまで残す |
 | `/api/stock` | KDS 予約ストック形式 `[{rid,time,adults,seniors,children,kids,name,menu[],allergies?,request?,seenAt}]`。人数は大人・シニア・子供・幼児(`kids`、0〜2歳)を分けて持ち、合計は KDS が4つを足して出す。`allergies` はアレルギー、`request` は要望の注記。当日の `booked` だけで、メニュー無し(席だけ)予約は含まない |
 | `/reservations` | 予約入力画面(`reservation-entry.html`)。→「予約の入口」 |
 | `GET /api/reservations?date=YYYY-MM-DD` | 指定日(省略時は当日)の予約一覧 `{date,reservations[]}`。取消済みも含む |
@@ -295,7 +296,7 @@ cd relay-server && npm run preflight
 | `GET /api/reservations/inbox` | メールの取込フォルダの候補 `{enabled,items:[{id,receivedAt,subject,draft,warnings}]}` |
 | `DELETE /api/reservations/inbox/{id}` | 候補を登録せず片づける(`processed/` へ移す) |
 | `/api/health` | ready状態・予約の保存件数(`reservations`)・注文配信の状況(`ordersStream`) |
-| `GET /api/kitchen-state` | 厨房状態の共有スナップショット `{sessionId,rev,updatedAt,konro,done,locked,seq,deleted}`。→「厨房状態の端末間同期」 |
+| `GET /api/kitchen-state` | 厨房状態の共有スナップショット `{sessionId,rev,updatedAt,konro,done,locked,seq,deleted,serveCue,hallReady,tableOverride}`。→「厨房状態の端末間同期」 |
 | `POST /api/kitchen-state` | 厨房状態の変更イベント投入 `{events:[...]}`。応答は `{ok,rev,sessionId}` |
 | `GET /api/orders` | KDS 注文フィード(注文端末由来)。→「注文端末との契約」 |
 | `POST /api/orders` | 注文の投入。`orderId` で冪等 |
@@ -399,6 +400,15 @@ localStorage + BroadcastChannel で同期しているが、**どちらも同一�
 **KDS 本体(`kds-a-grid.html`)は無改修**。取り込みは localStorage を書き換えるだけでよい
 (KDS の `poll()` が毎秒 `loadKonro()`/`loadDone()`/`loadLocked()`/`loadOrderSeq()`/`loadDeleted()` を実行するため)。
 
+前菜/デザート(`serveCue`)と提供準備完了(`hallReady`)だけは、localStorage へ書いたうえで、
+変わった卓をブリッジが `BroadcastChannel("kds_sync")` で KDS へ知らせる(`fromRelay:true` 付き)。
+前菜/デザートは `poll()` が読み直さず、カードの帯も作り直されないため。知らせは他タブの操作と同じ
+受信処理を通るので、別端末でデザートを出した卓はこの端末でもカードが消える。`fromRelay` 付きの
+メッセージは他タブのブリッジが relay へ送り返さない(#288)。
+
+卓番の上書き(`tableOverride`)も同じく、変わった卓(解除を含む)を KDS へ知らせる。`poll()` が
+読み直すので書くだけでも1秒以内に画面へ乗るが、その間にホールでチビ伝を刷ると元の卓番で出るため(#293)。
+
 受け取るイベントは KDS の `broadcast*()` が流す形そのまま:
 
 | type | body | 意味 |
@@ -407,7 +417,13 @@ localStorage + BroadcastChannel で同期しているが、**どちらも同一�
 | `toggle` | `{id, index, doneCount}` | 品目の完了個数 |
 | `timerLock` | `{id, locked}` | タイマーロック |
 | `order` | `{seq:[cardId,...]}` | カードの並び順 |
-| `deleteOrder` | `{id}` | 注文の削除(関連するコンロ・完了・ロック・並び順も解放) |
+| `deleteOrder` | `{id}` | 注文の削除(関連するコンロ・完了・ロック・並び順・前菜/デザート・提供準備完了・卓番の上書きも解放) |
+| `serveCue` | `{id, state:{starter, dessert, starterAt, dessertAt, day}}` | 前菜/デザートを出したか(#288) |
+| `hallReady` | `{id, snapshot:{orderId, table, people, completedAt, day, status, items, dismissedAt?, retractedAt?}}` | 提供準備完了。ホールのデザート待ちカードの根拠。取り下げ(`retracted`)より前の完了が遅れて届いても戻さない(#288) |
+| `tableOverride` | `{id, table, removed}` | 厨房の卓番の上書き(#160)。`removed:true` か空の `table` で解除。ホールのチビ伝もこの卓番で刷る。注文の `table` は変えない(#293) |
+
+`serveCue` と `hallReady` は、KDS が使う項目だけを残して保存する(文字列は長さを切り、品目は100件まで)。
+`tableOverride` は卓番を文字列にそろえて保存する。32文字を超えるものは、切ると別の卓番になるため受理しない。
 
 設計上の判断:
 
@@ -416,6 +432,7 @@ localStorage + BroadcastChannel で同期しているが、**どちらも同一�
 - **relay が空(`rev:0`)のときは端末が手元の状態を種として送る**。これが無いと「最初の1操作だけが載ったスナップショット」を取り込んだ瞬間に手元の状態が消える
 - **`sessionId` で relay の再起動を検出する**。再起動で `rev` が 0 に戻るため、これが無いと端末が「取込済み」と誤認して同期が止まる
 - **送信中・未送信のイベントがある間は取り込まない**。取り込むと直前の操作が一瞬巻き戻って見える
+- **誤りのある一束は丸ごと受け付けず(400)、端末は送り直さずに捨てる**。relay は全件を検査してから書くので、状態も `rev` も変わらない。送り直し続けると列が空にならず、他の端末の操作を取り込めなくなる(#297)。捨てた件数と時刻は同期状態(厨房同期の「最終失敗」、`rejectedCount`・`lastRejectedAt`)とコンソールに残す。通信断・5xx・408・429 は今までどおり送り直す
 - 通信断のときは手元の状態を保持する(relay が落ちても KDS は単独で動き続ける)
 - 保存はしない(#115)。`kitchen.ttlMin`(既定720分)を過ぎたら当日分を捨てる
 

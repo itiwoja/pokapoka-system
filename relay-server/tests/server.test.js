@@ -607,6 +607,39 @@ test("静的配信・404・不正URLを維持し、撤去した /demo とモッ�
   assert.equal((await requestRaw(relay.server, "/%2e%2e%5cissue-122-evil%5csecret.txt")).status, 403);
 });
 
+test("/kds-next は React 版 KDS を配信し、ブリッジを二重に差し込まない。/kds は従来どおり差し込む", async function (t) {
+  // server.js の root はリポジトリ直下に固定なので、kds-next.html の有無に依らないよう一時ディレクトリで配信を確かめる
+  var fs = require("node:fs");
+  var os = require("node:os");
+  var staticRoute = require("../routes/static");
+  var dir = fs.mkdtempSync(path.join(os.tmpdir(), "kds-next-test-"));
+  t.after(function () { fs.rmSync(dir, { recursive: true, force: true }); });
+  // 実ビルドの kds-next.html と同じく、自前で kds-bridge.js を読み込む
+  fs.writeFileSync(path.join(dir, "kds-next.html"),
+    '<!doctype html><html><body><div id="root"></div>\n' +
+    '<script src="/relay-server/kds-bridge.js"></script>\n</body></html>', "utf8");
+  var staticServer = http.createServer(function (req, res) {
+    staticRoute.serveStatic(res, new URL(req.url, "http://127.0.0.1"), dir);
+  });
+  await new Promise(function (resolve) { staticServer.listen(0, "127.0.0.1", resolve); });
+  t.after(function () { return new Promise(function (resolve) { staticServer.close(resolve); }); });
+
+  var next = await requestRaw(staticServer, "/kds-next");
+  assert.equal(next.status, 200);
+  var nextTags = next.text.match(/<script\b[^>]*\bsrc=["']\/relay-server\/kds-bridge\.js["'][^>]*><\/script>/gi) || [];
+  assert.equal(nextTags.length, 1, "kds-next ではブリッジ script が二重に入らない");
+  assert.ok(next.text.indexOf("window.__KDS_SUPPRESS_DEMO__") < 0, "kds-next には現行 KDS 用のデモ抑止を差し込まない");
+
+  var relay = createTestRelay();
+  t.after(function () { return relay.stop(); });
+  relay.start();
+  await events.once(relay.server, "listening");
+  var kds = await requestRaw(relay.server, "/kds");
+  assert.equal(kds.status, 200);
+  var kdsTags = kds.text.match(/<script\b[^>]*\bsrc=["']\/relay-server\/kds-bridge\.js["'][^>]*><\/script>/gi) || [];
+  assert.equal(kdsTags.length, 1, "/kds は従来どおりブリッジが1件差し込まれる");
+});
+
 test("設定値はポート・ホスト・予約の保存先を反映する", function () {
   var relay = serverModule.createRelay({
     env: { PORT: "8123", HOST: "192.168.1.10", RESERVATION_DB_FILE: "data/test-reservations.sqlite" },

@@ -41,6 +41,9 @@
   var LS_LOCKED = "kds_locked_v1";
   var LS_ORDER = "kds_order_v1";
   var LS_DELETED = "kds_deleted_v1";
+  var LS_SERVE_CUE = "kds_serve_cue_v1";     // 前菜/デザートの提供 (#288)
+  var LS_HALL_READY = "kds_hall_ready_v1";   // 提供準備完了 snapshot。ホールのデザート待ちカードの根拠 (#288)
+  var LS_TABLE_OVERRIDE = "kds_table_override_v1"; // 厨房の卓番の上書き。ホールのチビ伝もこの卓番で刷る (#293)
   var LS_SERVER_ORDERS = "kds_server_orders_v1"; // 前回フィード。再読込・通信断をまたぐ品目状態移行に使う
   var BC_NAME = "kds_sync";
   var POLL_MS = 5000;                        // 店内 LAN なので短くてよい
@@ -53,7 +56,8 @@
   var SYNC_DELAYED_MS = 10000;               // 一時的な失敗では警告せず、10秒継続で遅延
   var SYNC_OFFLINE_MS = 30000;               // 30秒成功が無ければオフライン
   var SYNC_CHANNELS = ["reservations", "orders", "kitchen"];
-  var KITCHEN_EVENTS = { konro: 1, toggle: 1, timerLock: 1, order: 1, deleteOrder: 1 };
+  var KITCHEN_EVENTS = { konro: 1, toggle: 1, timerLock: 1, order: 1, deleteOrder: 1, serveCue: 1, hallReady: 1,
+    tableOverride: 1 };
 
   var bc = null; // ブラウザで動く時だけ末尾で生成 (Node にも BroadcastChannel があり、生成するとテストプロセスが終了しなくなる)
 
@@ -87,6 +91,8 @@
           retrying: false,
           failureCount: 0,
           error: null,
+          rejectedCount: 0,      // relay が受け付けず、送り直さずに捨てた操作の件数 (#297)
+          lastRejectedAt: null,
         };
       }
       return records[key];
@@ -128,6 +134,19 @@
       record.error = safeSyncError(status);
     }
 
+    /* relay が中身を受け付けず (400)、送り直さずに捨てた (#297)。最終失敗の時刻には残すが、
+       送り直さないので retrying にはしない。捨てた件数は、後で成功しても消さない */
+    function reject(name, at, status, count) {
+      var record = recordFor(name);
+      var time = timestamp(at);
+      if (record.firstAttemptAt === null) record.firstAttemptAt = time;
+      record.lastAttemptAt = time;
+      record.lastFailureAt = time;
+      record.lastRejectedAt = time;
+      record.rejectedCount += Math.max(0, Number(count) || 0);
+      record.error = safeSyncError(status);
+    }
+
     function classify(record, at) {
       if (record.firstAttemptAt === null) return SYNC_STATES.pending;
       var reference = record.lastSuccessAt === null ? record.firstAttemptAt : record.lastSuccessAt;
@@ -147,6 +166,8 @@
         retrying: !!record.retrying,
         failureCount: record.failureCount,
         error: record.error,
+        rejectedCount: record.rejectedCount,
+        lastRejectedAt: record.lastRejectedAt,
       };
     }
 
@@ -185,6 +206,7 @@
       attempt: attempt,
       success: success,
       failure: failure,
+      reject: reject,
       snapshot: snapshot,
       classify: function (name, at) { return publicRecord(name, at).state; },
     };
@@ -216,6 +238,15 @@
   function markSyncFailure(name, status) {
     syncStatus.failure(name, Date.now(), status);
     publishSyncStatus();
+  }
+
+  function markSyncRejected(name, status, count) {
+    syncStatus.reject(name, Date.now(), status, count);
+    publishSyncStatus();
+  }
+
+  function warn(message) {
+    try { (console.warn || console.log).call(console, message); } catch (e) {}
   }
 
   function load(key, fb) { try { var v = JSON.parse(localStorage.getItem(key)); return v == null ? fb : v; } catch (e) { return fb; } }
@@ -378,7 +409,8 @@
 
   /**
    * 厨房イベントを順序どおりに送るキュー。
-   * 失敗した batch は、その送信中に追加されたイベントより前へ戻して retryMs 後に再送する。
+   * 失敗した batch (sendBatch が投げたもの) は、その送信中に追加されたイベントより前へ戻して
+   * retryMs 後に再送する。sendBatch が投げずに戻れば、その batch は済んだものとして次へ進む。
    * イベントは絶対状態を表すため、応答喪失による同一 batch の再送も relay 側で安全に再適用できる。
    */
   function createKitchenQueue(sendBatch, options) {
@@ -440,12 +472,24 @@
     };
   }
 
+  /* 厨房イベントの一束を relay へ送る。400 は relay が中身を受け付けなかったもので、何度送っても
+     通らない。送り直すと列が空にならず、この端末は relay の状態を取り込めなくなる (#297)。
+     そこで投げずに { rejected:true } を返し、呼び出し側が一束を捨てて次へ進む。
+     通信断・5xx・408・429 などは投げ、列が送り直す */
   async function postKitchenBatch(fetchFn, batch) {
     var res = await fetchFn(API_KITCHEN, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ events: batch }),
     });
+    if (res.status === 400) {
+      var reason = null;
+      try {
+        var rejected = await res.json();
+        if (rejected && rejected.error) reason = String(rejected.error);
+      } catch (e) {}
+      return { ok: false, rejected: true, status: 400, error: reason };
+    }
     if (!res.ok) throw new Error(res.status);
     return res.json();
   }
@@ -454,6 +498,13 @@
     markSyncAttempt("kitchen");
     try {
       var body = await postKitchenBatch(fetch, batch);
+      if (body && body.rejected) {
+        // 送れなかった操作がある。同期状態に件数と時刻を残し、一束を捨てて後続を送る (#297)
+        markSyncRejected("kitchen", body.status, batch.length);
+        warn("[kds-bridge] relay が受け付けなかった厨房イベント " + batch.length + " 件を捨てました: " +
+          (body.error || "HTTP " + body.status));
+        return;
+      }
       markSyncSuccess("kitchen");
       // 自分の変更が relay に載った時点の rev。これより古いスナップショットは取り込まない
       // (取り込むと、送った直後の操作が一瞬巻き戻って見える)
@@ -466,6 +517,7 @@
 
   function onLocalKitchenEvent(msg) {
     if (!msg || !KITCHEN_EVENTS[msg.type]) return;
+    if (msg.fromRelay) return;   // relay から取り込んだ変更を KDS へ知らせたもの。送り返さない
     kitchenQueue.enqueue(msg);
   }
 
@@ -498,6 +550,19 @@
     });
     var seq = load(LS_ORDER, []);
     if (Array.isArray(seq) && seq.length) events.push({ type: "order", seq: seq.map(String) });
+    var serveCue = load(LS_SERVE_CUE, {}) || {};
+    Object.keys(serveCue).forEach(function (id) {
+      if (serveCue[id] && typeof serveCue[id] === "object") events.push({ type: "serveCue", id: id, state: serveCue[id] });
+    });
+    var hallReady = load(LS_HALL_READY, {}) || {};
+    Object.keys(hallReady).forEach(function (id) {
+      if (hallReady[id] && typeof hallReady[id] === "object") events.push({ type: "hallReady", id: id, snapshot: hallReady[id] });
+    });
+    var overrides = load(LS_TABLE_OVERRIDE, {}) || {};
+    Object.keys(overrides).forEach(function (id) {
+      var table = overrideTable(overrides[id]);
+      if (table) events.push({ type: "tableOverride", id: id, table: table, removed: false });
+    });
 
     if (!events.length) return false;
     kitchenQueue.enqueueAll(events);
@@ -511,6 +576,70 @@
     save(LS_LOCKED, snap.locked || {});
     save(LS_ORDER, Array.isArray(snap.seq) ? snap.seq : []);
     save(LS_DELETED, snap.deleted || {});
+    // 前菜/デザート・提供準備完了・卓番の上書きを運ばない古い relay なら、手元の状態を消さない
+    if (isPlainObject(snap.serveCue)) adoptServeCues(snap.serveCue);
+    if (isPlainObject(snap.hallReady)) adoptHallReady(snap.hallReady);
+    if (isPlainObject(snap.tableOverride)) adoptTableOverrides(snap.tableOverride);
+  }
+
+  function isPlainObject(value) {
+    return !!value && typeof value === "object" && !Array.isArray(value);
+  }
+
+  /* 前菜/デザートと提供準備完了は、KDS の poll() が localStorage を読み直さない
+     (前菜/デザート) か、読み直してもカードの帯が作り直されない。そこで localStorage へ
+     書いたうえで、変わった卓だけを KDS の BroadcastChannel 受信へ渡す。受信側は他タブの
+     操作と同じ処理 (帯の差し替え・デザートを出した卓のカードを消す) をする (#288)。
+     fromRelay を付け、他タブのブリッジが relay へ送り返さないようにする。 */
+  function notifyKds(message) {
+    if (!bc) return;
+    message.fromRelay = true;
+    try { bc.postMessage(message); } catch (e) {}
+  }
+
+  function adoptServeCues(next) {
+    var prev = load(LS_SERVE_CUE, {}) || {};
+    save(LS_SERVE_CUE, next);
+    Object.keys(next).forEach(function (id) {
+      var before = prev[id] || {};
+      var after = next[id] || {};
+      // 時刻の付き方の違いだけなら知らせない (帯を作り直すと長押しの途中を切ってしまう)
+      if (!!before.starter === !!after.starter && !!before.dessert === !!after.dessert) return;
+      notifyKds({ type: "serveCue", id: id, state: after });
+    });
+  }
+
+  function adoptHallReady(next) {
+    var prev = load(LS_HALL_READY, {}) || {};
+    save(LS_HALL_READY, next);
+    Object.keys(next).forEach(function (id) {
+      var before = prev[id] || {};
+      var after = next[id] || {};
+      if (before.status === after.status && Number(before.completedAt) === Number(after.completedAt)) return;
+      notifyKds({ type: "hallReady", id: id, snapshot: after });
+    });
+  }
+
+  /* 上書きの卓番。空・壊れた値は「上書きなし」(KDS の effectiveTable と同じ見方) */
+  function overrideTable(value) {
+    if (typeof value !== "string" && typeof value !== "number") return "";
+    return String(value).trim();
+  }
+
+  /* 卓番の上書きは KDS の poll() が毎秒 localStorage を読み直すので、書くだけでも1秒以内に
+     画面へ乗る。ただその間にホールでチビ伝を刷ると元の卓番で出るため、前菜/デザートと同じく
+     変わった卓だけを KDS へ知らせ、すぐに作り直させる。解除 (relay から消えた卓) も知らせる (#293) */
+  function adoptTableOverrides(next) {
+    var prev = load(LS_TABLE_OVERRIDE, {}) || {};
+    save(LS_TABLE_OVERRIDE, next);
+    var ids = Object.keys(next);
+    Object.keys(prev).forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); });
+    ids.forEach(function (id) {
+      var before = overrideTable(prev[id]);
+      var after = overrideTable(next[id]);
+      if (before === after) return;
+      notifyKds({ type: "tableOverride", id: id, table: after || null, removed: !after });
+    });
   }
 
   async function tickKitchen() {

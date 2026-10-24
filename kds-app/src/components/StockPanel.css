@@ -1,0 +1,45 @@
+.kds-stock {
+  width: 320px; flex: none; height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+}
+.kds-stock-head {
+  display: flex; align-items: baseline; gap: 8px; padding: 12px 16px;
+  font-size: 18px; font-weight: 700; color: var(--text-sub);
+}
+.kds-stock-count { color: var(--text-sub); font-weight: 500; }
+.kds-stock-list {
+  flex: 1; overflow-y: auto; overflow-x: hidden; padding: var(--gap);
+  display: flex; flex-direction: column; gap: var(--gap);
+}
+.kds-stock-empty { margin: 24px 0; text-align: center; color: var(--text-sub); font-size: 18px; }
+.kds-res {
+  position: relative; padding: 12px 12px 12px 16px;
+  background: var(--surface); border-radius: var(--radius); overflow: hidden;
+}
+.kds-res.soon { box-shadow: inset 4px 0 0 var(--reserved); }
+.kds-res-label {
+  position: absolute; top: 14px; right: 14px;
+  font-size: 14px; font-weight: 700; color: var(--reserved);
+}
+.kds-res-late { position: absolute; top: 12px; right: 12px; font-size: 13px; color: var(--text-sub); }
+.kds-res-time { font-size: 32px; font-weight: 800; line-height: 1.1; }
+.kds-res.soon .kds-res-time { color: var(--reserved); }
+.kds-res-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-top: 4px; }
+.kds-res-name { font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
+.kds-res-people { flex: none; font-size: 16px; color: var(--text-sub); }
+.kds-res-people b { font-size: 22px; color: var(--text); }
+.kds-res-mix { margin-left: 6px; font-size: 14px; }
+.kds-res-menu { list-style: none; margin: 8px 0 0; padding: 0; font-size: 16px; }
+.kds-res-menu li { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+.kds-res-qty { font-weight: 700; flex: none; }
+.kds-res-allergy, .kds-res-request {
+  margin: 8px 0 0; font-size: 16px; line-height: 1.4;
+  overflow-wrap: anywhere; white-space: normal;
+}
+.kds-res-allergy { font-weight: 700; color: var(--alert); }
+.kds-res-request { color: var(--text-sub); }
+.kds-res-seat {
+  width: 100%; height: 48px; margin-top: 10px; font-size: 17px; font-weight: 700;
+  color: var(--text); background: var(--bg); border: 0; border-radius: 10px; cursor: pointer;
+}

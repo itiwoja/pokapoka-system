@@ -283,6 +283,143 @@ test("relay の厨房状態が空なら手元の状態を種として送り、�
   assert.deepEqual(bridge.stored("kds_konro_v1"), { o2: { 2: "white" } });
 });
 
+test("前菜/デザートと提供準備完了も種として送り、取り込んだ変更は KDS へ知らせて送り返さない (#288)", async function () {
+  var ready = { orderId: "o1", id: "o1", table: "5", people: 2, completedAt: 500, day: "2026-10-21", status: "active",
+    items: [{ name: "土鍋御膳", qty: 2, note: "" }] };
+  var snapshot = { sessionId: "s1", rev: 0, konro: {}, done: {}, locked: {}, seq: [], deleted: {}, serveCue: {}, hallReady: {} };
+  var bridge = startBridge({
+    "GET /api/kitchen-state": function () { return { status: 200, body: snapshot }; },
+    "POST /api/kitchen-state": ok({ ok: true, rev: 1, sessionId: "s1" }),
+  }, { storage: {
+    kds_serve_cue_v1: JSON.stringify({ o1: { starter: true, dessert: false, starterAt: 400, day: "2026-10-21" } }),
+    kds_hall_ready_v1: JSON.stringify({ o1: ready }),
+  } });
+  await settle();
+
+  assert.deepEqual(bridge.posts("/api/kitchen-state"), [{ events: [
+    { type: "serveCue", id: "o1", state: { starter: true, dessert: false, starterAt: 400, day: "2026-10-21" } },
+    { type: "hallReady", id: "o1", snapshot: ready },
+  ] }]);
+
+  // 別端末で o1 のデザートを出し、o2 が全品完了した
+  snapshot = { sessionId: "s1", rev: 3, konro: {}, done: {}, locked: {}, seq: [], deleted: {},
+    serveCue: {
+      o1: { starter: true, dessert: true, starterAt: 400, dessertAt: 900, day: "2026-10-21" },
+      o2: { starter: true, dessert: false, starterAt: 600, dessertAt: null, day: "2026-10-21" },
+    },
+    hallReady: { o1: ready, o2: Object.assign({}, ready, { orderId: "o2", id: "o2", completedAt: 800 }) } };
+  await bridge.tick("tickKitchen");
+  assert.deepEqual(bridge.stored("kds_serve_cue_v1"), snapshot.serveCue);
+  assert.deepEqual(bridge.stored("kds_hall_ready_v1"), snapshot.hallReady);
+  // 変わった卓だけを、KDS の BroadcastChannel 受信が扱う形で知らせる (o1 の提供準備完了は変わっていない)
+  assert.deepEqual(plain(bridge.channel.posted), [
+    { type: "serveCue", id: "o1", state: snapshot.serveCue.o1, fromRelay: true },
+    { type: "serveCue", id: "o2", state: snapshot.serveCue.o2, fromRelay: true },
+    { type: "hallReady", id: "o2", snapshot: snapshot.hallReady.o2, fromRelay: true },
+  ]);
+
+  // 他タブのブリッジが知らせを受けても relay へ送り返さない
+  bridge.channel.onmessage({ data: plain(bridge.channel.posted[0]) });
+  await settle();
+  await settle();
+  assert.equal(bridge.posts("/api/kitchen-state").length, 1);
+
+  // 前菜/デザートを運ばない古い relay の応答では、手元の状態を消さない
+  snapshot = { sessionId: "s1", rev: 4, konro: {}, done: {}, locked: {}, seq: [], deleted: {} };
+  await bridge.tick("tickKitchen");
+  assert.deepEqual(bridge.stored("kds_serve_cue_v1").o1.dessert, true);
+  assert.equal(bridge.stored("kds_hall_ready_v1").o2.status, "active");
+});
+
+test("卓番の上書きも種として送り、取り込んだ変更と解除を KDS へ知らせて送り返さない (#293)", async function () {
+  var snapshot = { sessionId: "s1", rev: 0, konro: {}, done: {}, locked: {}, seq: [], deleted: {},
+    serveCue: {}, hallReady: {}, tableOverride: {} };
+  var bridge = startBridge({
+    "GET /api/kitchen-state": function () { return { status: 200, body: snapshot }; },
+    "POST /api/kitchen-state": ok({ ok: true, rev: 1, sessionId: "s1" }),
+  }, { storage: {
+    // 空・壊れた値は「上書きなし」なので種にしない
+    kds_table_override_v1: JSON.stringify({ o1: "12", o2: "", o3: { table: "9" } }),
+  } });
+  await settle();
+
+  assert.deepEqual(bridge.posts("/api/kitchen-state"), [{ events: [
+    { type: "tableOverride", id: "o1", table: "12", removed: false },
+  ] }]);
+
+  // 別端末 (厨房) で o2 の卓番を 14 に変えた
+  snapshot = { sessionId: "s1", rev: 3, konro: {}, done: {}, locked: {}, seq: [], deleted: {},
+    serveCue: {}, hallReady: {}, tableOverride: { o1: "12", o2: "14" } };
+  await bridge.tick("tickKitchen");
+  assert.deepEqual(bridge.stored("kds_table_override_v1"), { o1: "12", o2: "14" });
+  // 変わった卓だけを、KDS の BroadcastChannel 受信 (msg.type === "tableOverride") が扱う形で知らせる
+  assert.deepEqual(plain(bridge.channel.posted), [
+    { type: "tableOverride", id: "o2", table: "14", removed: false, fromRelay: true },
+  ]);
+
+  // 別端末で o1 の上書きを解除した (relay から消えた卓も知らせる)
+  snapshot = { sessionId: "s1", rev: 4, konro: {}, done: {}, locked: {}, seq: [], deleted: {},
+    serveCue: {}, hallReady: {}, tableOverride: { o2: "14" } };
+  await bridge.tick("tickKitchen");
+  assert.deepEqual(bridge.stored("kds_table_override_v1"), { o2: "14" });
+  assert.deepEqual(plain(bridge.channel.posted.slice(1)), [
+    { type: "tableOverride", id: "o1", table: null, removed: true, fromRelay: true },
+  ]);
+
+  // 他タブのブリッジが知らせを受けても relay へ送り返さない。この端末での変更は送る
+  bridge.channel.onmessage({ data: plain(bridge.channel.posted[0]) });
+  bridge.channel.onmessage({ data: { type: "tableOverride", id: "o2", table: "15", removed: false } });
+  await waitUntil(function () { return bridge.posts("/api/kitchen-state").length > 1; });
+  assert.deepEqual(bridge.posts("/api/kitchen-state")[1], { events: [
+    { type: "tableOverride", id: "o2", table: "15", removed: false },
+  ] });
+
+  // 卓番の上書きを運ばない古い relay の応答では、手元の上書きを消さない
+  snapshot = { sessionId: "s1", rev: 5, konro: {}, done: {}, locked: {}, seq: [], deleted: {} };
+  await bridge.tick("tickKitchen");
+  assert.deepEqual(bridge.stored("kds_table_override_v1"), { o2: "14" });
+});
+
+test("relay が受け付けない一束は捨てて後続を送り、他の端末の状態も取り込み続ける。5xx は送り直す (#297)", async function () {
+  var snapshot = { sessionId: "s1", rev: 1, konro: {}, done: {}, locked: {}, seq: [], deleted: {},
+    serveCue: {}, hallReady: {}, tableOverride: {} };
+  var replies = [
+    { status: 400, body: { ok: false, error: "events[0]: konro.num is invalid" } },
+    { status: 503, body: { ok: false, error: "unavailable" } },
+  ];
+  var bridge = startBridge({
+    "GET /api/kitchen-state": function () { return { status: 200, body: snapshot }; },
+    "POST /api/kitchen-state": function () {
+      return replies.shift() || { status: 200, body: { ok: true, rev: 3, sessionId: "s1" } };
+    },
+  });
+  await settle();
+
+  var bad = { type: "konro", id: "o1", num: 0, state: "white" };
+  bridge.channel.onmessage({ data: bad });
+  await waitUntil(function () { return bridge.posts("/api/kitchen-state").length === 1; });
+  await settle();
+  var kitchenStatus = bridge.status().channels.kitchen;
+  assert.equal(kitchenStatus.rejectedCount, 1);   // 送れなかった操作がある
+  assert.equal(kitchenStatus.retrying, false);
+  assert.equal(kitchenStatus.error, "HTTP 400");
+  assert.ok(kitchenStatus.lastFailureAt > 0);
+
+  // 列が空になったので、別の端末の操作を取り込める (以前は送り直し続けて取り込めなかった)
+  snapshot = Object.assign({}, snapshot, { rev: 2, konro: { o2: { 2: "red" } } });
+  await bridge.tick("tickKitchen");
+  assert.deepEqual(bridge.stored("kds_konro_v1"), { o2: { 2: "red" } });
+  assert.equal(bridge.status().channels.kitchen.rejectedCount, 1);   // 取り込めても件数は消さない
+
+  // 後続の操作は送る。503 は同じ一束を送り直し、400 の一束は送り直さない
+  var good = { type: "toggle", id: "o2", index: 0, doneCount: 1 };
+  bridge.channel.onmessage({ data: good });
+  await waitUntil(function () { return bridge.posts("/api/kitchen-state").length === 3; }, 3000);
+  await settle();
+  assert.deepEqual(bridge.posts("/api/kitchen-state"), [{ events: [bad] }, { events: [good] }, { events: [good] }]);
+  assert.equal(bridge.status().channels.kitchen.error, null);
+});
+
 test("KDS の操作イベントを relay へ送り、着席は予約者名付きで座席占有へ登録する", async function () {
   var bridge = startBridge({
     "GET /api/stock": ok([reservation("r1")]),

@@ -1,0 +1,4 @@
+:root{--bg:#F3F4F6;--surface:#fff;--text:#111827;--sub:#4B5563;--line:#E5E7EB;--alert:#B91C1C;--warn:#B45309;--ok:#15803D;--gold:#8A6D16;--done:#9CA3AF}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font-family:"Yu Gothic UI","Meiryo",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.clock{position:fixed;top:12px;left:20px;font-size:28px;font-weight:800}
