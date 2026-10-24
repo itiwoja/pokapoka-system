@@ -66,9 +66,21 @@ TableCheck と連携せずに予約を持ち込む方法を比べるため、4�
 | 方式 | 使い方 | 保存のタイミング |
 |---|---|---|
 | A. 手入力 | フォームから1件ずつ入れる | 登録ボタンを押したとき |
-| B. CSV取込 | 管理画面から出した CSV を選ぶ。1行目の列名から項目を判別する | 「内容を確認する」(保存しない)で確かめてから「取り込む」を押したとき |
+| B. CSV・Excel取込 | 管理画面から出した CSV、または TableCheck の予約一覧(.xlsx)を選ぶ。見出しの行(先頭5行のうち、来店日時か来店時間の列がある行)の列名から項目を判別する | 「内容を確認する」(保存しない)で確かめてから「取り込む」を押したとき |
 | C. 貼り付け | 予約詳細の文面を貼る。「項目名: 値」の行を読んでフォームへ入れる | フォームを確かめて登録ボタンを押したとき |
 | D. メール | 取込フォルダ(既定 `data/mail-inbox`、`reservation.mailDir` で変更)に置いた `.eml` / `.txt` が候補に並ぶ。1通ずつ選ぶ・貼ることもできる | 候補をフォームへ入れ、確かめて登録ボタンを押したとき |
+
+**取り込みの運用**: 予約は**朝に1回**取り込む。
+
+**手入力も必要**: 取り込みとは別に、手入力でも予約を入れられるようにする。手入力で入れられればよい項目は次のとおり。
+
+- 時間
+- 人数
+- 名前
+- メニュー(あれば)
+- メモ
+
+**管理用画面も作る**: 予約を管理する画面も作る必要がある(画面の内容は未設計)。
 
 #### 試し方
 
@@ -87,15 +99,26 @@ npm start
 | 方式 | 試す手順 |
 |---|---|
 | A. 手入力 | 「手入力」タブで日時・名前・メニューを入れて「登録する」。右の一覧の「変更」「取消」も試せる |
-| B. CSV取込 | 「CSV取込」タブで `data/samples/sample.csv` を選び、「内容を確認する」→「取り込む」。4行のうち1行は日付が読めず取り込めない例、1行は取消の例 |
+| B. CSV・Excel取込 | 「予約取り込み」タブで `data/samples/sample.csv` を選び、「内容を確認する」→「取り込む」。4行のうち1行は日付が読めず取り込めない例、1行は取消の例。`data/samples/sample-tablecheck.csv` は TableCheck の予約一覧と同じ並び(タイトル行・「予約時間」・人数4区分・「1 × 品名」)の例 |
 | C. 貼り付け | 「貼り付け」タブに `data/samples/sample-paste.txt` の中身を貼り、「読み取ってフォームに入れる」→ 確かめて「登録する」 |
 | D. メール | 「メール」タブに取込フォルダの2通が並ぶ(1通は取消の例)。「フォームに入れる」→「登録する」。`data/samples/sample-mail.eml` を選んで1通だけ読むこともできる |
 
 登録した予約は、厨房画面 `http://127.0.0.1:8000/` の予約ストックに5秒ほどで出る(当日・メニューありの予約だけ)。
 やり直すときはサーバーを止めて `data/reservations.sqlite*` を消し、`npm run reservation:samples` をもう一度実行する。
 
-- **B・C・D の読み取りは、TableCheck の実物の CSV・画面・メールで確かめていない。** 列名やラベルの表記ゆれを
+- **B は、2026-10-22 に店から受け取った TableCheck の予約一覧(.xlsx)で読めることを確かめた。** この形式は
+  1行目がタイトル「予約」、2行目が見出しで、日時は「予約時間」に `2026-10-20 11:00` の形で入る。人数は
+  「人数:大人」「人数:シニア」「人数:子供」「人数:幼児」の4列で、まとめずにそれぞれ `adults`・`seniors`・
+  `children`・`kids`(幼児、0〜2歳)へ入れる。区分・合計・内訳表示は `party-size.js` にまとめ、KDS と予約入力画面も
+  `/relay-server/party-size.js` を読んで同じ計算を使う。この変更より前のファイルは、開いたときに `kids` に入っていた
+  値(当時の「子供」)を1回だけ `children` へ移す。注文は `1 × 品名, 1 × 品名` の形。アレルギーは
+  「食事制限・アレルギー」の列、「予約メモ」の `質問N: …アレルギー… 回答N: …` の回答(複数行も読む)、「苦手なもの」の列を
+  全部つなぐ(「なし」「特にありません」などは拾わない)。取り込めるファイルは 5MB まで。
+  実物は個人情報を含むためリポジトリには入れず、テストは架空の値で同じ形を組み立てている。
+- **C・D の読み取りは、TableCheck の実物の画面・メールで確かめていない。** ラベルの表記ゆれを
   広く受けるように作ってあるが、実物で読めるかは未確認。読み取れなかった項目は画面に警告を出す。
+- .xlsx は依存を増やさず `xlsx-reader.js`(node:zlib で展開)で最初のシートの文字列だけを読む。
+  数式・書式は扱わない。日付の書式が付いた数値(Excel で保存し直した日時)は日時の文字列に戻す。
 - C と D は自動では保存しない。読み違えたアレルギーが厨房へ出ないよう、必ず人が確かめてから登録する。
 - D はメールサーバーへ接続しない(メールの認証情報をミニPCに置かないため)。取込フォルダへ保存するまでは
   メールソフト側の自動保存か手作業で行う。登録または破棄した候補は `processed/` へ移す(削除はしない)。
@@ -273,18 +296,19 @@ cd relay-server && npm run preflight
 | パス | 内容 |
 |---|---|
 | `/` , `/kds-a-grid.html` | KDS 本体(配信時にブリッジを1行注入) |
-| `/api/stock` | KDS 予約ストック形式 `[{rid,time,adults,kids,name,menu[],allergies?,request?,seenAt}]`。`allergies` はアレルギー、`request` は要望の注記。当日の `booked` だけで、メニュー無し(席だけ)予約は含まない |
+| `/kds-next` | React 版 KDS(`kds-next.html`。ブリッジは自身で読むため注入しない)。`kds-app/` のビルドで生成。現行 `/kds` は受け入れまで残す |
+| `/api/stock` | KDS 予約ストック形式 `[{rid,time,adults,seniors,children,kids,name,menu[],allergies?,request?,seenAt}]`。人数は大人・シニア・子供・幼児(`kids`、0〜2歳)を分けて持ち、合計は KDS が4つを足して出す。`allergies` はアレルギー、`request` は要望の注記。当日の `booked` だけで、メニュー無し(席だけ)予約は含まない |
 | `/reservations` | 予約入力画面(`reservation-entry.html`)。→「予約の入口」 |
 | `GET /api/reservations?date=YYYY-MM-DD` | 指定日(省略時は当日)の予約一覧 `{date,reservations[]}`。取消済みも含む |
-| `POST /api/reservations` | 予約の登録 `{startAt,name,adults,kids,table?,menu:[{name,qty}],allergies?,request?,memo?,rid?,status?}`。`rid` が既にあれば上書き。`mailId` を付けると、登録後に取込フォルダのそのメールを片づける |
+| `POST /api/reservations` | 予約の登録 `{startAt,name,adults,seniors?,children?,kids,table?,menu:[{name,qty}],allergies?,request?,memo?,rid?,status?}`。`rid` が既にあれば上書き。`mailId` を付けると、登録後に取込フォルダのそのメールを片づける |
 | `GET` / `PUT` / `DELETE /api/reservations/{rid}` | 1件の取得・変更・取消(取消は行を残して status を `canceled` にする) |
-| `POST /api/reservations/import/csv` | CSV(本文にファイルの中身。UTF-8 か Shift_JIS)の取込。`?dryRun=1` なら保存せず読み取り結果だけ返す |
+| `POST /api/reservations/import/csv` | CSV(本文にファイルの中身。UTF-8 か Shift_JIS)または .xlsx(先頭のバイトで見分ける)の取込。`?dryRun=1` なら保存せず読み取り結果だけ返す |
 | `POST /api/reservations/import/text` | `{text}` を読み取り、下書き `{draft,warnings}` を返す(保存しない) |
 | `POST /api/reservations/import/mail` | メール1通(本文に `.eml` の中身。`?text=1` なら貼り付けたテキスト)を読み取り、下書きを返す(保存しない) |
 | `GET /api/reservations/inbox` | メールの取込フォルダの候補 `{enabled,items:[{id,receivedAt,subject,draft,warnings}]}` |
 | `DELETE /api/reservations/inbox/{id}` | 候補を登録せず片づける(`processed/` へ移す) |
 | `/api/health` | ready状態・予約の保存件数(`reservations`)・注文配信の状況(`ordersStream`) |
-| `GET /api/kitchen-state` | 厨房状態の共有スナップショット `{sessionId,rev,updatedAt,konro,done,locked,seq,deleted}`。→「厨房状態の端末間同期」 |
+| `GET /api/kitchen-state` | 厨房状態の共有スナップショット `{sessionId,rev,updatedAt,konro,done,locked,seq,deleted,serveCue,hallReady,tableOverride}`。→「厨房状態の端末間同期」 |
 | `POST /api/kitchen-state` | 厨房状態の変更イベント投入 `{events:[...]}`。応答は `{ok,rev,sessionId}` |
 | `GET /api/orders` | KDS 注文フィード(注文端末由来)。→「注文端末との契約」 |
 | `POST /api/orders` | 注文の投入。`orderId` で冪等 |
@@ -389,6 +413,15 @@ localStorage + BroadcastChannel で同期しているが、**どちらも同一�
 **KDS 本体(`kds-a-grid.html`)は無改修**。取り込みは localStorage を書き換えるだけでよい
 (KDS の `poll()` が毎秒 `loadKonro()`/`loadDone()`/`loadLocked()`/`loadOrderSeq()`/`loadDeleted()` を実行するため)。
 
+前菜/デザート(`serveCue`)と提供準備完了(`hallReady`)だけは、localStorage へ書いたうえで、
+変わった卓をブリッジが `BroadcastChannel("kds_sync")` で KDS へ知らせる(`fromRelay:true` 付き)。
+前菜/デザートは `poll()` が読み直さず、カードの帯も作り直されないため。知らせは他タブの操作と同じ
+受信処理を通るので、別端末でデザートを出した卓はこの端末でもカードが消える。`fromRelay` 付きの
+メッセージは他タブのブリッジが relay へ送り返さない(#288)。
+
+卓番の上書き(`tableOverride`)も同じく、変わった卓(解除を含む)を KDS へ知らせる。`poll()` が
+読み直すので書くだけでも1秒以内に画面へ乗るが、その間にホールでチビ伝を刷ると元の卓番で出るため(#293)。
+
 受け取るイベントは KDS の `broadcast*()` が流す形そのまま:
 
 | type | body | 意味 |
@@ -397,7 +430,13 @@ localStorage + BroadcastChannel で同期しているが、**どちらも同一�
 | `toggle` | `{id, index, doneCount}` | 品目の完了個数 |
 | `timerLock` | `{id, locked}` | タイマーロック |
 | `order` | `{seq:[cardId,...]}` | カードの並び順 |
-| `deleteOrder` | `{id}` | 注文の削除(関連するコンロ・完了・ロック・並び順も解放) |
+| `deleteOrder` | `{id}` | 注文の削除(関連するコンロ・完了・ロック・並び順・前菜/デザート・提供準備完了・卓番の上書きも解放) |
+| `serveCue` | `{id, state:{starter, dessert, starterAt, dessertAt, day}}` | 前菜/デザートを出したか(#288) |
+| `hallReady` | `{id, snapshot:{orderId, table, people, completedAt, day, status, items, dismissedAt?, retractedAt?}}` | 提供準備完了。ホールのデザート待ちカードの根拠。取り下げ(`retracted`)より前の完了が遅れて届いても戻さない(#288) |
+| `tableOverride` | `{id, table, removed}` | 厨房の卓番の上書き(#160)。`removed:true` か空の `table` で解除。ホールのチビ伝もこの卓番で刷る。注文の `table` は変えない(#293) |
+
+`serveCue` と `hallReady` は、KDS が使う項目だけを残して保存する(文字列は長さを切り、品目は100件まで)。
+`tableOverride` は卓番を文字列にそろえて保存する。32文字を超えるものは、切ると別の卓番になるため受理しない。
 
 設計上の判断:
 
@@ -406,6 +445,7 @@ localStorage + BroadcastChannel で同期しているが、**どちらも同一�
 - **relay が空(`rev:0`)のときは端末が手元の状態を種として送る**。これが無いと「最初の1操作だけが載ったスナップショット」を取り込んだ瞬間に手元の状態が消える
 - **`sessionId` で relay の再起動を検出する**。再起動で `rev` が 0 に戻るため、これが無いと端末が「取込済み」と誤認して同期が止まる
 - **送信中・未送信のイベントがある間は取り込まない**。取り込むと直前の操作が一瞬巻き戻って見える
+- **誤りのある一束は丸ごと受け付けず(400)、端末は送り直さずに捨てる**。relay は全件を検査してから書くので、状態も `rev` も変わらない。送り直し続けると列が空にならず、他の端末の操作を取り込めなくなる(#297)。捨てた件数と時刻は同期状態(厨房同期の「最終失敗」、`rejectedCount`・`lastRejectedAt`)とコンソールに残す。通信断・5xx・408・429 は今までどおり送り直す
 - 通信断のときは手元の状態を保持する(relay が落ちても KDS は単独で動き続ける)
 - 保存はしない(#115)。`kitchen.ttlMin`(既定720分)を過ぎたら当日分を捨てる
 

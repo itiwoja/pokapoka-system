@@ -34,3 +34,5 @@ config/audit-log.jsonl
 
 # 店内注文DB（SQLiteのWAL・SHMを含む）
 data/
+# ただし React 版デシャップ画面のデータ層のソースは除外しない
+!kds-app/src/data/

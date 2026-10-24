@@ -32,6 +32,7 @@ function harness(mode) {
     LS_MODE: "mode", setTimeout, clearTimeout,
     saveDone() { calls.push("saveDone"); },
     removeLatestServeRecord() { calls.push("removeLatestServeRecord"); },   // #204: undoComplete が呼ぶ
+    cancelKonroRelease() { calls.push("cancelKonroRelease"); },   // #298: undoComplete が呼ぶ
     broadcastToggle() { calls.push("broadcastToggle"); },
     poll() { calls.push("poll"); },
     saveHallReady() { calls.push("saveHallReady"); },
@@ -39,7 +40,8 @@ function harness(mode) {
     renderHallViews() {}, applyMode() {}, cancelReorder() {},
     renderStock() {},   // #262: setMode が呼ぶ
     serveCueState() { return { starter: false, dessert: false }; }, setServeCue() {},   // #260: undoHallReady が呼ぶ
-    closeTableOverrideConfirm() {}, closeSeatDial() {}, lsSet() {}
+    closeTableOverrideConfirm() {}, closeSeatDial() {}, lsSet() {},
+    hideStarterUndo() {}   // #295: setMode が呼ぶ
   });
   vm.runInContext(["hideUndoToast", "undoComplete", "hideHallReadyUndo", "undoHallReady", "setMode"].map(source).join("\n"), context);
   context.undoToastEl.classList.add("show");

@@ -24,13 +24,14 @@ function open(t, filename, now) {
 test("保存した予約を正規化して読み出し、同じridは上書きする", function (t) {
   var s = open(t).store;
   var saved = s.save({
-    rid: " r1 ", startAt: at(11, 18, 30), name: " 山田 ", adults: 2, kids: 1, table: "5",
+    rid: " r1 ", startAt: at(11, 18, 30), name: " 山田 ", adults: 2, seniors: 1, children: 2, kids: 1, table: "5",
     menu: [{ name: "土鍋御膳", qty: 2, options: "大盛り", allergies: "えび" }, { name: "茶" }],
     allergies: "卵", request: "窓側", memo: "誕生日",
   });
   assert.equal(saved.rid, "r1");
   assert.equal(saved.name, "山田");
   assert.equal(saved.status, "booked");
+  assert.deepEqual([saved.adults, saved.seniors, saved.children, saved.kids], [2, 1, 2, 1], "人数の内訳はまとめない");
   assert.deepEqual(saved.menu, [
     { name: "土鍋御膳", qty: 2, options: "大盛り", allergies: "えび" },
     { name: "茶", qty: 1, options: null, allergies: null },
@@ -39,6 +40,7 @@ test("保存した予約を正規化して読み出し、同じridは上書き�
 
   var updated = s.save({ rid: "r1", startAt: at(11, 19, 0), adults: 3, menu: [{ name: "土鍋御膳", qty: 3 }] });
   assert.equal(updated.adults, 3);
+  assert.equal(updated.seniors, 0, "省略した内訳は0");
   assert.equal(updated.name, "(名前なし)");
   assert.equal(updated.allergies, undefined, "上書きは部分更新ではなく置き換え");
   assert.equal(s.health().reservations, 1);
@@ -58,6 +60,8 @@ test("不正な入力は理由を示して弾き、保存しない", function (t
     [{ rid: "r" }, /startAt/],
     [Object.assign({}, base, { startAt: "not a date" }), /startAt/],
     [Object.assign({}, base, { adults: -1 }), /adults/],
+    [Object.assign({}, base, { seniors: -1 }), /seniors/],
+    [Object.assign({}, base, { children: 1.5 }), /children/],
     [Object.assign({}, base, { kids: 1.5 }), /kids/],
     [Object.assign({}, base, { status: "confirmed" }), /status/],
     [Object.assign({}, base, { menu: "御膳" }), /menu/],
@@ -85,7 +89,7 @@ test("予約ストックは当日のbookedかつメニューありだけを時�
   var stock = s.stock(1234);
   assert.deepEqual(stock.map(function (r) { return r.rid; }), ["early", "late"]);
   assert.deepEqual(stock[0], {
-    rid: "early", time: "17:05", adults: 2, kids: 0, name: "(名前なし)",
+    rid: "early", time: "17:05", adults: 2, seniors: 0, children: 0, kids: 0, name: "(名前なし)",
     menu: [{ name: "御膳", qty: 1, options: null, allergies: null }], seenAt: 1234,
   });
   assert.equal(stock[1].request, "窓側");
@@ -127,4 +131,34 @@ test("ファイルに保存した予約は開き直しても残る", function (t
   t.after(function () { fs.rmSync(dir, { recursive: true, force: true }); });
   assert.equal(second.get("r1").rid, "r1");
   assert.equal(second.file, file);
+});
+
+test("人数の内訳を足す前に作ったファイルは、開いたときにシニア・子供の列を足し、既存の予約を残す", function (t) {
+  var dir = fs.mkdtempSync(path.join(os.tmpdir(), "reservation-store-"));
+  var file = path.join(dir, "reservations.sqlite");
+  // 2026-10-22 より前の表 (seniors・children の列が無い)
+  var DatabaseSync = require("node:sqlite").DatabaseSync;
+  var old = new DatabaseSync(file);
+  old.exec("CREATE TABLE reservations (rid TEXT PRIMARY KEY, start_at TEXT NOT NULL, start_ms INTEGER NOT NULL," +
+    " adults INTEGER NOT NULL CHECK(adults >= 0), kids INTEGER NOT NULL CHECK(kids >= 0), name TEXT NOT NULL," +
+    " status TEXT NOT NULL, table_no TEXT, menu TEXT NOT NULL, allergies TEXT, request TEXT, memo TEXT," +
+    " updated_at TEXT NOT NULL) STRICT");
+  old.prepare("INSERT INTO reservations VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run("old", at(11, 18), Date.parse(at(11, 18)),
+    2, 1, "山田", "booked", null, JSON.stringify([{ name: "茶", qty: 1 }]), null, null, null, NOW.toISOString());
+  old.close();
+
+  var s = open(t, file).store;
+  var rec = s.get("old");
+  assert.deepEqual([rec.adults, rec.seniors, rec.children, rec.kids], [2, 0, 1, 0],
+    "以前は「子供」を kids に入れていたので children へ移す");
+  var saved = s.save({ rid: "new", startAt: at(11, 19), adults: 1, seniors: 1, children: 1, kids: 1, menu: [{ name: "茶" }] });
+  assert.deepEqual([saved.seniors, saved.children, saved.kids], [1, 1, 1]);
+  s.close();
+
+  // 移し替えは列を足すときの1回だけ。開き直しても新しく入れた幼児は動かさない
+  var again = open(t, file).store;
+  // t.after は登録順に動く。Windows は開いたままの SQLite を消せないため、両方を閉じる処理より後に登録する
+  t.after(function () { fs.rmSync(dir, { recursive: true, force: true }); });
+  assert.deepEqual([again.get("new").children, again.get("new").kids], [1, 1]);
+  assert.deepEqual([again.get("old").children, again.get("old").kids], [1, 0]);
 });

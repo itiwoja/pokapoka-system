@@ -1,0 +1,29 @@
+/* デザイントークン。色は意味にだけ使う (経過: 緑→琥珀→赤 / 予約: 金)。コンポーネント側はこの変数だけを参照する */
+:root {
+  --bg: #F3F4F6;
+  --surface: #FFFFFF;
+  --line: #E5E7EB;
+  --text: #111827;
+  --text-sub: #4B5563;
+  --ok: #15803D;
+  --warn: #B45309;
+  --alert: #B91C1C;
+  --reserved: #8A6D16;
+  --accent: #1F2937;
+  --done: #9CA3AF;
+  --fresh: #FFF4CC; /* 新着カードの一瞬の明滅 */
+  --radius: 14px;
+  --gap: 12px;
+  --font: "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+button { font: inherit; color: inherit; }
