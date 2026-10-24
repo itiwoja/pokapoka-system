@@ -1,5 +1,7 @@
 # TableCheck API 連携（退避）
 
+> **現況注記（2026-10-22）**：以下はAPI連携中止・コード退避時点の記録。現在は `/reservations` にCSV／Excelファイル取込・手入力等の入口を試作済みで、TableCheckの書き出しを読み込む処理は現行の `reservation-import.js` にある。旧APIコードの復活とは別である（[現行手順](../../relay-server/README.md#予約の保存reservation-storejs)）。
+
 2026-10-11、TableCheck API連携は行わないことになった。予約情報は店員の手入力で扱う方針とする（入力方法は未設計）。
 ここには、連携のためだけに作ったコード・テスト・文書を退避している。
 

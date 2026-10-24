@@ -1,9 +1,10 @@
 # relay-server — 店内中継サーバー(Web配信・予約ストック・注文配信)
 
-> **2026-10-11: TableCheck API連携は行わないことになった。** 予約情報は店員の手入力で扱う方針とする（入力方法は未設計）。
+> **2026-10-11: TableCheck API連携は中止。2026-10-21: 予約の主な入口はCSV取込、変更時は再取込に決定。** 朝に1回当日分を確認・取り込む。手入力も必要だが、電話の当日予約の扱い等は確認中（[決定記録](../knowledge/2026-10-21_決定_予約のCSV取込と変更の反映.md)）。
 > TableCheck の実API取得処理・疎通確認・暫定契約の文書は [`archive/tablecheck/`](../archive/tablecheck/README.md) へ退避した。
-> 予約を持っているのはこのシステムだけになったため、予約は SQLite(`data/reservations.sqlite`)に保存する。
-> TableCheck を模したモックとデモコンソール(`/demo`)を含め、TableCheck 用のコードはすべて `archive/tablecheck/` へ退避した。予約を入れる入口(画面・API)は手入力の設計後に作る。
+> 店内へ取り込んだ予約・手入力予約は SQLite(`data/reservations.sqlite`)に保存する。元の予約は引き続き TableCheck が管理する。
+> 旧API取得・同期・モック・デモコンソール(`/demo`)は `archive/tablecheck/` へ退避した。現在は `/reservations` と予約APIに、手入力・CSV／Excel取込・貼り付け・メールの入口を試作済み。ファイル取込は旧API連携とは別の現行機能。
+> Linux サーバー運用・Next.js 移行の方針も決まったが、導入手順・移行範囲・時期は確認中。本文は現行 Node.js サーバーの手順（[最新議事録](../knowledge/2026-10-21_議事録_予約の取り込み.md)）。
 
 予約(メニュー・人数等)を保存し、当日分を KDS の予約ストックに流し込むサーバー。
 6/18 議事録の「ファイルを置くだけの見かけ上のサーバー」役と、予約ストック役の2役を1プロセスで担う。
@@ -24,10 +25,10 @@
 
 ```
 【予約の入力】             【店内ミニPC = このサーバー】          【KDS端末】
-店員の手入力(未設計) ──▶ data/reservations.sqlite
+CSV／Excel・手入力等 ──▶ /reservations ──▶ data/reservations.sqlite
                             server.js ── /api/stock(当日分) ──▶ kds-bridge.js
                                                                   → kds_stock_v1 へマージ
-                            kds-a-grid.html も配信                → BroadcastChannel で全端末反映
+                            kds-a-grid.html も配信                → 各端末が取得し、同一originタブへ通知
 
 【注文端末】→【注文サーバー order-system(3001)】── 転送 POST /api/orders ──▶ 注文(当日分。控えは data/orders.sqlite) ── /api/orders ──▶ window.KDS_ORDERS
                  注文サーバーが転送                卓番はペイロードで受け取る                        → 新規オーダーのカード
@@ -40,7 +41,7 @@
 - 書き込みは WAL モードで行い、ミニPCの電源断でファイルが壊れにくいようにしている。
 - `/api/stock` は**当日**の予約のうち、status が `booked` でメニューがあるものだけを返す。
   先の日付の予約は保存したまま、その日になったら配信する。
-- 過ぎた日の予約は読み出しのたびに削除する(履歴は持たない)。
+- 過ぎた日の予約は `/api/stock` 用の当日スナップショットを読む際に削除する(履歴は持たない)。予約一覧・1件取得だけでは削除しない。
 - 起動直後から `/api/stock` は 200 を返す(TableCheck の初回取得を待つための 503 は不要になった)。
 - 予約は予約入力画面 `/reservations` から入れる(→「予約の入口」)。KDS の「＋追加」ボタンで入れた予約も、
   端末に残すと同時に `POST /api/reservations` でここへ保存し、`/api/stock` 経由で他の端末にも出す
@@ -61,7 +62,7 @@
 
 ### 予約の入口(試作・4方式)
 
-TableCheck と連携せずに予約を持ち込む方法を比べるため、4つの入口を `/reservations` の画面に並べている。
+TableCheck API を使わず予約を持ち込むため、4つの入口を `/reservations` に試作している。主な運用入口は B のファイル取込に決定したが、C・D は比較用試作であり採用確定ではない。
 どれも最後は同じ `reservation-store.js` の `save` に入る。取り込むのは来店日時・人数・予約者名・事前メニュー・
 アレルギー・要望・メモ・卓番だけで、電話番号などの連絡先は取り込まない。
 
@@ -72,9 +73,9 @@ TableCheck と連携せずに予約を持ち込む方法を比べるため、4�
 | C. 貼り付け | 予約詳細の文面を貼る。「項目名: 値」の行を読んでフォームへ入れる | フォームを確かめて登録ボタンを押したとき |
 | D. メール | 取込フォルダ(既定 `data/mail-inbox`、`reservation.mailDir` で変更)に置いた `.eml` / `.txt` が候補に並ぶ。1通ずつ選ぶ・貼ることもできる | 候補をフォームへ入れ、確かめて登録ボタンを押したとき |
 
-**取り込みの運用**: 予約は**朝に1回**取り込む。
+**取り込みの運用**: 予約は**朝に1回**当日分を確認・取り込み、変更があったときはファイルを出し直して取り込む。朝の担当者・時刻・端末、電話の当日予約の扱いは未決。CSV から消えた予約の取消や手修正値の保護など、再取込には未解決の制約がある（[決定記録](../knowledge/2026-10-21_決定_予約のCSV取込と変更の反映.md)）。
 
-**手入力も必要**: 取り込みとは別に、手入力でも予約を入れられるようにする。手入力で入れられればよい項目は次のとおり。
+**手入力も必要**: 取り込みとは別に、手入力フォームも試作済み。運用で必要な項目は次のとおり。
 
 - 時間
 - 人数
@@ -82,14 +83,13 @@ TableCheck と連携せずに予約を持ち込む方法を比べるため、4�
 - メニュー(あれば)
 - メモ
 
-**管理用画面も作る**: 予約を管理する画面も作る必要がある(画面の内容は未設計)。
+**管理用画面**: `/reservations` には一覧・変更・取消の試作がある。正式な管理用画面の内容・運用は未設計で、試作が最終仕様として承認されたわけではない。
 
 #### 試し方
 
 Node.js 22.13 以上が必要。リポジトリ直下で次を実行する(`order-terminal` サブモジュールは不要)。
 
 ```sh
-git switch feature/reservation-intake
 npm --prefix relay-server ci
 npm run reservation:samples     # 当日の日付で架空のサンプルを data/ に作る
 npm start
@@ -124,11 +124,12 @@ npm start
 - C と D は自動では保存しない。読み違えたアレルギーが厨房へ出ないよう、必ず人が確かめてから登録する。
 - D はメールサーバーへ接続しない(メールの認証情報をミニPCに置かないため)。取込フォルダへ保存するまでは
   メールソフト側の自動保存か手作業で行う。登録または破棄した候補は `processed/` へ移す(削除はしない)。
-- 予約番号の無い予約には、来店日時と名前から決まる rid を付ける。同じ CSV・メールを取り込み直しても
-  二重登録にならず、件名に「キャンセル」とあるメールは同じ予約を取消として上書きできる。
+- CSVでは予約番号が無ければ来店日時と名前から、貼り付け・メールでは来店日時と名前を読めた場合に rid を作る。**同じ取込方式・日時・名前の場合だけ**同じ予約として上書きでき、変更や取込方式の混在で別予約になり得る。手入力の番号省略時は UUID を採番する。
+- 再取込は同じ rid の行全体を上書きする。CSV から消えただけの予約は取り消さず、卓番・メモ等を消したり手動取消を復活させたりする可能性がある。予約番号の必須化・消えた予約の扱い・手修正値の保護は未対応。
+- 件名に「キャンセル」とあるメールは取消の下書きになるが、同じ予約へ反映するには rid が一致する必要がある。C・D は自動保存しない。
 - 解析は `reservation-import.js`、API は `routes/reservations.js`、取込フォルダは `mail-inbox.js`。
 
-**バックアップ**: 予約の正本はこのファイルだけなので、ミニPCの故障に備えて
+**バックアップ**: 取り込んだ予約と店内で手入力・変更した内容を失わないよう、ミニPCの故障に備えて
 `data/reservations.sqlite` を定期的に別媒体へコピーする(方法と頻度は運用で決める)。
 コピーはサーバー停止中に行うか、`sqlite3 data/reservations.sqlite ".backup <コピー先>"` を使う
 (稼働中にファイルを単純コピーすると、WAL に残った直近の書き込みが欠けることがある)。
@@ -213,8 +214,8 @@ cp config/config.example.json config/config.json
 
 ### 本番(店内LANの端末へ配信)
 
-起動方法は同じ `node relay-server/server.js`。予約の手入力は未設計のため、
-現時点でサーバーの予約ストックは空のままである。
+起動方法は同じ `node relay-server/server.js`。予約を `/reservations` で登録・取り込むと、
+当日の `booked` かつメニューありの予約が `/api/stock` に出る。未登録なら空である。
 
 `server.host` 未指定時は安全のため `127.0.0.1` のみにbindする。**この既定のままだとミニPC自身
 からしか到達できず、デシャップモニターや注文端末からは繋がらない**ので、店内LANの固定IPを
@@ -297,7 +298,7 @@ cd relay-server && npm run preflight
 
 | パス | 内容 |
 |---|---|
-| `/` , `/kds-a-grid.html` | KDS 本体(配信時にブリッジを1行注入) |
+| `/` , `/kds` , `/kds-a-grid.html` | KDS 本体(配信時にブリッジを注入) |
 | `/kds-next` | React 版 KDS(`kds-next.html`。ブリッジは自身で読むため注入しない)。`kds-app/` のビルドで生成。現行 `/kds` は受け入れまで残す |
 | `/api/stock` | KDS 予約ストック形式 `[{rid,time,adults,seniors,children,kids,name,menu[],allergies?,request?,seenAt}]`。人数は大人・シニア・子供・幼児(`kids`、0〜2歳)を分けて持ち、合計は KDS が4つを足して出す。`allergies` はアレルギー、`request` は要望の注記。当日の `booked` だけで、メニュー無し(席だけ)予約は含まない |
 | `/reservations` | 予約入力画面(`reservation-entry.html`)。→「予約の入口」 |
@@ -357,11 +358,11 @@ cd relay-server && npm run preflight
 
 ### チビ伝の実機印刷(#144)
 
-KDS 画面の「印刷」ボタンは、プリンターIP未設定時は従来どおり `window.print()`(ブラウザ手動印刷)。
+KDS ホールモードの伝票ボタンから印刷する（キッチンには表示しない）。プリンターIP未設定時は `window.print()`(ブラウザ手動印刷)。
 実機で印字するには:
 
-1. KDS ヘッダーの「プリンター設定」ボタンでプリンター(例: Star mC-Print3)のIPアドレスを登録する
-   (`localStorage` に端末ごと保存。店舗ネットワーク依存のためコードへの固定埋め込みはしない)
+1. KDS の「プリンター設定」でプリンター(例: Star mC-Print3)のIPアドレスを登録する。
+   端末の `localStorage` に加え、relay接続時は `POST /api/printer` で `config/printer-ip.json` に保存し他端末へ共有する。店舗の実IPをコードへ固定しない。
 2. 以降は「印刷」ボタン押下で `POST /api/print` → このサーバーが生ソケットでプリンターの
    RAWポート(9100)へコマンドバイト列を送信する(ブラウザは生TCPソケットを開けないため中継が必要)
 3. 実機送信に失敗(未設定・接続不可・タイムアウト)した場合は自動で `window.print()` にフォールバックする
@@ -393,8 +394,7 @@ KDS(着席操作) ── POST /api/seats ──▶ relay(ローカル占有: メ
   イベントが存在しないため、解除し忘れた席が永久に埋まったままにならないよう時間で諦める
 - ローカル登録した占有は保存しない(#115)。当日メモリのみ
 
-**未決**: 予約の手入力で確定卓番を持たせるかは未設計(TableCheck 連携は中止)。持たない場合でも、
-着席時のローカル登録があるので占有ビュー自体は成立する(予約の「事前」占有だけが作れない)。
+**実装と未決**: 手入力フォーム・API・ファイル取込には卓番欄がある。事前に卓番を確定する運用や、TableCheck の卓表記との対応、再取込時に店内で変更した卓番を保護する方法は未決。卓番が無い予約でも着席時のローカル登録で占有ビューは成立する(予約の「事前」占有だけが作れない)。
 
 ### 厨房状態の端末間同期(#132)
 
@@ -555,18 +555,18 @@ SQLite の控え(`data/orders.sqlite`)へ書き、再起動後は保持期間内
 
 ### KDS への接続(kds-bridge.js)
 
-KDS 本体は無改修。**このサーバー経由で `/` を開くと、配信時にブリッジが自動注入される**
-(`server.js` が `kds-a-grid.html` の `</body>` 直前へ1行差し込む。ディスク上のファイルは変更しない)。
-静的配信は情報露出を避けるため allowlist に限定する
-(`kds-a-grid.html` / `slip-style-designer.html` / `slip-renderer.js` / `relay-server/kds-bridge.js`)。
+**このサーバー経由で `/` を開くと、配信時にブリッジが自動注入される**
+(`routes/static.js` が `kds-a-grid.html` の `</body>` 直前へデモ抑止フラグとブリッジのscriptを差し込む。ディスク上のファイルは変更しない)。
+静的配信は情報露出を避けるため `routes/static.js` の allowlist に限定する
+(`kds-a-grid.html` / `reservation-entry.html` / `slip-style-designer.html` / `slip-renderer.js` / `assets/sounds/shishiodoshi.ogg` / `relay-server/kds-bridge.js` / `relay-server/party-size.js`)。シミュレーター有効時の追加ページは別途設定する。
 サーバーを介さず単体で使う場合のみ、手動で `</body>` 直前に次を足す:
 
 ```html
 <script src="/relay-server/kds-bridge.js"></script>
 ```
 
-ブリッジは 5秒間隔で `/api/stock` を取得し、`kds_stock_v1` へマージして
-`BroadcastChannel("kds_sync")` で全タブ・全端末に反映する。マージ規則:
+各端末のブリッジが 5秒間隔で `/api/stock` を取得し、`kds_stock_v1` へマージする。
+`BroadcastChannel("kds_sync")` は同一originのタブ間に通知するだけで、別端末には届かない。別端末は各自のHTTP取得で追随する。マージ規則:
 
 - **サーバーが正**: 変更は上書き、サーバーから消えた予約(キャンセル)は削除
 - **保存に失敗した「＋追加」の予約(サーバーに無いもの)には触らない**。保存できたものはサーバー由来として扱う
@@ -623,8 +623,8 @@ Node.js 22 を使用する GitHub Actions と同じく、`npm ci` は lockfile �
 その後、予約の正本を SQLite へ移す際に、TableCheck 形式の正規化(`tablecheck-sync.js`)、
 差分取込・全件再構築(`booking-resync.js`)、供給源の切替(`reservation-source.js`)、
 モック(`mock-tablecheck.js`)とデモコンソール(`tablecheck-demo.html`・`/api/mock/*`)も
-[`archive/tablecheck/`](../archive/tablecheck/README.md) へ退避した。relay-server に TableCheck 用のコードは残っていない
-(旧 `config.json` の `tablecheck` セクションを読み飛ばす処理だけは、起動を止めないために残している)。
+[`archive/tablecheck/`](../archive/tablecheck/README.md) へ退避した。relay-server に旧 TableCheck API 接続・モックのコードは残っていない。
+ただし現行の `reservation-import.js` / `xlsx-reader.js` は TableCheck の書き出しファイルを読む。また旧 `config.json` の `tablecheck` セクションを読み飛ばす処理も残している。
 
 実環境で確認する予定だったもの（連携中止により確認不要）:
 
