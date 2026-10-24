@@ -5391,8 +5391,20 @@
       renderHallOrderPanel(document.getElementById("hallCOrders"), document.getElementById("hallCCount"), true);
     }
 
+    /* 端末で片づけた予約を bridge の取込済み(seen)に載せ、サーバーにまだ残っていても復活させない。
+       「＋」で入れて中継サーバーへ送った予約が、次の /api/stock 取得より前に片づけられた場合に効く (#292)。
+       サーバーに無い予約を載せても、mergeStock は端末に無い rid を消しも足しもしないので害はない */
+    function markResSeen(rid) {
+      var seen = safeParse(localStorage.getItem(LS_BRIDGE_SEEN), {});
+      if (!seen || typeof seen !== "object" || Array.isArray(seen)) seen = {};
+      if (seen[rid]) return;
+      seen[rid] = 1;
+      lsSet(LS_BRIDGE_SEEN, JSON.stringify(seen));
+    }
+
     function deleteRes(rid) {
       rid = String(rid);
+      markResSeen(rid);
       stock = stock.filter(function (r) { return String(r.rid) !== rid; });
       delete seatDrafts[rid];
       saveStock();
@@ -5437,6 +5449,7 @@
       };
       ensureOrderInBus(order);
       // ストックから除去
+      markResSeen(String(rid));
       stock = stock.filter(function (x) { return String(x.rid) !== String(rid); });
       delete seatDrafts[String(rid)];
       saveStock();
@@ -5537,14 +5550,52 @@
         if (cb && cb.checked) menu.push({ name: cb.getAttribute("data-menu"), qty: Math.max(1, Number(qn.value) || 1) });
       }
       if (!menu.length) { formErrorEl.textContent = t("errMenu"); return; }
-      stock.push({
+      var item = {
         rid: "r" + Date.now() + "_" + Math.floor(Math.random() * 1000),
         time: time, adults: adults, kids: kids, name: name, menu: menu
-      });
+      };
+      stock.push(item);
       saveStock();
       broadcastStock();
       renderStock();
       closeModal();
+      saveResToRelay(item);
+    }
+
+    /* 「＋」の予約を中継サーバー(POST /api/reservations)にも保存し、厨房の他の端末へ /api/stock 経由で出す (#292)。
+       端末で振った rid をそのままサーバーへ渡すので、次の /api/stock 取得でも同じ rid になり二重に並ばない。
+       保存に失敗(file://・503・通信断)しても端末ローカルには残す。ただし他の端末には出ないので、その旨を必ず表示する。 */
+    function saveResToRelay(item) {
+      var failMsg = "中継サーバーに保存できませんでした。この端末だけの予約です(他の端末には出ません)";
+      if (typeof fetch !== "function") { showPrintToast(failMsg); return Promise.resolve(false); }
+      var d = new Date();
+      var hm = String(item.time).split(":");
+      d.setHours(Number(hm[0]) || 0, Number(hm[1]) || 0, 0, 0);   // フォームに日付欄は無いので当日扱い
+      var off = -d.getTimezoneOffset(), sign = off < 0 ? "-" : "+";
+      off = Math.abs(off);
+      var startAt = d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()) + "T" +
+        pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":00" + sign + pad2(Math.floor(off / 60)) + ":" + pad2(off % 60);
+      return fetch("/api/reservations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rid: item.rid, startAt: startAt, adults: item.adults, kids: item.kids,
+          name: item.name, menu: item.menu
+        })
+      }).then(function (res) {
+        return res.json().catch(function () { return null; }).then(function (data) {
+          if (!res.ok || !data || !data.ok) throw new Error((data && data.error) || ("HTTP " + res.status));
+        });
+      }).then(function () {
+        /* ここでは seen に載せない。POST より前に出た /api/stock の応答が後から届くと、
+           「取込済みなのにサーバーから消えた」と見なされて入れたばかりの予約が消えるため。
+           次の取得より前の来店・削除で復活しないようにする印は markResSeen が付ける */
+        return true;
+      }).catch(function (err) {
+        console.error("[予約ストック] 中継サーバーへの保存に失敗:", err);
+        showPrintToast(failMsg);
+        return false;
+      });
     }
 
     /* ===================== チビ伝印刷 (簡易プレビュー + 実機印刷/window.printフォールバック #144) ===================== */
