@@ -2,19 +2,9 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const vm = require("node:vm");
-
-const html = fs.readFileSync(path.join(__dirname, "..", "kds-a-grid.html"), "utf8");
-
-function source(name) {
-  const start = html.indexOf("    function " + name + "(");
-  assert.notEqual(start, -1, "function must exist: " + name);
-  const end = html.indexOf("\n    }", start);
-  assert.notEqual(end, -1, "function must have a closing brace: " + name);
-  return html.slice(start, end + 6);
-}
+const { functionSource: source } = require("./helpers/kds-source");
+const ServeLog = require("../serve-log.js");
 
 function fixedDate(now) {
   return class FixedDate extends Date {
@@ -48,7 +38,7 @@ test("完了取消は同一注文の当日の提供時間記録だけを取り�
   let saved = null;
   const context = vm.createContext({
     Date: fixedDate(new Date(2026, 8, 8, 12, 0, 0, 0)),
-    pad2: (n) => (n < 10 ? "0" + n : "" + n),
+    window: { ServeLog },
     loadServeLog: () => log.slice(),
     saveServeLog: (next) => { saved = next.slice(); log = next.slice(); return true; },
   });

@@ -1,23 +1,13 @@
 "use strict";
 
 // #292: KDS の「＋」で入れた予約を中継サーバー(POST /api/reservations)にも保存する。
-// 単一HTML内の実装をそのまま実行する (既存の KDS テストと同じ流儀)。
+// KDSの実装をそのまま実行する (既存の KDS テストと同じ流儀)。
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const vm = require("node:vm");
-
-const html = fs.readFileSync(path.join(__dirname, "..", "kds-a-grid.html"), "utf8");
+const { functionSource: source } = require("./helpers/kds-source");
 const reservationStore = require("../relay-server/reservation-store");
 const { mergeStock } = require("../relay-server/kds-bridge");
-
-function source(name) {
-  const start = html.indexOf("    function " + name + "(");
-  assert.notEqual(start, -1, name);
-  const end = html.indexOf("\n    }\n", start);
-  return html.slice(start, end + 7);
-}
 
 function harness(fetchImpl) {
   const ls = {};

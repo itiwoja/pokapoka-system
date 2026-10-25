@@ -9,13 +9,23 @@ var events = require("node:events");
 var serverModule = require("../server");
 var printerModule = require("../printer");
 
+var EXTERNAL_PAGE_ASSETS = [
+  ["/assets/kds/kds.css", "text/css"],
+  ["/assets/kds/kds.js", "text/javascript; charset=utf-8"],
+  ["/serve-log.js", "text/javascript; charset=utf-8"],
+  ["/assets/reservations/entry.css", "text/css"],
+  ["/assets/reservations/entry.js", "text/javascript; charset=utf-8"],
+];
+
 test("server.js はimportだけでlistenせずcreateRelayを公開する", function () {
   var serverPath = path.join(__dirname, "..", "server.js");
   var script = "var relay=require(" + JSON.stringify(serverPath) + ");" +
     "if(typeof relay.createRelay!=='function')process.exit(2);";
   var result = childProcess.spawnSync(process.execPath, ["-e", script], {
     encoding: "utf8",
-    timeout: 1000,
+    // /mnt/c の並列テストでもモジュール読込のI/O待ちと常駐を取り違えない。
+    // listen・タイマーの起動漏れは、引き続き子プロセスの終了で検出する。
+    timeout: 5000,
   });
 
   assert.notEqual(result.error && result.error.code, "ETIMEDOUT", "import時にサーバーが常駐している");
@@ -147,6 +157,9 @@ test("トークン認証は401を維持し、QRのGET/HEADはCookie発行後clea
   // トークン無し: ページも API も通らない
   assert.equal((await requestRaw(relay.server, "/")).status, 401);
   assert.equal((await requestRaw(relay.server, "/api/stock")).status, 401);
+  for (var asset of EXTERNAL_PAGE_ASSETS) {
+    assert.equal((await requestRaw(relay.server, asset[0])).status, 401, asset[0]);
+  }
   assert.equal((await requestRaw(relay.server, "/api/seats", {
     method: "POST", body: JSON.stringify({ table: "5" }), headers: { "Content-Type": "application/json" },
   })).status, 401, "書き込みが素通りしている");
@@ -187,6 +200,11 @@ test("トークン認証は401を維持し、QRのGET/HEADはCookie発行後clea
   assert.equal((await requestRaw(relay.server, "/api/stock", {
     headers: { Cookie: "relay_token=" + encodeURIComponent(TOKEN) },
   })).status, 200);
+  for (var asset of EXTERNAL_PAGE_ASSETS) {
+    assert.equal((await requestRaw(relay.server, asset[0], {
+      headers: { Cookie: "relay_token=" + encodeURIComponent(TOKEN) },
+    })).status, 200, asset[0]);
+  }
 
   // 間違ったトークンは通さない
   assert.equal((await requestRaw(relay.server, "/api/stock", {
@@ -647,6 +665,44 @@ test("静的配信・404・不正URLを維持し、撤去した /demo とモッ�
   assert.equal((await requestRaw(relay.server, "/relay-server/not-found.js")).status, 404);
   assert.equal((await requestRaw(relay.server, "/%E0%A4%A")).status, 400);
   assert.equal((await requestRaw(relay.server, "/%2e%2e%5cissue-122-evil%5csecret.txt")).status, 403);
+});
+
+test("外部化したKDS・予約のアセットは正しいMIMEで内容を変えず配信する", async function (t) {
+  var fs = require("node:fs");
+  var relay = createTestRelay();
+  t.after(function () { return relay.stop(); });
+  relay.start();
+  await events.once(relay.server, "listening");
+
+  for (var asset of EXTERNAL_PAGE_ASSETS) {
+    var response = await requestRaw(relay.server, asset[0]);
+    assert.equal(response.status, 200, asset[0]);
+    assert.equal(response.headers["content-type"], asset[1], asset[0]);
+    assert.equal(response.text, fs.readFileSync(path.join(__dirname, "..", "..", asset[0].slice(1)), "utf8"), asset[0]);
+    assert.doesNotMatch(response.text, /<script src="\/relay-server\/kds-bridge\.js"><\/script>/, asset[0]);
+  }
+});
+
+test("静的配信はassets配下も個別許可のままで、存在する未許可ファイルを公開しない", async function (t) {
+  var fs = require("node:fs");
+  var os = require("node:os");
+  var staticRoute = require("../routes/static");
+  var dir = fs.mkdtempSync(path.join(os.tmpdir(), "kds-asset-allowlist-"));
+  t.after(function () { fs.rmSync(dir, { recursive: true, force: true }); });
+  var denied = ["assets/kds/private.js", "assets/kds/kds.js.map", "assets/reservations/private.css", "package.json"];
+  denied.forEach(function (file) {
+    var fullPath = path.join(dir, file);
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, "not public", "utf8");
+  });
+  var staticServer = http.createServer(function (req, res) {
+    staticRoute.serveStatic(res, new URL(req.url, "http://127.0.0.1"), dir);
+  });
+  await new Promise(function (resolve) { staticServer.listen(0, "127.0.0.1", resolve); });
+  t.after(function () { return new Promise(function (resolve) { staticServer.close(resolve); }); });
+  for (var file of denied) assert.equal((await requestRaw(staticServer, "/" + file)).status, 404, file);
+  assert.equal((await requestRaw(staticServer, "/assets/kds/")).status, 404);
+  assert.equal((await requestRaw(staticServer, "/assets/reservations/")).status, 404);
 });
 
 test("/kds-next は React 版 KDS を配信し、ブリッジを二重に差し込まない。/kds は従来どおり差し込む", async function (t) {

@@ -4,7 +4,7 @@
 // 「注文受付(start) → 全品目完了(completedAt)」までの提供時間を
 // 記録・集計・CSV化するための純粋関数群。
 // DOM・localStorage に一切依存しないため、ブラウザと Node（テスト）の
-// 両方でそのまま動く。永続化とUI連携は app.js 側が担当する。
+// 両方でそのまま動く。永続化とUI連携は assets/kds/kds.js 側が担当する。
 //
 // 関連: GitHub Issue #29 [自動化] 提供時間の自動計測
 //        PRD KPI「平均提供時間 MVP前比20%減」の導入前ベースライン計測基盤。
@@ -18,7 +18,7 @@
 
   /**
    * epoch ms を営業日キー "YYYY-MM-DD"（ローカル時刻）に変換する。
-   * kds-a-grid.html の todayStr() と同じ規則。日付が読めない場合は空文字。
+   * KDS の todayStr() と同じ規則。日付が読めない場合は空文字。
    * @param {number} ms
    * @returns {string}
    */
