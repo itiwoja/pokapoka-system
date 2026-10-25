@@ -6,7 +6,11 @@
     "sim": "SIMULATOR=1 node relay-server/server.js",
     "reservation:samples": "node scripts/reservation-samples.js",
     "test": "npm run test:kds && npm run test:relay",
+    "test:all": "npm test && npm run test:app && npm run typecheck",
     "test:kds": "node --test tests/*.test.js",
-    "test:relay": "npm --prefix relay-server test"
+    "test:relay": "npm --prefix relay-server test",
+    "test:app": "npm --prefix kds-app test",
+    "typecheck": "npm --prefix kds-app run typecheck",
+    "build:kds": "npm --prefix kds-app run build"
   }
 }

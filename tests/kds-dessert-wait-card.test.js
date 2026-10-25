@@ -2,18 +2,9 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const vm = require("node:vm");
-
-const html = fs.readFileSync(path.join(__dirname, "..", "kds-a-grid.html"), "utf8");
-// 単一HTML内の実装をそのまま実行する (kds-delete-order.test.js と同じ流儀)。
-function source(name) {
-  const start = html.indexOf("    function " + name + "(");
-  assert.notEqual(start, -1, name);
-  const end = html.indexOf("\n    }", start);
-  return html.slice(start, end + 6);
-}
+const { readKdsSources, functionSource: source } = require("./helpers/kds-source");
+const { js } = readKdsSources();
 
 const doneOrder = { id: 7, items: [{ done: true }, { done: true }] };
 const openOrder = { id: 7, items: [{ done: true }, { done: false }] };
@@ -39,7 +30,7 @@ test("デザート提供済み・未完了・snapshotなし・取り下げ済み
 });
 
 test("render は全完了でもデザート待ちならカードを作る", () => {
-  assert.match(html, /if \(!entry && allDone && !isDessertWaiting\(order\)\) return;/);
+  assert.match(js, /if \(!entry && allDone && !isDessertWaiting\(order\)\) return;/);
 });
 
 function undoHarness(dessertServed) {

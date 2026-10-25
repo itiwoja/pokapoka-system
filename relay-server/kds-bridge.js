@@ -280,6 +280,17 @@
     return !!value && typeof value === "object" && !Array.isArray(value);
   }
 
+  // サーバー更新として比べる予約項目を1か所に置く。seenAt の違いだけでは上書きしない。
+  function stockContentSignature(reservation) {
+    return JSON.stringify({
+      time: reservation.time, adults: reservation.adults, kids: reservation.kids,
+      name: reservation.name, menu: reservation.menu, allergies: reservation.allergies,
+      request: reservation.request, memo: reservation.memo,
+      // シニア・子供は 2026-10-22 に足した。それより前に保存した予約ストックには無いので 0 とみなして比べる
+      seniors: Number(reservation.seniors) || 0, children: Number(reservation.children) || 0,
+    });
+  }
+
   /**
    * サーバー取得分 (incoming) を既存ストックへマージする純粋関数。
    * seen (取込済み rid の記録) は incoming に載った rid をこの場で書き足す。
@@ -307,11 +318,7 @@
       if (!wasSeen) { seen[rid] = 1; seenChanged = true; }
       if (byRid[rid]) {                      // 既存 → 内容が変わっていれば上書き (updated 反映)
         var cur = byRid[rid];
-        if (JSON.stringify({ a: cur.time, b: cur.adults, c: cur.kids, d: cur.name, e: cur.menu,
-          // シニア・子供は 2026-10-22 に足した。それより前に保存した予約ストックには無いので 0 とみなして比べる
-          f: cur.allergies, g: cur.request, h: cur.memo, i: Number(cur.seniors) || 0, j: Number(cur.children) || 0 }) !==
-            JSON.stringify({ a: r.time, b: r.adults, c: r.kids, d: r.name, e: r.menu,
-              f: r.allergies, g: r.request, h: r.memo, i: Number(r.seniors) || 0, j: Number(r.children) || 0 })) {
+        if (stockContentSignature(cur) !== stockContentSignature(r)) {
           r.seenAt = cur.seenAt || r.seenAt; // 30分前通知の再発火を避けるため取込時刻は維持
           byRid[rid] = r; changed = true;
         }
@@ -580,10 +587,6 @@
     if (isPlainObject(snap.serveCue)) adoptServeCues(snap.serveCue);
     if (isPlainObject(snap.hallReady)) adoptHallReady(snap.hallReady);
     if (isPlainObject(snap.tableOverride)) adoptTableOverrides(snap.tableOverride);
-  }
-
-  function isPlainObject(value) {
-    return !!value && typeof value === "object" && !Array.isArray(value);
   }
 
   /* 前菜/デザートと提供準備完了は、KDS の poll() が localStorage を読み直さない

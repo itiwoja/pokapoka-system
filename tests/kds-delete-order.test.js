@@ -2,18 +2,8 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const vm = require("node:vm");
-
-const html = fs.readFileSync(path.join(__dirname, "..", "kds-a-grid.html"), "utf8");
-// 単一HTML内の実装を実行し、別の参照実装とのずれを避ける。
-function source(name) {
-  const start = html.indexOf("    function " + name + "(");
-  assert.notEqual(start, -1);
-  const end = html.indexOf("\n    }", start);
-  return html.slice(start, end + 6);
-}
+const { functionSource: source } = require("./helpers/kds-source");
 
 function harness() {
   const saved = {};

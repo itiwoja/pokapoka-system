@@ -3,6 +3,7 @@ import type { Card, OrderItem, Reservation } from "../../types";
 import type { KdsActions, KdsState } from "../../data/contract";
 import { printSlip } from "../../print/printSlip";
 import { reservationNotes } from "../../reservationNotes";
+import { hhmm, mmss } from "../../time";
 import KonroPicker from "../../components/KonroPicker";
 import { SeatPad } from "../../components/SeatPad";
 import { peopleTotal } from "../../components/StockPanel";
@@ -18,16 +19,6 @@ export const MAX_DROP_PX = 470;
 export function dropPx(elapsedMs: number): number {
   const min = Math.max(0, elapsedMs) / 60000;
   return Math.min(MAX_DROP_PX, Math.round((min / 10) * LINE10_PX));
-}
-
-function mmss(sec: number): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(Math.floor(sec / 60))}:${pad(sec % 60)}`;
-}
-
-function hhmm(ms: number): string {
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 function Row({ item, done, onComplete, onUndo }: { item: OrderItem; done: number; onComplete(): void; onUndo(): void }) {

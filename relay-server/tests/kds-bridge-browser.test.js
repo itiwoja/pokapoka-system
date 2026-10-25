@@ -4,7 +4,7 @@
  * kds-bridge.test.js は require して純粋関数だけを見ている。ここでは module の無い文脈へ
  * スクリプトをそのまま流し、/api/stock・/api/orders・/api/kitchen-state・/api/health の
  * ポーリングが localStorage・window.KDS_ORDERS・同期状態へどう反映されるかを確かめる。
- * WebSocket は用意しないので、注文は HTTP ポーリング経路を通る。
+ * 通常は HTTP ポーリング経路を通し、必要なテストだけ fake WebSocket を渡す。
  */
 "use strict";
 
@@ -44,6 +44,7 @@ function startBridge(routes, initial) {
   var events = [];
   var channels = [];
   var requests = [];
+  var windowListeners = {};
 
   function CustomEvent(type, init) { this.type = type; this.detail = init && init.detail; }
   function BroadcastChannel(name) { this.name = name; this.posted = []; this.onmessage = null; channels.push(this); }
@@ -51,9 +52,10 @@ function startBridge(routes, initial) {
 
   var window = {
     KDS_ORDERS: initial.orders,
+    WebSocket: initial.WebSocket,
     CustomEvent: CustomEvent,
     dispatchEvent: function (event) { events.push({ type: event.type, detail: plain(event.detail) }); return true; },
-    addEventListener: function () {},
+    addEventListener: function (type, listener) { windowListeners[type] = listener; },
   };
 
   var context = vm.createContext({
@@ -69,7 +71,7 @@ function startBridge(routes, initial) {
       requests.push({ method: method, url: url, body: init && init.body ? JSON.parse(init.body) : undefined });
       var handler = routes[method + " " + url];
       if (!handler) throw new Error("network down");
-      var response = handler(init);
+      var response = await handler(init);
       return {
         ok: response.status >= 200 && response.status < 300,
         status: response.status,
@@ -97,6 +99,7 @@ function startBridge(routes, initial) {
     stored: function (key) { return storage[key] === undefined ? undefined : JSON.parse(storage[key]); },
     status: function () { return plain(window.__KDS_SYNC_STATUS__); },
     tick: async function (name) { await intervals[name](); await settle(); },
+    emitWindow: function (type) { windowListeners[type](); },
     posts: function (url) {
       return requests.filter(function (r) { return r.method === "POST" && r.url === url; })
         .map(function (r) { return r.body; });
@@ -114,6 +117,45 @@ function order(id, items) {
   return { id: id, table: "3", type: "new", start: 1000, people: 2,
     items: items || [{ name: "土鍋御膳", qty: 2, options: null, allergies: null, done: false }] };
 }
+
+function fakeWebSockets() {
+  var sockets = [];
+  function WebSocket(url) {
+    this.url = url;
+    this.readyState = 1;
+    this.sent = [];
+    this.closeCount = 0;
+    sockets.push(this);
+  }
+  WebSocket.prototype.send = function (data) { this.sent.push(JSON.parse(data)); };
+  WebSocket.prototype.close = function () {
+    this.closeCount++;
+    this.readyState = 3;
+    if (this.onclose) this.onclose();
+  };
+  // 切断済みソケットに遅れて届いたイベントも意図的に発火できる
+  WebSocket.prototype.message = function (data) { this.onmessage({ data: JSON.stringify(data) }); };
+  return { WebSocket: WebSocket, sockets: sockets };
+}
+
+function snapshot(id, session) {
+  return { type: "orders.snapshot", sessionId: session || "s1", sequence: 0, orders: [
+    { orderId: id, table: "3", orderedAt: "2026-10-14T18:30:00+09:00", people: 2,
+      items: [{ name: "土鍋御膳", qty: 2, note: null, allergies: null }] },
+  ] };
+}
+
+test("Node require相当の読込では接続・タイマー・ブラウザI/Oを起動しない", function () {
+  function unexpected() { assert.fail("Node読込でブラウザI/Oを起動した"); }
+  var context = vm.createContext({
+    module: { exports: {} }, window: { WebSocket: unexpected },
+    setInterval: unexpected, setTimeout: unexpected, fetch: unexpected,
+    BroadcastChannel: unexpected, localStorage: { getItem: unexpected, setItem: unexpected },
+  });
+  vm.runInContext(source, context, { filename: "kds-bridge.js" });
+  assert.equal(typeof context.module.exports.mergeStock, "function");
+  assert.equal(typeof context.module.exports.createOrderStreamState, "function");
+});
 
 test("予約ストックの取得結果を localStorage へマージし、他タブへ流して同期状態を正常にする", async function () {
   var bridge = startBridge({
@@ -213,6 +255,59 @@ test("注文フィードは KDS 内の注文を残して置き換え、2回目�
   feed = [order("B2")];
   await bridge.tick("tickOrders");
   assert.deepEqual(plain(bridge.window.KDS_ORDERS).map(function (o) { return o.id; }), ["res-1", "B2"]);
+});
+
+test("WebSocketの全件受信後に古いHTTP応答が到着しても、注文を巻き戻さない", async function () {
+  var resolveHttp;
+  var pendingHttp = new Promise(function (resolve) { resolveHttp = resolve; });
+  var ws = fakeWebSockets();
+  var bridge = startBridge({ "GET /api/orders": function () { return pendingHttp; } }, { WebSocket: ws.WebSocket });
+  await settle();
+  assert.equal(bridge.requests.filter(function (r) { return r.url === "/api/orders"; }).length, 1);
+  assert.equal(ws.sockets[0].url, "ws://kds.local/ws/orders");
+
+  ws.sockets[0].message(snapshot("new-ws"));
+  resolveHttp({ status: 200, body: [order("old-http")] });
+  await settle();
+  await bridge.tick("tickOrders");
+  assert.deepEqual(plain(bridge.window.KDS_ORDERS).map(function (o) { return o.id; }), ["new-ws"]);
+  assert.deepEqual(bridge.stored("kds_server_orders_v1").map(function (o) { return o.id; }), ["new-ws"]);
+  assert.equal(bridge.requests.filter(function (r) { return r.url === "/api/orders"; }).length, 1, "WS正常時はHTTP取得しない");
+  assert.deepEqual(ws.sockets[0].sent, [{ type: "orders.ack", sessionId: "s1", sequence: 0 }]);
+});
+
+test("ソケットの世代変更で古いHTTP応答を捨て、旧ソケットの受信・切断イベントも無視する", async function () {
+  var resolveHttp;
+  var pendingHttp = new Promise(function (resolve) { resolveHttp = resolve; });
+  var ws = fakeWebSockets();
+  var showing = [order("res-local")];
+  var bridge = startBridge({ "GET /api/orders": function () { return pendingHttp; } }, {
+    WebSocket: ws.WebSocket, orders: showing,
+  });
+  await settle();
+  var old = ws.sockets[0];
+  bridge.emitWindow("online");
+  assert.equal(old.closeCount, 1);
+  assert.equal(ws.sockets.length, 2);
+
+  // 新ソケットは未受信なので orderSocketReady だけでは抑止できない。世代番号で古いHTTPを断る
+  resolveHttp({ status: 200, body: [order("old-http")] });
+  await settle();
+  assert.equal(bridge.window.KDS_ORDERS, showing);
+  assert.equal(bridge.stored("kds_server_orders_v1"), undefined);
+  assert.equal(bridge.status().channels.orders.lastSuccessAt, null);
+
+  var current = ws.sockets[1];
+  current.message(snapshot("new-ws", "s2"));
+  var status = bridge.status().channels.orders;
+  old.message(snapshot("stale-ws"));
+  old.onerror();
+  old.onclose();
+  assert.deepEqual(plain(bridge.window.KDS_ORDERS).map(function (o) { return o.id; }), ["res-local", "new-ws"]);
+  assert.deepEqual(bridge.status().channels.orders, status, "旧ソケットのイベントは成功・失敗にも数えない");
+  assert.equal(current.closeCount, 0);
+  assert.deepEqual(old.sent, []);
+  assert.deepEqual(current.sent, [{ type: "orders.ack", sessionId: "s2", sequence: 0 }]);
 });
 
 test("注文内容の更新では品目完了数を内容で引き継ぎ、厨房状態として relay へ送る", async function () {

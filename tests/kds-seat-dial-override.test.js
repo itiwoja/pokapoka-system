@@ -2,19 +2,9 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const vm = require("node:vm");
-
-const html = fs.readFileSync(path.join(__dirname, "..", "kds-a-grid.html"), "utf8");
-// 単一HTML内の実装を実行し、別の参照実装とのずれを避ける。
-function source(name) {
-  const start = html.indexOf("    function " + name + "(");
-  assert.notEqual(start, -1, "function must exist: " + name);
-  const end = html.indexOf("\n    }", start);
-  assert.notEqual(end, -1, "function must have a closing brace: " + name);
-  return html.slice(start, end + 6);
-}
+const { readKdsSources, functionSource: source } = require("./helpers/kds-source");
+const { js } = readKdsSources();
 
 function classList() {
   const set = new Set();
@@ -60,7 +50,7 @@ function harness() {
 }
 
 test("宣言: 置き換え待ちのフラグは false で始まる", () => {
-  assert.match(html, /\n    var seatDialReplaceNext = false;/);
+  assert.match(js, /\n    var seatDialReplaceNext = false;/);
 });
 
 test("卓番11の上書きダイヤルは今の卓番を見せたまま開き、「1」「2」で 12 になり確定できる", () => {

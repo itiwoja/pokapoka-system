@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import type { Card, OrderItem } from "../../types";
 import type { KdsActions, KdsState } from "../../data/contract";
 import { printSlip } from "../../print/printSlip";
+import { hhmm, mmss } from "../../time";
 import { SeatPad } from "../../components/SeatPad";
 import { useLongPress } from "../../components/useLongPress";
 import { peopleTotal } from "../../components/StockPanel";
@@ -17,15 +18,6 @@ const SLOTS = Array.from({ length: 10 }, (_, i) => i + 1);
 /** リングが1周する時間。炊き時間の目安 */
 const RING_SEC = 15 * 60;
 const KAMA = /釜飯|めし|飯/;
-
-function mmss(sec: number): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(Math.floor(sec / 60))}:${pad(sec % 60)}`;
-}
-function hhmm(ms: number): string {
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
 
 const remaining = (card: Card, i: number) => card.order.items[i].qty - (card.doneCounts[i] ?? 0);
 const pendingIdx = (card: Card) => card.order.items.map((_, i) => i).filter((i) => remaining(card, i) > 0);

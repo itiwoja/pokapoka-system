@@ -5,17 +5,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KdsActions, KdsState } from "./contract";
 import {
-  applyFinishing, assignKonro, buildSeatedOrder, completeOne, composeCards, connectionFrom, undoOne,
-  type DoneMap, type KdsCard,
+  applyFinishing, composeCards, connectionFrom, type KdsCard,
 } from "./logic";
 import {
-  loadDeleted, loadDone, loadKonro, loadOrderSeq, loadStock, purgeStaleDay, putOrder, readOrders,
-  saveDeleted, saveDone, saveKonro, saveOrderSeq, saveStock,
+  loadDeleted, loadDone, loadKonro, loadOrderSeq, loadStock, purgeStaleDay, readOrders,
 } from "./storage";
-import { konroMsg, moveToMainMsg, openChannel, toggleMsg, type Channel } from "./sync";
+import { applySyncMessage, openChannel, type Channel } from "./sync";
+import { createKdsActions } from "./actions";
 import { startOrderSound } from "./sound";
 import { installDevMock } from "./devMock";
-import type { Order, Reservation } from "../types";
 
 const TICK_MS = 1000;
 
@@ -65,37 +63,7 @@ export function useKds(): { state: KdsState; actions: KdsActions } {
 
     // 他タブ (旧画面など) からの変更を LS に反映してから読み直す。現行の受信処理と同じ扱い
     const channel = openChannel((msg) => {
-      if (msg.type === "toggle") {
-        const done: DoneMap = loadDone();
-        if (!done[msg.id]) done[msg.id] = [];
-        done[msg.id][msg.index] = msg.doneCount;
-        saveDone(done);
-      } else if (msg.type === "konro") {
-        const next = loadKonro();
-        const key = String(msg.num);
-        if (msg.state === "skeleton") {
-          if (next[msg.id]) {
-            delete next[msg.id][key];
-            if (!Object.keys(next[msg.id]).length) delete next[msg.id];
-          }
-        } else {
-          next[msg.id] = { ...(next[msg.id] || {}), [key]: msg.state };
-        }
-        saveKonro(next);
-      } else if (msg.type === "order" && Array.isArray(msg.seq)) {
-        saveOrderSeq(msg.seq.map(String));
-      } else if (msg.type === "stock" && Array.isArray(msg.stock)) {
-        saveStock(msg.stock);
-      } else if (msg.type === "moveToMain" && Array.isArray(msg.stock)) {
-        saveStock(msg.stock);
-        if (msg.order) putOrder(msg.order);
-      } else if (msg.type === "deleteOrder" && msg.id) {
-        const del = loadDeleted();
-        del[String(msg.id)] = true;
-        saveDeleted(del);
-        const w = window as { KDS_ORDERS?: Order[] };
-        if (Array.isArray(w.KDS_ORDERS)) w.KDS_ORDERS = w.KDS_ORDERS.filter((o) => String(o.id) !== String(msg.id));
-      }
+      applySyncMessage(msg);
       refresh();
     });
     channelRef.current = channel;
@@ -111,43 +79,10 @@ export function useKds(): { state: KdsState; actions: KdsActions } {
     };
   }, []);
 
-  const actions = useMemo<KdsActions>(() => {
-    const post = (m: Parameters<Channel["post"]>[0]) => channelRef.current?.post(m);
-    const done = (orderId: string, index: number, op: typeof completeOne) => {
-      const order = readOrders().find((o) => String(o.id) === orderId);
-      if (!order) return;
-      const doneMap = loadDone();
-      const r = op(order, doneMap, index);
-      if (!r) return;
-      doneMap[orderId] = r.counts;
-      saveDone(doneMap);
-      post(toggleMsg(orderId, index, r.doneCount));
-      refreshRef.current();
-    };
-    return {
-      completeOne: (orderId, index) => done(String(orderId), index, completeOne),
-      undoOne: (orderId, index) => done(String(orderId), index, undoOne),
-      setKonro(orderId, num, konroState) {
-        const { map, changes } = assignKonro(loadKonro(), String(orderId), num, konroState);
-        saveKonro(map);
-        changes.forEach((c) => post(konroMsg(c)));
-        refreshRef.current();
-      },
-      seatReservation(rid, table) {
-        const seat = String(table || "").trim();
-        if (!seat) return;
-        const stock = loadStock();
-        const r = stock.find((x: Reservation) => String(x.rid) === String(rid));
-        if (!r) return;
-        const order = buildSeatedOrder(r, seat, Date.now());
-        putOrder(order);
-        const rest = stock.filter((x) => String(x.rid) !== String(rid));
-        saveStock(rest);
-        post(moveToMainMsg(rest, order));
-        refreshRef.current();
-      },
-    };
-  }, []);
+  const actions = useMemo(() => createKdsActions(
+    (msg) => channelRef.current?.post(msg),
+    () => refreshRef.current(),
+  ), []);
 
   return { state, actions };
 }

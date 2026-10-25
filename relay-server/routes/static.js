@@ -16,6 +16,11 @@ var ALLOWED_STATIC_FILES = [
   RESERVATION_PAGE,             // 予約入力画面 (/reservations)。手入力・CSV・貼り付け・メールの入口
   "slip-style-designer.html",   // 印刷スタイル設定ツール。KDSと同一オリジンで配信しlocalStorageを共有する
   "slip-renderer.js",           // 伝票レイアウトの描画エンジン。フォーマッターとKDSで同じ絵を出すため共有する
+  "serve-log.js",               // 提供時間ログの純粋関数。KDSとNodeのテストで共有する
+  path.join("assets", "kds", "kds.css"),
+  path.join("assets", "kds", "kds.js"),
+  path.join("assets", "reservations", "entry.css"),
+  path.join("assets", "reservations", "entry.js"),
   path.join("assets", "sounds", "shishiodoshi.ogg"), // 新規注文通知音。出典は assets/sounds/README.md
   path.join("relay-server", "kds-bridge.js"),
   path.join("relay-server", "party-size.js"),  // 予約の人数の区分。KDS・予約入力画面・中継サーバーで共有する
