@@ -11,14 +11,14 @@
 
 | パス | 内容 |
 |---|---|
-| `kds-a-grid.html` | **KDS（デシャップ）画面本体**。フレームワーク不使用のHTML。伝票描画・人数計算はローカルJSを参照 |
+| `kds-a-grid.html` / `assets/kds/` | **KDS（デシャップ）画面本体**。HTMLは画面構造、`kds.css` はスタイル、`kds.js` は画面制御を担当 |
 | `kds-app/` | **デシャップ画面の React 版**（React + Vite）。ビルドで `kds-next.html` を生成し、中継サーバーが `/kds-next` で配信。現行の `/kds` は受け入れまで残す（[README](kds-app/README.md)） |
-| `reservation-entry.html` | **予約入力画面**（`/reservations`）。手入力・CSV／Excel取込・貼り付け・メールの試作と予約一覧・変更・取消 |
+| `reservation-entry.html` / `assets/reservations/` | **予約入力画面**（`/reservations`）。HTML・CSS・テスト可能な画面コントローラーを分離。手入力・CSV／Excel取込・貼り付け・メールの試作と予約一覧・変更・取消 |
 | `relay-server/` | **店内中継サーバー**。注文の受付と KDS の Web 配信（[詳細 README](relay-server/README.md)）。TableCheck **API** 連携は中止（旧API取得処理は [`archive/tablecheck/`](archive/tablecheck/README.md) へ退避）。予約ファイル取込は現行機能 |
 | `order-client.js` | 注文端末の送信・端末保存・受付確認・再送（[組み込み手順](docs/注文端末_通信モジュール組み込み.md)） |
 | `order-terminal/` | 別リポジトリの注文画面と商品マスター付き注文サーバー。`git submodule update --init order-terminal` で取得 |
 | `config/config.example.json` | 端末接続先などの設定雛形（実体 `config/config.json` は .gitignore 済み） |
-| `serve-log.js` / `tests/serve-log.test.js` | 提供時間計測ロジックの Node テスト用参照実装 |
+| `serve-log.js` / `tests/serve-log.test.js` | ブラウザと Node テストで共用する提供時間計測ロジック |
 | `tests/` | KDS画面・提供時間・伝票描画のテスト |
 | `relay-server/tests/` | 中継サーバー・通信モジュールのテスト |
 | `docs/` | PRD・要件定義・DB設計などの設計ドキュメント |
@@ -26,9 +26,9 @@
 
 ## KDS（厨房オーダー表示システム）
 
-**`kds-a-grid.html`** が本線の KDS 画面です。HTML / CSS / JavaScript のみ（フレームワーク・外部CDN不使用）で、伝票描画の `slip-renderer.js`、人数計算の `relay-server/party-size.js`、通知音の同梱ファイルを参照します。HTML 1ファイルだけで全機能は完結しません。中継サーバーから配信して使用し、通信断時は取得済みの表示・手元の操作状態を保持しますが、新着注文・別端末同期・サーバー経由の印刷には接続が必要です。店舗実機での合否は [実機検証チェックシート](docs/実機検証チェックシート_受け入れ試験.md) で別途確認します。
+**`kds-a-grid.html`** が本線の KDS 画面です。HTML / CSS / JavaScript のみ（フレームワーク・外部CDN不使用）で、`assets/kds/kds.css`・`assets/kds/kds.js`、提供時間計測の `serve-log.js`、伝票描画の `slip-renderer.js`、人数計算の `relay-server/party-size.js`、通知音の同梱ファイルを参照します。HTML 1ファイルだけで全機能は完結しません。**配置・コピーするときは同梱アセットも必要です。** 中継サーバーから配信して使用し、通信断時は取得済みの表示・手元の操作状態を保持しますが、新着注文・別端末同期・サーバー経由の印刷には接続が必要です。店舗実機での合否は [実機検証チェックシート](docs/実機検証チェックシート_受け入れ試験.md) で別途確認します。
 
-**産業用計器 UI**（商用デシャップ Okage DDS を参考にした、明るい盤面・色は「意味」にのみ使う設計）の部品構成に、**Java Swing（Metal / Ocean テーマ）風の見た目**を重ねています（青グラデーションのボタン、内部フレーム風のカード見出しとバンプ、Flush3D 枠の入力欄など。`<style>` 末尾の上書き層）。カードグリッド＋予約ストックの2ペイン構成。緊急度＝カード上帯（緑→琥珀→赤）、種別＝**カード背景のトーン差（新規=淡青／予約=淡金）**＋アンダーライン/チップ、赤は「10分超の経過警告」専用。
+**産業用計器 UI**（商用デシャップ Okage DDS を参考にした、明るい盤面・色は「意味」にのみ使う設計）の部品構成に、**Java Swing（Metal / Ocean テーマ）風の見た目**を重ねています（青グラデーションのボタン、内部フレーム風のカード見出しとバンプ、Flush3D 枠の入力欄など。`assets/kds/kds.css` 末尾の上書き層）。カードグリッド＋予約ストックの2ペイン構成。緊急度＝カード上帯（緑→琥珀→赤）、種別＝**カード背景のトーン差（新規=淡青／予約=淡金）**＋アンダーライン/チップ、赤は「10分超の経過警告」専用。
 
 主な機能:
 
@@ -62,17 +62,20 @@ npm start
 ### 自動テスト
 
 GitHub Actions は Pull Request と `main` への push で Node.js 22 を使用し、
-中継サーバーとルートの KDS 関連テストを実行します。店舗の設定ファイル、認証情報、
+中継サーバー・ルートの KDS・React 版のテストと型検査・ビルドを実行します。店舗の設定ファイル、認証情報、
 外部 API は不要です。ローカルでもリポジトリ直下から同じテストを再現できます。
 
 ```sh
 npm --prefix relay-server ci
-npm test
+npm --prefix kds-app ci
+npm run test:all
+npm run build:kds
 ```
 
-`npm run test:kds` / `npm run test:relay` で個別にも実行できます。
+`npm run test:kds` / `npm run test:relay` / `npm run test:app` で個別にも実行できます。
+従来の `npm test` は KDS と relay のテストのみを実行し、`npm run typecheck` は React 版の型検査を行います。
 
-`npm ci` は `relay-server/package-lock.json` に固定された依存関係をクリーンに導入します。
+各ディレクトリの `npm ci` は、それぞれの `package-lock.json` に固定された依存関係をクリーンに導入します。
 いずれかのテストが失敗するとコマンドと GitHub Actions は非ゼロ終了します。
 
 `window.KDS_ORDERS` に注文データ（`{id, table, type, start, people, items:[{name, qty, options, allergies, done}]}`）を投入すると表示されます。アレルギー情報は `allergies`（`allergy` / `allergyInfo`・配列も可）で受け取り、品目直下に「アレルギー: …」として常時表示します。空の場合は「デモデータを投入」ボタンでサンプルを表示できます（中継サーバー配信時は自動デモを抑止）。
@@ -117,7 +120,7 @@ CSV／Excel・手入力等 ──▶ /reservations ──▶ data/reservations.s
 
 保存に失敗した場合は握り潰さず、`console.error` を出したうえでヘッダーに赤い警告バナーを表示します。容量不足のときは提供時間ログを当日分まで削って 1 度だけ再試行します。
 
-計測ロジックは `kds-a-grid.html` にインライン実装（単一HTML要件のため）していますが、同一ロジックを `serve-log.js` に切り出して Node テストで検証しています。
+計測・集計・CSV生成の共通ロジックは `serve-log.js` をブラウザと Node テストで共用します。`assets/kds/kds.js` は実効卓番の反映、LocalStorage 保存、undo、容量不足時の再試行、CSVダウンロードを担当します。
 
 ```sh
 node --test tests/serve-log.test.js
@@ -132,7 +135,7 @@ window.KDS_exportServeCSV() // CSV ダウンロード
 window.KDS_clearServeLog()  // ログ全消去
 ```
 
-> **注**: `serve-log.js` は Node テスト用の参照実装です。`kds-a-grid.html` 内のインライン版とロジックは同一なので、片方を変更したら両方（と `tests/serve-log.test.js`）を同期してください。
+> **注**: 提供時間の計算を変更するときは、共通の `serve-log.js` と `tests/serve-log.test.js` を更新してください。画面固有の保存・卓番・undoの回帰テストも合わせて確認します。
 
 ## 遅延アラート：10分超の静的な赤表示（Issue #12・#158）
 

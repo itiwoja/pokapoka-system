@@ -127,7 +127,8 @@ npm start
 - CSVでは予約番号が無ければ来店日時と名前から、貼り付け・メールでは来店日時と名前を読めた場合に rid を作る。**同じ取込方式・日時・名前の場合だけ**同じ予約として上書きでき、変更や取込方式の混在で別予約になり得る。手入力の番号省略時は UUID を採番する。
 - 再取込は同じ rid の行全体を上書きする。CSV から消えただけの予約は取り消さず、卓番・メモ等を消したり手動取消を復活させたりする可能性がある。予約番号の必須化・消えた予約の扱い・手修正値の保護は未対応。
 - 件名に「キャンセル」とあるメールは取消の下書きになるが、同じ予約へ反映するには rid が一致する必要がある。C・D は自動保存しない。
-- 解析は `reservation-import.js`、API は `routes/reservations.js`、取込フォルダは `mail-inbox.js`。
+- 解析の公開APIは `reservation-import.js`。内部は `reservation-import/` の共通値解析・表形式・テキスト・メール解析に分かれる。API は `routes/reservations.js`、取込フォルダは `mail-inbox.js`。
+- 予約画面は `reservation-entry.html` が画面構造、`assets/reservations/entry.css` がスタイル、`assets/reservations/entry.js` がフォーム・一覧・各入口の制御を担当する。コントローラーはDOM・通信・時計を注入でき、`tests/reservation-entry-ui.test.js` でフォームの往復、非保存の下書き、CSV確認、エラー後の復帰等を検証する。
 
 **バックアップ**: 取り込んだ予約と店内で手入力・変更した内容を失わないよう、ミニPCの故障に備えて
 `data/reservations.sqlite` を定期的に別媒体へコピーする(方法と頻度は運用で決める)。
