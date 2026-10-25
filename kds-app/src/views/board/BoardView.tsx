@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { Card, OrderItem } from "../../types";
 import type { KdsActions, KdsState } from "../../data/contract";
-import { printSlip } from "../../print/printSlip";
+import { usePrintSlip } from "../../print/usePrintSlip";
 import { reservationNotes } from "../../reservationNotes";
+import { hhmm, mmss } from "../../time";
 import KonroPicker from "../../components/KonroPicker";
 import { SeatPad } from "../../components/SeatPad";
 import { useLongPress } from "../../components/useLongPress";
@@ -18,13 +19,6 @@ interface Props {
 const LATE_MIN = 10;
 const SOON_MIN = 30;
 const NONE: Set<number> = new Set();
-
-function pad(n: number) { return String(n).padStart(2, "0"); }
-function mmss(sec: number) { return `${pad(Math.floor(sec / 60))}:${pad(sec % 60)}`; }
-function clockText(now: number) {
-  const d = new Date(now);
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 /* 品目1つ。押す動作は OrderCard の ItemRow と同じ (タップ=完了、完了行タップ・長押し=戻す #153) */
 function Item({ item, done, onComplete, onUndo }: { item: OrderItem; done: number; onComplete: () => void; onUndo: () => void }) {
@@ -55,25 +49,7 @@ function Row({ card, now, actions, usedElsewhere }: { card: Card; now: number; a
   const nums = Object.keys(card.konro).map(Number).sort((a, b) => a - b);
   const notes = reservationNotes(order as unknown as Record<string, unknown>);
   const [picking, setPicking] = useState(false);
-  const [printing, setPrinting] = useState(false);
-  const [printError, setPrintError] = useState(false);
-  const errTimer = useRef<number | null>(null);
-  useEffect(() => () => { if (errTimer.current) window.clearTimeout(errTimer.current); }, []);
-
-  const onPrint = async () => {
-    setPrinting(true);
-    try {
-      const r = await printSlip(order);
-      if (r === "busy") return;
-      if (r === "failed") throw new Error("failed");
-    } catch {
-      setPrintError(true);
-      if (errTimer.current) window.clearTimeout(errTimer.current);
-      errTimer.current = window.setTimeout(() => setPrintError(false), 3000);
-    } finally {
-      setPrinting(false);
-    }
-  };
+  const { printing, printError, onPrint } = usePrintSlip(order);
 
   return (
     <div className={`kds-bd-row${late ? " late" : ""}${card.finishing ? " kds-bd-row--finishing" : ""}`} data-table={order.table}>
@@ -156,7 +132,7 @@ export default function BoardView({ state, actions }: Props) {
   return (
     <div className="kds-bd">
       <div className="kds-bd-head">
-        <span className="kds-bd-clock">{clockText(now)}</span>
+        <span className="kds-bd-clock">{hhmm(now)}</span>
         <span className="kds-bd-count">{cards.length}卓 ・ 10分超 {lateCount}</span>
       </div>
       {cards.length === 0 && <p className="kds-bd-empty">注文はありません</p>}

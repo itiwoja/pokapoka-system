@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { Card, OrderItem } from "../../types";
 import type { KdsActions } from "../../data/contract";
-import { printSlip } from "../../print/printSlip";
+import { usePrintSlip } from "../../print/usePrintSlip";
 import { reservationNotes } from "../../reservationNotes";
+import { mmss } from "../../time";
 import KonroPicker from "../../components/KonroPicker";
 import { useLongPress } from "../../components/useLongPress";
 import "./OrderCard.css";
@@ -21,12 +22,6 @@ interface Props {
 const NEGATION = /抜き|なし|無し|不要|入れない|ぬき|NO\b/i;
 
 const NONE: Set<number> = new Set();
-
-/** 経過秒を "MM:SS" にする。60分を超えても分はそのまま数える (例 75:03) */
-function mmss(sec: number): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(Math.floor(sec / 60))}:${pad(sec % 60)}`;
-}
 
 function elapsedLevel(min: number): "ok" | "warn" | "alert" {
   if (min >= 10) return "alert";
@@ -88,25 +83,7 @@ export default function OrderCard({ card, now, actions, usedElsewhere = NONE, fr
   const notes = reservationNotes(order as unknown as Record<string, unknown>);
 
   const [picking, setPicking] = useState(false);
-  const [printing, setPrinting] = useState(false);
-  const [printError, setPrintError] = useState(false);
-  const errTimer = useRef<number | null>(null);
-  useEffect(() => () => { if (errTimer.current) window.clearTimeout(errTimer.current); }, []);
-
-  const onPrint = async () => {
-    setPrinting(true);
-    try {
-      const r = await printSlip(order);
-      if (r === "busy") return; // 別のカードの印刷を送信中。失敗ではないので何も出さない
-      if (r === "failed") throw new Error("failed");
-    } catch {
-      setPrintError(true);
-      if (errTimer.current) window.clearTimeout(errTimer.current);
-      errTimer.current = window.setTimeout(() => setPrintError(false), 3000);
-    } finally {
-      setPrinting(false);
-    }
-  };
+  const { printing, printError, onPrint } = usePrintSlip(order);
 
   return (
     <article className={`kds-card kds-card--${level}${card.finishing ? " kds-card--finishing" : ""}${fresh ? " kds-card--fresh" : ""}`}>

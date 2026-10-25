@@ -1,4 +1,5 @@
 import type { Connection } from "../../types";
+import { hhmm } from "../../time";
 import "./TopBar.css";
 
 interface Props {
@@ -6,11 +7,6 @@ interface Props {
   activeCount: number;
   alertCount: number;
   connection: Connection;
-}
-
-function hhmm(ms: number): string {
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 export default function TopBar({ now, activeCount, alertCount, connection }: Props) {
