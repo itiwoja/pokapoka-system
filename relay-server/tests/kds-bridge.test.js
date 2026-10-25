@@ -101,6 +101,27 @@ test("内容が同じなら changed = false (無駄な書換・配信をしな�
   assert.equal(out.changed, false);
 });
 
+test("seenAtだけの違いは予約内容の変更とみなさず、既存の取込時刻を残す", function () {
+  var current = rec("mock-1", { seenAt: 100 });
+  var out = mergeStock([current], { "mock-1": 1 }, [rec("mock-1", { seenAt: 999 })]);
+  assert.equal(out.changed, false);
+  assert.equal(out.stock[0], current);
+  assert.equal(out.stock[0].seenAt, 100);
+});
+
+test("予約の比較対象10項目は、それぞれ単独の変更でも更新する", function () {
+  var changes = { time: "19:00", adults: 3, kids: 1, name: "変更後", menu: [{ name: "茶", qty: 1 }],
+    allergies: "卵", request: "窓側", memo: "要確認", seniors: 1, children: 1 };
+  Object.keys(changes).forEach(function (field) {
+    var update = { seenAt: 999 };
+    update[field] = changes[field];
+    var out = mergeStock([rec("mock-1")], { "mock-1": 1 }, [rec("mock-1", update)]);
+    assert.equal(out.changed, true, field);
+    assert.deepEqual(out.stock[0][field], changes[field], field);
+    assert.equal(out.stock[0].seenAt, 100, field + ": 取込時刻は維持する");
+  });
+});
+
 test("アレルギー・要望だけの更新も予約ストックへ反映する", function () {
   var current = rec("mock-notes", { allergies: "卵", request: "窓側希望" });
   var incoming = rec("mock-notes", { allergies: "卵・乳", request: "子供用椅子" });
@@ -388,4 +409,11 @@ test("シニア・子供の項目が無い以前の予約ストックは、サ�
   assert.equal(out.changed, false);
   var updated = mergeStock([rec("abc123")], { "abc123": 1 }, [rec("abc123", { seniors: 1, children: 0 })]);
   assert.equal(updated.changed, true, "人数の内訳が変われば上書きする");
+});
+
+test("シニア・子供の比較は旧データのnullや文字列も数値の0として補完する", function () {
+  var current = rec("abc123", { seniors: null, children: "0" });
+  var out = mergeStock([current], { "abc123": 1 }, [rec("abc123", { seniors: "0", children: 0 })]);
+  assert.equal(out.changed, false);
+  assert.equal(out.stock[0], current);
 });

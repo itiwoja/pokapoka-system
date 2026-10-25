@@ -11,6 +11,12 @@ var OPTS = { now: NOW };
 
 function local(y, m, d, h, mi) { return new Date(y, m - 1, d, h, mi).getTime(); }
 
+test("公開API: 既存の9関数だけを同じ名前で公開する", function () {
+  assert.deepEqual(Object.keys(imp), ["decodeBytes", "parseDateTime", "parsePeople", "parseMenuList",
+    "parseCsv", "parseXlsx", "parseSpreadsheet", "parseText", "parseMail"]);
+  Object.keys(imp).forEach(function (name) { assert.equal(typeof imp[name], "function", name); });
+});
+
 test("日時: 表記ゆれを受け、年が無ければ今年、半年以上前なら来年とみなす", function () {
   assert.equal(Date.parse(imp.parseDateTime("2026/10/14 18:30", NOW)), local(2026, 10, 14, 18, 30));
   assert.equal(Date.parse(imp.parseDateTime("2026年10月14日(水) 18時30分", NOW)), local(2026, 10, 14, 18, 30));
@@ -213,6 +219,29 @@ test("CSV: 作成日時・受付日など来店でない日時の列を来店日
   assert.equal(Date.parse(ended.rows[0].draft.startAt), local(2026, 10, 25, 18, 0), "終了日時は来店日時にしない");
 });
 
+test("CSV: 来店日時列を最優先し、読めなければ絶対日時の予約時間列へ戻る", function () {
+  var csv = "来店日時,予約日,予約時間,名前\n" +
+    "2026-10-24 17:00,2026-10-01,2026-10-25 18:00,山田\n" +
+    "不明,2026-10-01,2026-10-25 18:00,田中\n";
+  var out = imp.parseCsv(csv, OPTS);
+  assert.equal(Date.parse(out.rows[0].draft.startAt), local(2026, 10, 24, 17, 0));
+  assert.equal(Date.parse(out.rows[1].draft.startAt), local(2026, 10, 25, 18, 0));
+  assert.deepEqual(out.rows.map(function (row) { return row.errors; }), [[], []]);
+});
+
+test("CSV: 見出し探索は5行まで、予約データは500行まで受ける", function () {
+  var titles = "予約\n一覧\n出力\n当日分\n";
+  var header = "来店日時,名前\n";
+  var row = "2026-10-14 18:30,山田\n";
+  var atLimit = imp.parseCsv(titles + header + row.repeat(500), OPTS);
+  assert.equal(atLimit.error, undefined);
+  assert.equal(atLimit.rows.length, 500);
+  assert.equal(atLimit.rows[0].line, 6);
+  assert.equal(atLimit.rows[499].line, 505);
+  assert.equal(imp.parseCsv(titles + header + row.repeat(501), OPTS).error, "行数が多すぎます (500行まで)");
+  assert.match(imp.parseCsv(titles + "追加タイトル\n" + header + row, OPTS).error, /来店日時の列/);
+});
+
 test("アレルギー: 「特にありません」など否定の自由回答はアレルギーにしない", function () {
   ["特にありません", "ありません。", "大丈夫です", "なし。", "問題ないです"].forEach(function (answer) {
     var csv = "来店日時,予約メモ\n2026-10-14 18:30,\"質問1: アレルギーやお苦手な食材のあ… 回答1: " + answer + "\"\n";
@@ -290,9 +319,29 @@ test("貼り付け: ラベルが無くても本文から日時・名前・人数
 
 test("貼り付け: 読み取れなかった項目を warnings で返し、ridは付けない", function () {
   var out = imp.parseText("こんにちは", OPTS);
-  assert.equal(out.draft.startAt, null);
-  assert.equal(out.draft.rid, null);
-  assert.equal(out.warnings.length, 4);
+  assert.deepEqual(out.draft, {
+    rid: null, startAt: null, adults: 0, seniors: 0, children: 0, kids: 0, name: null,
+    status: "booked", table: null, menu: [], allergies: null, request: null, memo: null,
+  });
+  assert.deepEqual(out.warnings, ["来店日時を読み取れませんでした", "予約者名を読み取れませんでした",
+    "人数を読み取れませんでした", "メニューを読み取れませんでした (メニューの無い予約は厨房画面に出ません)"]);
+});
+
+test("ID: 日時の瞬間と空白除去・NFKCした名前をハッシュ化し、入口ごとの接頭辞を保つ", function () {
+  var startAt = "2026-10-14T18:30:00+09:00";
+  var hash = require("node:crypto").createHash("sha256")
+    .update(String(Date.parse(startAt)) + "|山田A", "utf8").digest("hex").slice(0, 16);
+  var csv = "来店日時,名前\n" + startAt + ",山田　Ａ 様\n";
+  var text = "来店日時: " + startAt + "\n名前: 山田 A 様\n";
+  assert.equal(imp.parseCsv(csv, OPTS).rows[0].draft.rid, "csv-" + hash);
+  assert.equal(imp.parseText(text, OPTS).draft.rid, "txt-" + hash);
+  assert.equal(imp.parseMail(text, OPTS).draft.rid, "mail-" + hash);
+  assert.equal(imp.parseText(text, { now: NOW, ridPrefix: "custom" }).draft.rid, "custom-" + hash);
+  var namelessCsv = imp.parseCsv("来店日時\n" + startAt + "\n", OPTS).rows[0].draft;
+  assert.match(namelessCsv.rid, /^csv-[0-9a-f]{16}$/, "CSV は名前が無くても日時から採番する");
+  assert.equal(imp.parseText("来店日時: " + startAt, OPTS).draft.rid, null, "貼り付けは名前も必要");
+  assert.equal(imp.parseMail("来店日時: " + startAt, OPTS).draft.rid, null, "メールも名前が必要");
+  assert.equal(imp.parseText("予約番号: Ａ １２３\n" + text, OPTS).draft.rid, "A123", "明示の番号を優先する");
 });
 
 test("メール: base64の本文と、折り返してエンコードされた件名を読む", function () {
@@ -344,7 +393,7 @@ test("メール: ISO-2022-JP の7bit本文を読む", function () {
   assert.equal(out.draft.name, "山田");
 });
 
-test("メール: multipart は text/plain を優先し、HTMLだけならタグを外す。件名のキャンセルは取消にする", function () {
+test("メール: HTMLだけならタグを外す。件名のキャンセルは取消にする", function () {
   var html = "<html><body><p>来店日時: 2026/10/14 18:30</p><div>お名前: 山田&nbsp;様</div><p>人数: 2名</p></body></html>";
   var eml = [
     "Subject: =?UTF-8?Q?=E3=82=AD=E3=83=A3=E3=83=B3=E3=82=BB=E3=83=AB?=",
@@ -366,6 +415,66 @@ test("メール: multipart は text/plain を優先し、HTMLだけならタグ�
   assert.equal(out.draft.name, "山田");
   assert.equal(out.draft.adults, 2);
   assert.equal(Date.parse(out.draft.startAt), local(2026, 10, 14, 18, 30));
+});
+
+function multipart(parts, boundary) {
+  return "Content-Type: multipart/alternative; boundary=\"" + boundary + "\"\r\n\r\n" +
+    parts.map(function (part) { return "--" + boundary + "\r\n" + part + "\r\n"; }).join("") +
+    "--" + boundary + "--\r\n";
+}
+
+function mailPart(type, body) {
+  return "Content-Type: " + type + "; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" +
+    Buffer.from(body, "utf8").toString("base64");
+}
+
+test("メール: plainとHTMLを両方含むMIMEでは順序によらずplainを優先する", function () {
+  var body = "来店日時: 2026/10/14 18:30\n名前: 本文の山田\n人数: 2名\nメニュー: 茶 x2";
+  var text = mailPart("text/plain", body);
+  var html = mailPart("text/html", "<p>来店日時: 2026/10/15 19:00</p><p>名前: HTMLの田中</p><p>人数: 3名</p>");
+  [[html, text], [text, html]].forEach(function (parts) {
+    var out = imp.parseMail(Buffer.from(multipart(parts, "both"), "latin1"), OPTS);
+    assert.equal(out.body, body);
+    assert.equal(out.draft.name, "本文の山田");
+    assert.equal(out.draft.adults, 2);
+    assert.deepEqual(out.warnings, []);
+    assert.equal(Date.parse(out.draft.startAt), local(2026, 10, 14, 18, 30));
+  });
+});
+
+test("メール: quoted-printableのsoft breakをLF/CRLFとも除き、日本語のバイト列をつなぐ", function () {
+  var body = "来店日時: 2026/10/14 18:30\r\n名前: 山田\r\n人数: 2名\r\nメニュー: 土鍋御膳 x2";
+  var encoded = Array.from(Buffer.from(body, "utf8")).map(function (byte) {
+    return "=" + byte.toString(16).toUpperCase().padStart(2, "0");
+  }).join("");
+  ["\n", "\r\n"].forEach(function (newline) {
+    // =XX の途中でも折り返し、soft break の除去後に復元されることを確かめる
+    var folded = encoded.match(/.{1,17}/g).join("=" + newline);
+    var eml = "Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n" + folded;
+    var out = imp.parseMail(Buffer.from(eml, "latin1"), OPTS);
+    assert.equal(out.body, body);
+    assert.equal(out.draft.name, "山田");
+    assert.deepEqual(out.draft.menu, [{ name: "土鍋御膳", qty: 2 }]);
+    assert.deepEqual(out.warnings, []);
+  });
+});
+
+test("メール: multipartは5段まで展開し、6段目は読まず外側のHTMLへフォールバックする", function () {
+  var body = "来店日時: 2026/10/14 18:30\n名前: 山田\n人数: 2名\nメニュー: 茶 x2";
+  var nested = mailPart("text/plain", body);
+  for (var depth = 1; depth <= 6; depth++) {
+    nested = multipart([nested], "depth" + depth);
+    var out = imp.parseMail(Buffer.from(nested, "latin1"), OPTS);
+    if (depth <= 5) {
+      assert.equal(out.body, body, depth + "段");
+      assert.deepEqual(out.warnings, []);
+    } else {
+      assert.equal(out.body, "", "6段目の本文は展開しない");
+      assert.equal(out.warnings.length, 4);
+    }
+  }
+  var fallback = multipart([nested, mailPart("text/html", "<p>名前: HTMLの田中</p>")], "fallback");
+  assert.equal(imp.parseMail(Buffer.from(fallback, "latin1"), OPTS).draft.name, "HTMLの田中");
 });
 
 test("メール: ヘッダーの無いテキストは本文として読み、確定と取消で同じridになる", function () {
