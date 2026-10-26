@@ -196,6 +196,7 @@ function browserPrint(order: Order, st: SlipStyle | null, tpl: SlipTemplate | nu
 }
 
 export async function printSlip(order: Order): Promise<"printed" | "browser" | "failed" | "busy"> {
+  if (new URLSearchParams(location.search).get("view") === "lab") return "busy";
   if (busy) return "busy"; // 連打ガード (#176)。送信中の2回目は何もしない (失敗表示も出さない)
   busy = true;
   try {

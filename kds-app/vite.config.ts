@@ -4,7 +4,7 @@ import { viteSingleFile } from "vite-plugin-singlefile";
 
 // 店内LANで完全オフラインに動かすため、JS/CSS を1枚の HTML に埋め込む。
 // kds-bridge.js / slip-renderer.js / party-size.js は中継サーバーが配る共有ファイルなので
-// 埋め込まずに <script src> のまま残す (index.html 参照)。
+// 埋め込まずに通常画面の起動時に読み込む (src/main.tsx 参照)。
 export default defineConfig({
   plugins: [react(), viteSingleFile()],
   build: { outDir: "dist", emptyOutDir: true },

@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import { useKds } from "./data/useKds";
+import { views } from "./views/registry";
 
 /*
  * 比較中のレイアウト案。?view= で切り替える (画面上に切替は出さない)。
@@ -7,29 +8,22 @@ import { useKds } from "./data/useKds";
  *   rail     案A 伝票レール views/rail
  *   stove    案B コンロ盤   views/stove
  *   board    案C 一枚の板   views/board
- * どれかに決まったら残りのディレクトリを消す
+ *   lab      UIラボ（サンプルによる一覧・比較）
  */
-const VIEWS = {
-  cards: lazy(() => import("./views/cards/CardsView")),
-  rail: lazy(() => import("./views/rail/RailView")),
-  stove: lazy(() => import("./views/stove/StoveView")),
-  board: lazy(() => import("./views/board/BoardView")),
-} as const;
+const Lab = lazy(() => import("./lab/UiLab"));
 
-function viewName(): keyof typeof VIEWS {
-  try {
-    const v = new URLSearchParams(location.search).get("view");
-    if (v && v in VIEWS) return v as keyof typeof VIEWS;
-  } catch { /* location が無い環境ではカード型 */ }
-  return "cards";
-}
-
-export default function App() {
+function LiveApp() {
   const { state, actions } = useKds();
-  const View = VIEWS[viewName()];
+  const View = (views.find((v) => v.id === new URLSearchParams(location.search).get("view")) || views[0]).component;
   return (
     <Suspense fallback={null}>
       <View state={state} actions={actions} />
     </Suspense>
   );
+}
+
+export default function App() {
+  return new URLSearchParams(location.search).get("view") === "lab"
+    ? <Suspense fallback={<p>UIラボを読み込み中…</p>}><Lab /></Suspense>
+    : <LiveApp />;
 }
