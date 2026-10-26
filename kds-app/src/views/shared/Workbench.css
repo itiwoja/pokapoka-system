@@ -1,0 +1,101 @@
+.kds-workbench {
+  --wb-bg: #f5f5f0; --wb-panel: #fff; --wb-ink: #263a35; --wb-muted: #5e6d67;
+  --wb-line: #d9e0d9; --wb-accent: #295d49; --wb-tint: #eaf1e9;
+  --wb-alert: #ab3229; --wb-alert-bg: #fff0ec;
+  height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+  position: relative; isolation: isolate; container-type: inline-size; background: var(--wb-bg); color: var(--wb-ink);
+  font-size: 15px; line-height: 1.5; text-align: left;
+}
+.kds-workbench button { cursor: pointer; touch-action: manipulation; }
+.kds-workbench button:disabled { cursor: default; opacity: .5; }
+.kds-workbench button:focus-visible, .kds-workbench input:focus-visible { outline: 3px solid var(--wb-accent); outline-offset: 3px; }
+.kds-workbench h1, .kds-workbench h2, .kds-workbench h3, .kds-workbench p { margin: 0; }
+.wb-header { flex: none; display: flex; gap: 24px; align-items: center; padding: 20px 28px; background: var(--wb-panel); border-bottom: 1px solid var(--wb-line); }
+.wb-brand { display: flex; gap: 12px; align-items: center; margin-right: auto; }
+.wb-mark { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid var(--wb-line); border-radius: 50%; font-family: serif; font-size: 24px; }
+.wb-eyebrow { color: var(--wb-muted); font-size: 10px; font-weight: 700; letter-spacing: .12em; }
+.wb-header h1 { font-size: 22px; font-weight: 800; letter-spacing: -.04em; }
+.wb-metrics { display: flex; gap: 20px; color: var(--wb-muted); font-size: 12px; white-space: nowrap; }
+.wb-metrics b { font-size: 26px; font-weight: 600; margin-right: 3px; font-variant-numeric: tabular-nums; }
+.wb-late-text { color: var(--wb-alert); }
+.wb-reservations { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 8px 16px; border: 1px solid var(--wb-line); border-radius: 8px; background: var(--wb-bg); font-size: 13px; }
+.wb-reservations b { font-size: 20px; }
+.wb-clock { font-size: 23px; font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+.wb-offline { background: var(--wb-alert-bg); color: var(--wb-alert); padding: 8px 20px; font-weight: 700; }
+.wb-content { min-height: 0; min-width: 0; flex: 1; overflow: auto; display: flex; flex-direction: column; }
+.wb-footer { flex: none; display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--wb-line); padding: 10px 24px; color: var(--wb-muted); font-size: 11px; }
+.wb-empty { margin: auto; padding: 48px 24px; text-align: center; color: var(--wb-muted); }
+.wb-empty > span { display: block; font-size: 52px; font-weight: 300; color: var(--wb-accent); margin-bottom: 16px; }
+.wb-empty h2 { font-size: 20px; color: var(--wb-ink); margin-bottom: 8px; }
+.wb-empty p { font-size: 13px; }
+.wb-age { white-space: nowrap; font-size: 17px; font-variant-numeric: tabular-nums; font-weight: 700; }
+.wb-age.is-late { color: var(--wb-alert); background: var(--wb-alert-bg); padding: 5px 9px; border-radius: 5px; }
+.wb-age small { font-size: 10px; }
+.wb-age.is-complete { font-size: 13px; color: var(--wb-accent); }
+.wb-notes { font-size: 12px; padding: 10px 12px; background: var(--wb-tint); border-radius: 5px; overflow-wrap: anywhere; }
+.wb-notes p + p { margin-top: 4px; }
+.wb-allergy { color: var(--wb-alert); font-weight: 750; }
+.wb-item { width: 100%; min-height: 66px; display: flex; align-items: center; gap: 14px; padding: 13px 16px; background: var(--wb-panel); color: var(--wb-ink); border: 1px solid var(--wb-line); border-radius: 8px; text-align: left; position: relative; }
+.wb-item:hover { border-color: var(--wb-accent); }
+.wb-item:active { background: var(--wb-tint); }
+.wb-item.is-pressing { box-shadow: inset 0 -4px var(--wb-accent); }
+.wb-item-copy { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.wb-item-copy strong { display: block; font-size: 17px; }
+.wb-item-copy small { display: block; font-size: 12px; margin-top: 3px; }
+.wb-item-count { margin-left: auto; display: flex; flex-direction: column; align-items: center; flex: none; min-width: 28px; }
+.wb-item-count b { font-size: 27px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.wb-item-count small { font-size: 10px; color: var(--wb-muted); }
+.wb-item-fraction { font-size: 12px; color: var(--wb-muted); flex: none; }
+.wb-item.is-done { background: var(--wb-tint); }
+.wb-item.is-done .wb-item-copy strong { text-decoration: line-through; color: var(--wb-muted); }
+.wb-item.is-done .wb-item-count b { color: var(--wb-accent); }
+.wb-item-table { font-size: 23px; overflow-wrap: anywhere; }
+.wb-item-table small { font-size: 11px; margin-left: 4px; font-weight: 500; }
+.wb-item--compact { min-height: 58px; padding: 9px 12px; gap: 10px; }
+.wb-item--compact .wb-item-count b { font-size: 23px; }
+.wb-order-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.wb-order-heading h2 { font-size: 66px; line-height: 1.3; font-weight: 600; letter-spacing: -.06em; overflow-wrap: anywhere; }
+.wb-order-heading h2 small { font-size: 20px; margin-left: 12px; font-weight: 500; letter-spacing: 0; }
+.wb-order-detail { display: flex; flex-direction: column; gap: 18px; }
+.wb-progress-label { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--wb-muted); }
+.wb-progress { width: 100%; height: 5px; appearance: none; border: 0; background: var(--wb-line); color: var(--wb-accent); border-radius: 10px; overflow: hidden; }
+.wb-progress::-webkit-progress-bar { background: var(--wb-line); }
+.wb-progress::-webkit-progress-value { background: var(--wb-accent); }
+.wb-progress::-moz-progress-bar { background: var(--wb-accent); }
+.wb-item-list { display: flex; flex-direction: column; gap: 9px; }
+.wb-tool-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.wb-tool-buttons > button, .wb-dialog-heading > button { min-height: 44px; border: 1px solid var(--wb-line); border-radius: 6px; padding: 8px 14px; background: var(--wb-panel); font-size: 12px; }
+.wb-tool-buttons > button:first-child { flex: 1; text-align: left; overflow-wrap: anywhere; }
+.wb-tool-buttons > button:first-child > span { float: right; }
+.wb-tools > p { padding-top: 8px; font-size: 12px; color: var(--wb-alert); }
+.wb-konro { margin: 14px 0 0; padding: 8px; border: 1px solid var(--wb-line); border-radius: 6px; }
+.wb-konro legend { font-size: 11px; padding: 0 5px; color: var(--wb-muted); }
+.wb-konro > div { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.wb-konro button { min-height: 52px; padding: 5px 2px; border: 1px solid var(--wb-line); border-radius: 5px; background: var(--wb-panel); }
+.wb-konro button b { display: block; font-size: 18px; }
+.wb-konro button small { display: block; font-size: 9px; }
+.wb-konro button.is-white { background: var(--wb-ink); color: var(--wb-panel); }
+.wb-konro button.is-red { background: var(--wb-alert); color: #fff; }
+.wb-overlay { position: absolute; inset: 0; z-index: 30; background: #12231c66; padding: 24px; display: flex; justify-content: flex-end; }
+.wb-dialog { width: min(560px, 100%); min-height: 0; background: var(--wb-panel); border-radius: 12px; display: flex; flex-direction: column; box-shadow: 0 16px 64px #0002; outline: none; }
+.wb-dialog-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 18px 24px; border-bottom: 1px solid var(--wb-line); }
+.wb-dialog-heading h2 { font-size: 18px; }
+.wb-dialog-body { padding: 24px; overflow: auto; min-height: 0; flex: 1; }
+.wb-dialog .kds-stock { width: 100%; height: auto; min-height: 100%; }
+.wb-dialog .kds-stock-list { overflow: visible; }
+.wb-dialog .kds-seatpad-backdrop { color: var(--text); }
+@container (max-width: 800px) {
+  .wb-header { gap: 14px; padding: 14px 18px; flex-wrap: wrap; }
+  .wb-metrics { order: 3; width: 100%; gap: 20px; }
+  .wb-metrics b { font-size: 19px; }
+  .wb-header h1 { font-size: 19px; }
+  .wb-footer > span:last-child { display: none; }
+}
+@container (max-width: 480px) {
+  .wb-mark, .wb-clock { display: none; }
+  .wb-header { gap: 10px; padding: 12px; }
+  .wb-reservations { padding: 6px 10px; }
+  .wb-dialog-body { padding: 16px; }
+  .wb-overlay { padding: 8px; }
+  .wb-order-heading h2 { font-size: 48px; }
+}

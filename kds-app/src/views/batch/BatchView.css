@@ -1,0 +1,31 @@
+.wb-batch { --wb-bg: #f6f1e9; --wb-panel: #fffdf9; --wb-ink: #493d30; --wb-muted: #76644f; --wb-line: #e2d9ca; --wb-accent: #805923; --wb-tint: #efe7d9; }
+.batch-intro { display: flex; align-items: center; gap: 28px; padding: 24px 30px; }
+.batch-intro > div:first-child { margin-right: auto; }
+.batch-intro h2 { font-family: "Yu Mincho", "Hiragino Mincho ProN", serif; font-size: 27px; letter-spacing: -.04em; }
+.batch-intro p { color: var(--wb-muted); font-size: 12px; margin-top: 7px; }
+.batch-total { display: flex; align-items: center; gap: 10px; }
+.batch-total b { font-size: 44px; line-height: 1; font-weight: 500; font-variant-numeric: tabular-nums; }
+.batch-total > span { font-size: 11px; max-width: 50px; }
+.batch-intro > button { min-height: 44px; background: transparent; border: 1px solid var(--wb-line); border-radius: 7px; padding: 10px 13px; font-size: 11px; }
+.batch-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: max-content; gap: 18px; padding: 0 24px 24px; overflow: auto; align-content: start; flex: 1; min-height: 0; }
+.batch-group { background: var(--wb-panel); border: 1px solid var(--wb-line); border-radius: 3px 3px 12px 12px; border-top: 4px solid var(--wb-accent); align-self: start; overflow: hidden; }
+.batch-group.is-complete { border-top-color: var(--wb-line); }
+.batch-group-heading { display: flex; align-items: start; gap: 10px; padding: 20px 18px 16px; }
+.batch-index { font-size: 10px; color: var(--wb-muted); margin-top: 5px; }
+.batch-group-heading > div:nth-child(2) { flex: 1; min-width: 0; }
+.batch-group-heading h3 { font-size: 20px; letter-spacing: -.03em; overflow-wrap: anywhere; }
+.batch-group-heading p { font-size: 11px; color: var(--wb-muted); margin-top: 6px; overflow-wrap: anywhere; }
+.batch-remaining { display: flex; flex-direction: column; align-items: center; min-width: 42px; }
+.batch-remaining b { font-size: 38px; line-height: 1; font-weight: 500; color: var(--wb-accent); }
+.batch-remaining span { font-size: 9px; color: var(--wb-muted); margin-top: 5px; }
+.batch-notes { font-size: 12px; padding: 10px 18px; background: var(--wb-alert-bg); overflow-wrap: anywhere; }
+.batch-orders { display: flex; flex-direction: column; gap: 12px; padding: 0 18px 16px; }
+.batch-notes + .batch-orders { padding-top: 12px; }
+.batch-order .wb-item { background: var(--wb-bg); border-color: var(--wb-line); }
+.batch-order .wb-item.is-done { background: var(--wb-tint); }
+.batch-order-meta { display: flex; justify-content: space-between; align-items: center; padding-top: 3px; }
+.batch-order-meta .wb-age { font-size: 12px; }
+.batch-order-meta button { min-height: 38px; padding: 6px 10px; border: 0; background: transparent; font-size: 11px; color: var(--wb-muted); border-radius: 5px; }
+.batch-order-meta button:hover { background: var(--wb-tint); }
+@container (max-width: 1050px) { .batch-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .batch-intro { gap: 16px; flex-wrap: wrap; } .batch-intro > button { margin-left: auto; } }
+@container (max-width: 600px) { .batch-grid { grid-template-columns: minmax(0, 1fr); padding: 0 14px 14px; } .batch-intro { padding: 20px 16px; } .batch-intro h2 { font-size: 23px; } }

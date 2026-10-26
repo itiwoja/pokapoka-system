@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useRef, useState } from "react";
-import { views } from "../views/registry";
+import { newViewIds, views } from "../views/registry";
 import type { KdsActions, KdsState } from "../data/contract";
 import { useLabData } from "./useLabData";
 import "./UiLab.css";
@@ -34,11 +34,14 @@ function Preview({ id, state, actions, width }: { id: ViewId; state: KdsState; a
 }
 
 export default function UiLab() {
-  const { state, actions, reset } = useLabData();
-  const [mode, setMode] = useState<"all" | "compare" | "single">("all");
-  const [left, setLeft] = useState<ViewId>("cards");
-  const [right, setRight] = useState<ViewId>("rail");
+  const { state, actions, reset } = useLabData(true);
+  const initialIdea = views.find((v) => v.id === new URLSearchParams(location.search).get("idea"));
+  const [mode, setMode] = useState<"all" | "compare" | "single">(initialIdea ? "single" : "all");
+  const [collection, setCollection] = useState("new");
+  const [left, setLeft] = useState<ViewId>(initialIdea?.id || "focus");
+  const [right, setRight] = useState<ViewId>("matrix");
   const [count, setCount] = useState(7);
+  const [inProgress, setInProgress] = useState(true);
   const [width, setWidth] = useState(1280);
   const [revision, setRevision] = useState(0);
   const [reviews, setReviews] = useState(loadReviews);
@@ -50,17 +53,19 @@ export default function UiLab() {
     try { localStorage.setItem(REVIEW_KEY, JSON.stringify(next)); setSaveError(false); }
     catch { setSaveError(true); }
   }
-  const shown = mode === "all" ? views : mode === "single" ? [views.find((v) => v.id === left)!] : [views.find((v) => v.id === left)!, views.find((v) => v.id === right)!];
+  const shown = mode === "all" ? views.filter((v) => collection === "all" || newViewIds.includes(v.id)) : mode === "single" ? [views.find((v) => v.id === left)!] : [views.find((v) => v.id === left)!, views.find((v) => v.id === right)!];
   const selectView = (label: string, value: ViewId, onChange: (value: ViewId) => void) => <label>{label}<select value={value} onChange={(e) => onChange(e.target.value as ViewId)}>{views.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>;
   return <main className="ui-lab">
     <header className="lab-header"><div><span className="lab-eyebrow">POKAPOKA / DESIGN PLAYGROUND</span><h1>デシャップ UIラボ<span>{views.length} IDEAS</span></h1><p>見比べて、触って、厨房に合うかたちを探す。</p></div><span className="lab-demo">サンプルで操作体験</span></header>
     <section className="lab-toolbar" aria-label="比較設定">
-      <div className="lab-modes">{([["all", "すべての案"], ["compare", "2案を比較"], ["single", "1案を大きく"]] as const).map(([id, label]) => <button key={id} aria-pressed={mode === id} onClick={() => setMode(id)}>{label}</button>)}</div>
+      <div className="lab-modes">{([["all", "案を一覧"], ["compare", "2案を比較"], ["single", "1案を大きく"]] as const).map(([id, label]) => <button key={id} aria-pressed={mode === id} onClick={() => setMode(id)}>{label}</button>)}</div>
+      {mode === "all" && <label>表示範囲<select value={collection} onChange={(e) => setCollection(e.target.value)}><option value="new">新しい5案</option><option value="all">すべての9案</option></select></label>}
       {mode !== "all" && selectView(mode === "compare" ? "左の案" : "表示する案", left, setLeft)}
       {mode === "compare" && selectView("右の案", right, setRight)}
-      <label>注文シーン<select value={count} onChange={(e) => { const n = Number(e.target.value); setCount(n); reset(n); setRevision((r) => r + 1); }}><option value={3}>落ち着いた時間・3卓</option><option value={7}>通常営業・7卓</option><option value={16}>ピーク・16卓</option><option value={0}>注文なし・0卓</option></select></label>
+      <label>注文シーン<select value={count} onChange={(e) => { const n = Number(e.target.value); setCount(n); reset(n, inProgress); setRevision((r) => r + 1); }}><option value={3}>落ち着いた時間・3卓</option><option value={7}>通常営業・7卓</option><option value={16}>ピーク・16卓</option><option value={0}>注文なし・0卓</option></select></label>
+      <label>進捗<select value={inProgress ? "mixed" : "initial"} onChange={(e) => { const mixed = e.target.value === "mixed"; setInProgress(mixed); reset(count, mixed); setRevision((r) => r + 1); }}><option value="mixed">作業途中</option><option value="initial">完了数ゼロ</option></select></label>
       <label>想定画面<select value={width} onChange={(e) => setWidth(Number(e.target.value))}><option value={1280}>1280 × 800</option><option value={1024}>1024 × 800</option></select></label>
-      <button className="lab-reset" onClick={() => { reset(count); setRevision((r) => r + 1); }}>操作をリセット</button>
+      <button className="lab-reset" onClick={() => { reset(count, inProgress); setRevision((r) => r + 1); }}>操作をリセット</button>
     </section>
     <p className="lab-hint">全案で同じ注文・操作結果を共有します。品目をタップして完了、もう一度／長押しで戻す。時刻は固定・完了した注文は比較用に残ります。印刷は行いません。</p>
     <div className={`lab-grid ${mode === "single" ? "lab-grid--single" : ""}`}>

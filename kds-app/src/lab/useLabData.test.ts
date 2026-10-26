@@ -1,10 +1,20 @@
 import { act, renderHook } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { sampleState, useLabData } from "./useLabData";
+import { flowStage } from "../views/shared/workbenchModel";
 
 it("混雑シーンでも注文IDが重複せず、空シーンを作れる", () => {
   expect(new Set(sampleState(16).cards.map((c) => c.order.id)).size).toBe(16);
   expect(sampleState(0).cards).toEqual([]);
+});
+
+it("作業途中シーンでは3工程を比較でき、完了数は数量の範囲内", () => {
+  const { cards } = sampleState(16, true);
+  expect(new Set(cards.map(flowStage))).toEqual(new Set(["queue", "cooking", "finish"]));
+  for (const c of cards) c.order.items.forEach((item, i) => {
+    expect(c.doneCounts[i]).toBeGreaterThanOrEqual(0);
+    expect(c.doneCounts[i]).toBeLessThanOrEqual(item.qty);
+  });
 });
 
 it("サンプル操作は保存済み注文を変更せず、リセットできる", () => {

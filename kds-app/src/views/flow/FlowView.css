@@ -1,0 +1,41 @@
+.wb-flow { --wb-bg: #f0f2f4; --wb-panel: #fff; --wb-ink: #30394b; --wb-muted: #647084; --wb-line: #d9dee7; --wb-accent: #49628e; --wb-tint: #eaf0f8; }
+.flow-intro { padding: 24px 28px; display: flex; align-items: baseline; justify-content: space-between; gap: 20px; }
+.flow-intro h2 { font-size: 25px; letter-spacing: -.04em; }
+.flow-intro p { font-size: 12px; color: var(--wb-muted); }
+.flow-intro p > span { margin: 0 8px; }
+.flow-lanes { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0 20px 20px; gap: 16px; overflow: auto; }
+.flow-lane { min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--wb-line); border-radius: 10px; background: #e7ebf0; overflow: hidden; }
+.flow-lane--queue { --flow-color: #657185; }
+.flow-lane--cooking { --flow-color: #9a682c; }
+.flow-lane--finish { --flow-color: #32705b; }
+.flow-lane-heading { padding: 18px 18px 14px; background: var(--wb-panel); border-top: 4px solid var(--flow-color); }
+.flow-lane-heading > div { display: flex; align-items: center; gap: 12px; }
+.flow-lane-heading > div > span { color: var(--flow-color); font-size: 12px; font-weight: 700; }
+.flow-lane-heading h3 { flex: 1; font-size: 23px; }
+.flow-lane-heading b { font-size: 22px; font-weight: 500; color: var(--flow-color); }
+.flow-lane-heading p { color: var(--wb-muted); font-size: 10px; margin-top: 7px; }
+.flow-lane-list { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
+.flow-lane-empty { text-align: center; padding: 45px 10px; color: var(--wb-muted); font-size: 12px; }
+.flow-lane-empty > span { display: block; font-size: 32px; margin-bottom: 12px; }
+.flow-order { padding: 16px; background: var(--wb-panel); border: 1px solid var(--wb-line); border-radius: 8px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.flow-order.is-complete { background: #f1f7f3; }
+.flow-order > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.flow-order > header > div { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.flow-order > header strong { font-size: 36px; font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
+.flow-order > header strong small { font-size: 11px; font-weight: 400; margin-left: 5px; }
+.flow-order > header > div > span { font-size: 10px; color: var(--wb-muted); white-space: nowrap; }
+.flow-order .wb-age { font-size: 13px; }
+.flow-order .wb-age small { display: block; font-size: 9px; }
+.flow-order-progress { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--wb-muted); }
+.flow-order .wb-progress { height: 4px; }
+.flow-order .wb-notes { font-size: 11px; }
+.flow-items { display: flex; flex-direction: column; gap: 7px; margin-top: 4px; }
+.flow-items .wb-item { padding: 9px 10px; gap: 8px; min-height: 60px; }
+.flow-items .wb-item-copy strong { font-size: 13px; }
+.flow-items .wb-item-copy small { font-size: 10px; }
+.flow-items .wb-item-count b { font-size: 22px; }
+.flow-items .wb-item-fraction { font-size: 10px; }
+.flow-tools-toggle { min-height: 44px; padding: 8px 0; border: 0; border-top: 1px solid var(--wb-line); background: transparent; display: flex; justify-content: space-between; align-items: center; gap: 10px; text-align: left; font-size: 10px; color: var(--wb-muted); }
+.flow-tools-toggle > span:last-child { flex: none; }
+@container (max-width: 1050px) { .flow-intro { flex-direction: column; align-items: start; gap: 8px; } .flow-lanes { gap: 10px; padding-inline: 12px; } .flow-lane-list { padding: 8px; } .flow-order { padding: 12px; } }
+@container (max-width: 760px) { .flow-lanes { grid-template-columns: repeat(3, 300px); } .flow-intro { padding: 20px 16px; } .flow-intro h2 { font-size: 22px; } }

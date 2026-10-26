@@ -8,6 +8,7 @@ import { views } from "./views/registry";
  *   rail     案A 伝票レール views/rail
  *   stove    案B コンロ盤   views/stove
  *   board    案C 一枚の板   views/board
+ *   focus / matrix / batch / timeline / flow 追加5案 (views/registry.ts)
  *   lab      UIラボ（サンプルによる一覧・比較）
  */
 const Lab = lazy(() => import("./lab/UiLab"));
