@@ -26,6 +26,16 @@ npm run build
 
 ## レイアウト案の切り替え
 
+### UIラボ（比較ページ）
+
+`/kds-next?view=lab`（開発時は `http://localhost:5173/?view=lab`）で全案を比較できる。
+
+- 全案一覧・左右2案比較・1案拡大に対応。同じサンプル注文と操作結果を共有する。
+- 3卓／7卓／16卓／注文なし、画面幅1024／1280を切り替えて確認できる。
+- 時刻は固定。完了注文は比較のため残す。注文操作はメモリ内だけで、リセット可能。実注文同期・印刷は行わない。
+- 候補と比較メモは、このブラウザの `kds_ui_lab_reviews_v1` に自動保存する。
+- 新しい案は `src/views/` に既存と同じ `state` / `actions` を受け取るコンポーネントを作り、`src/views/registry.ts` に追加すると一覧・比較選択に現れる。
+
 どのレイアウトにするか比較中のため、4案を同じデータで動かせる。URL の `?view=` で切り替える（画面上に切替は出さない）。
 
 | URL | 案 | 置き場所 |
@@ -38,7 +48,7 @@ npm run build
 - 見た目の正となる静止画モックは `concepts/`。
 - 案をまたいで使う部品（卓番入力 `SeatPad`、コンロ選択 `KonroPicker`、長押し `useLongPress`、予約一覧 `StockPanel`）は `src/components/`。
 - データ層（`src/data/`）・印刷（`src/print/`）は案に依らず共通。どの案で操作しても他の案と現行画面に反映される。
-- 案が決まったら、残りの `src/views/<案>/` と `concepts/` の該当ファイル、`App.tsx` の切替を消す。
+- 案の追加・説明の編集は `src/views/registry.ts` で管理する。
 
 ## テスト
 
@@ -52,5 +62,5 @@ npm test
 ## 注意
 
 - 外部ライブラリ・CDN を追加しない。店内 LAN で完全オフラインに動かすため、JS/CSS はビルドで1ファイルに埋め込む。
-- 中継サーバーが配る共有ファイル（`kds-bridge.js`、`slip-renderer.js`、`party-size.js`）は埋め込まず、`index.html` から `<script src>` で読む。
+- 中継サーバーが配る共有ファイル（`kds-bridge.js`、`slip-renderer.js`、`party-size.js`）は埋め込まず、`src/main.tsx` が通常画面の起動時に順番に読み込む。UIラボでは読み込まない。
 - `src/types.ts`（型）と `src/data/contract.ts`（画面とデータ層の境目）は、画面側の変更で勝手に変えない。
